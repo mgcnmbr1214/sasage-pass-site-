@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ササゲパス | 古着・アパレルEC向け ささげ代行サービス</title>
+  <meta name="description" content="古着・アパレルEC事業者向けのささげ代行サービス。撮影・採寸・出品を1点500円〜全部お任せ。クリーニング無料。商品を送るだけでOK。メルカリShops・BASE・Shopify・楽天など主要EC対応。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ナビゲーション -->
+  <header class="header">
+    <div class="container header-inner">
+      <a href="#" class="logo">
+        <img src="https://sasagepass.square.site/uploads/b/f1910340-c84c-11f0-97f6-71a006ccaaab/%E3%82%B5%E3%82%B5%E3%82%B2%E3%83%91%E3%82%B9%20%E3%83%AD%E3%82%B4%20%282%29.png" alt="ササゲパス" class="logo-img">
+      </a>
+      <nav class="nav">
+        <a href="#about">ご利用の流れ</a>
+        <!-- サービス内容 ドロップダウン -->
+        <div class="nav-dropdown">
+          <a href="#features" class="nav-dropdown-trigger">サービス内容 <i class="fa-solid fa-chevron-down nav-caret"></i></a>
+          <div class="nav-dropdown-menu">
+            <a href="#svc-cleaning"><i class="fa-solid fa-soap"></i> クリーニング</a>
+            <a href="#svc-photo"><i class="fa-solid fa-camera"></i> 撮影</a>
+            <a href="#svc-measurement"><i class="fa-solid fa-ruler"></i> 採寸</a>
+            <a href="#svc-listing"><i class="fa-solid fa-store"></i> 出品</a>
+            <a href="#svc-website"><i class="fa-solid fa-laptop-code"></i> サイト制作（出品オプション）</a>
+          </div>
+        </div>
+        <a href="#price">料金</a>
+        <a href="#platforms">対応EC</a>
+        <a href="#faq">FAQ</a>
+        <a href="#contact" class="btn btn-nav">お問い合わせ</a>
+      </nav>
+      <button class="hamburger" id="hamburger" aria-label="メニューを開く">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- モバイルメニュー -->
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="#about" class="mobile-link">ご利用の流れ</a>
+    <div class="mobile-link mobile-group-label">サービス内容</div>
+    <a href="#svc-cleaning" class="mobile-link mobile-sub"><i class="fa-solid fa-soap"></i> クリーニング</a>
+    <a href="#svc-photo" class="mobile-link mobile-sub"><i class="fa-solid fa-camera"></i> 撮影</a>
+    <a href="#svc-measurement" class="mobile-link mobile-sub"><i class="fa-solid fa-ruler"></i> 採寸</a>
+    <a href="#svc-listing" class="mobile-link mobile-sub"><i class="fa-solid fa-store"></i> 出品</a>
+    <a href="#svc-website" class="mobile-link mobile-sub"><i class="fa-solid fa-laptop-code"></i> サイト制作（出品オプション）</a>
+    <a href="#price" class="mobile-link">料金</a>
+    <a href="#platforms" class="mobile-link">対応EC</a>
+    <a href="#faq" class="mobile-link">FAQ</a>
+    <a href="#contact" class="mobile-link mobile-cta">お問い合わせ</a>
+  </div>
+
+  <!-- ヒーロー -->
+  <section class="hero">
+    <div class="container hero-inner">
+      <div class="hero-text">
+        <p class="hero-eyebrow">古着・アパレルEC向け ささげ代行サービス</p>
+        <h1 class="hero-title">商品を送るだけで、<br>あとは全部<span class="highlight">おまかせ</span>。</h1>
+        <p class="hero-sub">撮影・採寸・出品・クリーニングまで一括代行。<br>古着マニアが丁寧に、あなたの商品を輝かせます。</p>
+        <div class="hero-badges">
+          <span class="badge"><i class="fa-solid fa-check"></i> 1点500円〜</span>
+          <span class="badge"><i class="fa-solid fa-check"></i> クリーニング無料</span>
+          <span class="badge"><i class="fa-solid fa-check"></i> 複数EC対応</span>
+        </div>
+        <div class="hero-actions">
+          <a href="#contact" class="btn btn-primary">まずは無料相談 <i class="fa-solid fa-arrow-right"></i></a>
+          <a href="#price" class="btn btn-outline">料金を見る</a>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="hero-image-wrap">
+          <div class="hero-image-placeholder">
+            <i class="fa-solid fa-camera"></i>
+            <p>撮影サンプル写真</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ご利用の流れ（横並び） -->
+  <section class="section section-light" id="about">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label">HOW IT WORKS</p>
+        <h2 class="section-title">ご利用の流れ</h2>
+        <p class="section-desc">商品を送るだけ。あとは全部おまかせです。</p>
+      </div>
+
+      <div class="flow-h">
+
+        <!-- STEP 1 -->
+        <div class="flow-h-step">
+          <div class="flow-h-num">STEP <span>01</span></div>
+          <div class="flow-h-icon"><i class="fa-solid fa-box-open"></i></div>
+          <h3>商品を発送する</h3>
+          <p>ご依頼後、商品をササゲパスへ発送してください。発送方法はご相談時にご案内します。</p>
+        </div>
+
+        <div class="flow-h-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+
+        <!-- STEP 2 -->
+        <div class="flow-h-step flow-h-step-main">
+          <div class="flow-h-num flow-h-num-orange">STEP <span>02</span></div>
+          <div class="flow-h-icon flow-h-icon-orange"><i class="fa-solid fa-list-check"></i></div>
+          <h3>サービスを選んでお任せ</h3>
+          <div class="flow-checkboxes">
+            <label class="flow-checkbox checked"><input type="checkbox" checked disabled><i class="fa-solid fa-soap"></i> クリーニング<span class="cb-free">無料</span></label>
+            <label class="flow-checkbox checked"><input type="checkbox" checked disabled><i class="fa-solid fa-camera"></i> 撮影</label>
+            <label class="flow-checkbox checked"><input type="checkbox" checked disabled><i class="fa-solid fa-ruler"></i> 採寸</label>
+            <label class="flow-checkbox checked"><input type="checkbox" checked disabled><i class="fa-solid fa-store"></i> 出品（出品先も選択可能）</label>
+          </div>
+          <p class="flow-select-note"><i class="fa-solid fa-hand-pointer"></i> ご希望の通りにカスタマイズ</p>
+        </div>
+
+        <div class="flow-h-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+
+        <!-- STEP 3 -->
+        <div class="flow-h-step">
+          <div class="flow-h-num">STEP <span>03</span></div>
+          <div class="flow-h-icon"><i class="fa-solid fa-rotate-left"></i></div>
+          <h3>返却・月次自動支払い</h3>
+          <p>作業完了後に商品をお返し。お支払いは月ごとの点数と依頼内容に応じて自動で行われます。</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- サービス内容 -->
+  <section class="section" id="features">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label">SERVICES</p>
+        <h2 class="section-title">サービス内容</h2>
+        <p class="section-desc">必要なサービスを組み合わせてご依頼いただけます。</p>
+      </div>
+
+      <!-- クリーニング -->
+      <div class="svc-detail" id="svc-cleaning">
+        <div class="svc-detail-icon-col">
+          <img src="https://sasagepass.square.site/uploads/b/caf6e41501fade04f9108e6ff8e100736855c346d0be980c184b090c838b34ef/%E3%82%AF%E3%83%AA%E3%83%BC%E3%83%8B%E3%83%B3%E3%82%B0%E3%82%B5%E3%83%A0%E3%83%8D_1764578595.png" alt="クリーニング" class="svc-thumb">
+          <span class="svc-free-pill">無料</span>
+        </div>
+        <div class="svc-detail-body">
+          <div class="svc-detail-header">
+            <div class="svc-detail-icon-wrap"><i class="fa-solid fa-soap"></i></div>
+            <div>
+              <p class="svc-detail-label">SERVICE 01</p>
+              <h3>クリーニング</h3>
+            </div>
+          </div>
+          <p class="svc-detail-catch">撮影前の商品メンテナンスを<strong>無料</strong>でご提供。</p>
+          <p class="svc-detail-desc">古着では避けて通れない撮影前のメンテナンス。汚れ・臭いを除去し、商品を最高の状態に整えてから撮影します。通常のささげ代行サービスでは有料のことが多いですが、ササゲパスでは全案件に対して完全無料でご提供しています。</p>
+          <ul class="svc-detail-points">
+            <li><i class="fa-solid fa-circle-check"></i> 汚れ・臭いの除去</li>
+            <li><i class="fa-solid fa-circle-check"></i> シワ伸ばし・形を整える</li>
+            <li><i class="fa-solid fa-circle-check"></i> 撮影映えが格段に向上</li>
+            <li><i class="fa-solid fa-circle-check"></i> 全プランで無料適用</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="svc-divider"></div>
+
+      <!-- 撮影 -->
+      <div class="svc-detail svc-detail-reverse" id="svc-photo">
+        <div class="svc-detail-icon-col">
+          <img src="https://sasagepass.square.site/uploads/b/caf6e41501fade04f9108e6ff8e100736855c346d0be980c184b090c838b34ef/%E6%92%AE%E5%BD%B1%E3%82%B5%E3%83%A0%E3%83%8D_1764578594.png" alt="撮影" class="svc-thumb">
+        </div>
+        <div class="svc-detail-body">
+          <div class="svc-detail-header">
+            <div class="svc-detail-icon-wrap" style="background:var(--navy)"><i class="fa-solid fa-camera"></i></div>
+            <div>
+              <p class="svc-detail-label">SERVICE 02</p>
+              <h3>撮影</h3>
+            </div>
+          </div>
+          <p class="svc-detail-catch">古着マニアのカメラマンが、商品の魅力を最大限に引き出します。</p>
+          <p class="svc-detail-desc">長年古着のオンライン販売をしているメンバーが撮影を担当。マニアならではのポイントも押さえた構図で、高画質な写真を撮影します。買い手が「これだ」と思えるような写真に仕上げます。</p>
+          <ul class="svc-detail-points">
+            <li><i class="fa-solid fa-circle-check"></i> 基本5〜10枚撮影</li>
+            <li><i class="fa-solid fa-circle-check"></i> 古着マニア目線の構図</li>
+            <li><i class="fa-solid fa-circle-check"></i> 商品の特徴・状態を正確に撮影</li>
+            <li><i class="fa-solid fa-circle-check"></i> ディテール・タグ・状態確認カット含む</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="svc-divider"></div>
+
+      <!-- 採寸 -->
+      <div class="svc-detail" id="svc-measurement">
+        <div class="svc-detail-icon-col">
+          <img src="https://sasagepass.square.site/uploads/b/caf6e41501fade04f9108e6ff8e100736855c346d0be980c184b090c838b34ef/%E6%8E%A1%E5%AF%B8%E3%82%B5%E3%83%A0%E3%83%8D_1764578594.png" alt="採寸" class="svc-thumb">
+        </div>
+        <div class="svc-detail-body">
+          <div class="svc-detail-header">
+            <div class="svc-detail-icon-wrap" style="background:#2c6e49"><i class="fa-solid fa-ruler"></i></div>
+            <div>
+              <p class="svc-detail-label">SERVICE 03</p>
+              <h3>採寸</h3>
+            </div>
+          </div>
+          <p class="svc-detail-catch">ファッション好きが本当に求める情報を、SEO対策まで施して登録。</p>
+          <p class="svc-detail-desc">採寸箇所は商品の種類に合わせて適切に設定。着丈・肩幅・袖丈・身幅など、買い手が求める詳細情報を丁寧に計測・記録します。説明文もSEO対策を踏まえた内容で作成し、検索から見つかりやすい出品情報を作ります。</p>
+          <ul class="svc-detail-points">
+            <li><i class="fa-solid fa-circle-check"></i> 商品に合わせた採寸箇所の設定</li>
+            <li><i class="fa-solid fa-circle-check"></i> 着丈・肩幅・袖丈・身幅 etc.</li>
+            <li><i class="fa-solid fa-circle-check"></i> SEO対策済み説明文の作成</li>
+            <li><i class="fa-solid fa-circle-check"></i> カラー・素材・ブランド情報の登録</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="svc-divider"></div>
+
+      <!-- 出品 -->
+      <div class="svc-detail svc-detail-reverse" id="svc-listing">
+        <div class="svc-detail-icon-col">
+          <img src="https://images.unsplash.com/photo-1607082350899-7e105aa886ae?auto=format&fit=crop&w=600&q=80" alt="出品作業" class="svc-thumb">
+        </div>
+        <div class="svc-detail-body">
+          <div class="svc-detail-header">
+            <div class="svc-detail-icon-wrap" style="background:#7b2d8b"><i class="fa-solid fa-store"></i></div>
+            <div>
+              <p class="svc-detail-label">SERVICE 04</p>
+              <h3>出品</h3>
+            </div>
+          </div>
+          <p class="svc-detail-catch">主要EC・モールへの出品を代行。複数サイトへの同時出品も可能。</p>
+          <p class="svc-detail-desc">撮影・採寸・説明文が完成したら、ご希望のECプラットフォームへ代わりに出品します。メルカリShops・BASE・STORES・PayID・ヤフオク・Yahoo!ショッピング・Shopify・楽天市場に対応。複数サイトへの同時出品もまとめてお任せいただけます。価格設定やカテゴリ登録、タグ付けなど出品に必要な作業もすべて代行するので、届いたらあとは販売を待つだけです。</p>
+          <ul class="svc-detail-points">
+            <li><i class="fa-solid fa-circle-check"></i> 主要8プラットフォームに対応</li>
+            <li><i class="fa-solid fa-circle-check"></i> 複数サイトへの同時出品OK</li>
+            <li><i class="fa-solid fa-circle-check"></i> 商品ページ作成〜公開まで代行</li>
+            <li><i class="fa-solid fa-circle-check"></i> カテゴリ・タグ・価格設定も対応</li>
+            <li><i class="fa-solid fa-circle-check"></i> 在庫管理情報の入力も対応</li>
+          </ul>
+          <div class="svc-option-box" id="svc-website">
+            <div class="svc-option-icon"><i class="fa-solid fa-laptop-code"></i></div>
+            <div>
+              <p class="svc-option-title">オプション：自社サイト制作も対応可</p>
+              <p class="svc-option-desc">モール出品だけでなく、自社ブランドのECサイトを持ちたい方はご相談ください。古着以外の業種にも対応し、デザイン〜公開・運用サポートまでご予算に応じてご提案します。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 料金表 -->
+  <section class="section section-light" id="price">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label">PRICING</p>
+        <h2 class="section-title">料金表</h2>
+        <p class="section-desc">すべて<strong>1商品あたりの単価</strong>です。クリーニングは無料で選択可能。<br>数量・オプション内容により、店舗ごとに個別調整いたします。</p>
+      </div>
+      <div class="price-table-wrap">
+        <table class="price-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>撮影<br><span class="th-sub">基本5〜10枚</span></th>
+              <th>採寸<br><span class="th-sub">情報登録込み</span></th>
+              <th>出品<br><span class="th-sub">1サイト</span></th>
+              <th>出品<br><span class="th-sub">2サイト以上</span></th>
+              <th>料金<br><span class="th-sub">1商品あたり</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="plan-name">プランA</td>
+              <td><i class="fa-solid fa-circle-check check"></i></td>
+              <td><i class="fa-solid fa-xmark cross"></i></td>
+              <td><i class="fa-solid fa-xmark cross"></i></td>
+              <td><i class="fa-solid fa-xmark cross"></i></td>
+              <td class="plan-price">¥500</td>
+            </tr>
+            <tr>
+              <td class="plan-name">プランB</td>
+              <td><i class="fa-solid fa-circle-check check"></i></td>
+              <td><i class="fa-solid fa-circle-check check"></i></td>
+              <td><i class="fa-solid fa-xmark cross"></i></td>
+              <td><i class="fa-solid fa-xmark cross"></i></td>
+              <td class="plan-price">¥700</td>
+            </tr>
+            <tr class="plan-featured">
+              <td class="plan-name">プランC<span class="plan-badge">人気</span></td>
+              <td><i class="fa-solid fa-circle-check check"></i></td>
+              <td><i class="fa-solid fa-circle-check check"></i></td>
+              <td><i class="fa-solid fa-circle-check check"></i></td>
+              <td><i class="fa-solid fa-xmark cross"></i></td>
+              <td class="plan-price">¥900</td>
+            </tr>
+            <tr>
+              <td class="plan-name">プランD</td>
+              <td><i class="fa-solid fa-circle-check check"></i></td>
+              <td><i class="fa-solid fa-circle-check check"></i></td>
+              <td><i class="fa-solid fa-circle-check check"></i></td>
+              <td><i class="fa-solid fa-circle-check check"></i></td>
+              <td class="plan-price">¥1,000〜</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="price-note"><i class="fa-solid fa-circle-info"></i> ※クリーニングは無料サービス。数量や各オプションの有無で、店舗様毎に調整させていただきます。</p>
+      <div class="price-cta">
+        <a href="#contact" class="btn btn-primary">まずは無料で相談する <i class="fa-solid fa-arrow-right"></i></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- 撮影サンプル -->
+  <section class="section" id="gallery">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label">SAMPLE WORKS</p>
+        <h2 class="section-title">撮影サンプル</h2>
+        <p class="section-desc">実際のささげ作業のクオリティをご覧ください。</p>
+      </div>
+      <div class="gallery-grid">
+        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
+        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
+        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
+        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
+        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
+        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
+        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
+        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
+      </div>
+      <p class="gallery-note">※ サンプル写真は後ほど追加します。</p>
+    </div>
+  </section>
+
+  <!-- 対応プラットフォーム -->
+  <section class="section section-light" id="platforms">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label">SUPPORTED PLATFORMS</p>
+        <h2 class="section-title">対応プラットフォーム</h2>
+        <p class="section-desc">以下の主要ECサイト・モールへの出品に対応しています。</p>
+      </div>
+      <div class="platform-grid">
+        <div class="platform-item">
+          <div class="plat-logo plat-bg-mercari">
+            <span class="plat-logo-text">mercari</span>
+            <span class="plat-logo-sub">Shops</span>
+          </div>
+          <span>メルカリShops</span>
+        </div>
+        <div class="platform-item">
+          <div class="plat-logo plat-bg-base">
+            <span class="plat-logo-text">BASE</span>
+          </div>
+          <span>BASE</span>
+        </div>
+        <div class="platform-item">
+          <div class="plat-logo plat-bg-stores">
+            <span class="plat-logo-text">STORES</span>
+          </div>
+          <span>STORES</span>
+        </div>
+        <div class="platform-item">
+          <div class="plat-logo plat-bg-payid">
+            <span class="plat-logo-text">Pay<span style="color:#ffd700">ID</span></span>
+          </div>
+          <span>PayID</span>
+        </div>
+        <div class="platform-item">
+          <div class="plat-logo plat-bg-yahoo">
+            <span class="plat-logo-text">ヤフオク<span style="font-size:12px">！</span></span>
+          </div>
+          <span>ヤフオク！</span>
+        </div>
+        <div class="platform-item">
+          <div class="plat-logo plat-bg-yahushop">
+            <span class="plat-logo-text" style="font-size:11px">Yahoo!<br>ショッピング</span>
+          </div>
+          <span>Yahoo!ショッピング</span>
+        </div>
+        <div class="platform-item">
+          <div class="plat-logo plat-bg-shopify">
+            <span class="plat-logo-text">Shopify</span>
+          </div>
+          <span>Shopify</span>
+        </div>
+        <div class="platform-item">
+          <div class="plat-logo plat-bg-rakuten">
+            <span class="plat-logo-text">楽天市場</span>
+          </div>
+          <span>楽天市場</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="section" id="faq">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label">FAQ</p>
+        <h2 class="section-title">よくある質問</h2>
+      </div>
+      <div class="faq-list">
+        <details class="faq-item">
+          <summary class="faq-q"><i class="fa-solid fa-circle-question"></i> クリーニングは本当に無料ですか？</summary>
+          <div class="faq-a">はい、完全無料です。撮影前に商品をきれいな状態にするクリーニングは、すべてのプランで無料でご選択いただけます。通常のささげ代行サービスでは別途費用がかかることが多いですが、ササゲパスでは標準で対応しています。</div>
+        </details>
+        <details class="faq-item">
+          <summary class="faq-q"><i class="fa-solid fa-circle-question"></i> 最低依頼点数はありますか？</summary>
+          <div class="faq-a">最低点数についてはご依頼内容により異なります。まずはお気軽にお問い合わせください。個人の方から法人まで、規模に応じて柔軟に対応いたします。</div>
+        </details>
+        <details class="faq-item">
+          <summary class="faq-q"><i class="fa-solid fa-circle-question"></i> 商品はどうやって送ればいいですか？</summary>
+          <div class="faq-a">お問い合わせ・ご契約後に発送先をご案内いたします。発送方法については、ご相談の際に詳しくお伝えします。</div>
+        </details>
+        <details class="faq-item">
+          <summary class="faq-q"><i class="fa-solid fa-circle-question"></i> 対応しているECサイトはどこですか？</summary>
+          <div class="faq-a">メルカリShops・BASE・STORES・PayID・ヤフオク！・Yahoo!ショッピング・Shopify・楽天市場の8プラットフォームに対応しています。複数のECサイトへの同時出品も可能です。</div>
+        </details>
+        <details class="faq-item">
+          <summary class="faq-q"><i class="fa-solid fa-circle-question"></i> 自社サイトの制作もお願いできますか？</summary>
+          <div class="faq-a">はい、対応しております。モールへの出品だけでなく、オリジナルの自社ECサイトを持ちたい方はお気軽にご相談ください。ご予算や規模に応じてご提案いたします。</div>
+        </details>
+        <details class="faq-item">
+          <summary class="faq-q"><i class="fa-solid fa-circle-question"></i> 支払い方法を教えてください。</summary>
+          <div class="faq-a">毎月の代行点数に応じて月ごとに自動でご請求します。都度払いの手間がなく、継続してご利用いただきやすい仕組みになっています。</div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- お問い合わせ -->
+  <section class="section section-contact" id="contact">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-label section-label-light">CONTACT</p>
+        <h2 class="section-title section-title-light">お問い合わせ</h2>
+        <p class="section-desc section-desc-light">まずはお気軽にご相談ください。<br>内容を確認のうえ、担当者よりご連絡いたします。</p>
+      </div>
+      <div class="contact-wrap">
+        <form class="contact-form" action="https://formspree.io/f/YOUR_FORM_ID" method="POST">
+          <div class="form-group">
+            <label for="name">お名前 <span class="required">必須</span></label>
+            <input type="text" id="name" name="name" placeholder="山田 太郎" required>
+          </div>
+          <div class="form-group">
+            <label for="company">会社名・店舗名</label>
+            <input type="text" id="company" name="company" placeholder="株式会社〇〇 / 古着屋〇〇">
+          </div>
+          <div class="form-group">
+            <label for="email">メールアドレス <span class="required">必須</span></label>
+            <input type="email" id="email" name="email" placeholder="example@mail.com" required>
+          </div>
+          <div class="form-group">
+            <label for="service">ご希望のサービス</label>
+            <select id="service" name="service">
+              <option value="">選択してください</option>
+              <option value="撮影のみ">撮影のみ（プランA / 500円〜）</option>
+              <option value="撮影+採寸">撮影＋採寸（プランB / 700円〜）</option>
+              <option value="撮影+採寸+出品">撮影＋採寸＋出品（プランC / 900円〜）</option>
+              <option value="複数サイト出品">複数サイト出品（プランD / 1,000円〜）</option>
+              <option value="サイト制作">自社サイト制作</option>
+              <option value="未定・相談したい">まだ決めていない・相談したい</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="message">お問い合わせ内容 <span class="required">必須</span></label>
+            <textarea id="message" name="message" rows="5" placeholder="商品の点数、ご利用の予定、ご質問などをご記入ください。" required></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">送信する <i class="fa-solid fa-paper-plane"></i></button>
+          <p class="form-note">送信後、2〜3営業日以内にご返信いたします。</p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- フッター -->
+  <footer class="footer">
+    <div class="container footer-inner">
+      <img src="https://sasagepass.square.site/uploads/b/f1910340-c84c-11f0-97f6-71a006ccaaab/%E3%82%B5%E3%82%B5%E3%82%B2%E3%83%91%E3%82%B9%20%E3%83%AD%E3%82%B4%20%282%29.png" alt="ササゲパス" class="footer-logo-img">
+      <p class="footer-desc">古着・アパレルEC向け ささげ代行サービス</p>
+      <p class="footer-copy">&copy; 2025 ササゲパス. All Rights Reserved.</p>
+    </div>
+  </footer>
+
+  <script>
+    const hamburger = document.getElementById('hamburger');
+    const mobileMenu = document.getElementById('mobileMenu');
+
+    hamburger.addEventListener('click', () => {
+      hamburger.classList.toggle('open');
+      mobileMenu.classList.toggle('open');
+    });
+
+    document.querySelectorAll('.mobile-link').forEach(link => {
+      link.addEventListener('click', () => {
+        hamburger.classList.remove('open');
+        mobileMenu.classList.remove('open');
+      });
+    });
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          e.preventDefault();
+          const offset = 100;
+          const top = target.getBoundingClientRect().top + window.scrollY - offset;
+          window.scrollTo({ top, behavior: 'smooth' });
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>
