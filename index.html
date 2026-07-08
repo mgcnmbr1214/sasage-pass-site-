@@ -781,5 +781,377 @@
     });
   </script>
 
+  <!-- ===== 編集メモモード ===== -->
+  <style>
+    /* フローティングボタン */
+    #edit-mode-btn {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 9000;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--navy);
+      color: #fff;
+      border: none;
+      border-radius: 50px;
+      padding: 12px 20px;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: 'Noto Sans JP', sans-serif;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+      transition: background 0.2s, transform 0.15s;
+      user-select: none;
+    }
+    #edit-mode-btn:hover { background: #0f1d3b; transform: translateY(-2px); }
+    #edit-mode-btn.active { background: var(--orange); }
+    #edit-mode-btn .dot {
+      width: 8px; height: 8px;
+      background: #7dde92;
+      border-radius: 50%;
+      display: none;
+    }
+    #edit-mode-btn.active .dot { display: block; }
+
+    /* ホバーハイライト */
+    body.edit-mode * { cursor: crosshair !important; }
+    .edit-highlight {
+      outline: 2.5px solid #f26522 !important;
+      outline-offset: 2px !important;
+      background-color: rgba(242,101,34,0.06) !important;
+      position: relative;
+    }
+    .edit-highlight-label {
+      position: fixed;
+      background: #f26522;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: 'Noto Sans JP', sans-serif;
+      padding: 3px 8px;
+      border-radius: 4px;
+      pointer-events: none;
+      z-index: 9100;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    /* ポップアップ */
+    #edit-popup {
+      display: none;
+      position: fixed;
+      z-index: 9200;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 16px 60px rgba(0,0,0,0.25);
+      width: min(480px, calc(100vw - 32px));
+      overflow: hidden;
+    }
+    #edit-popup.show { display: block; }
+    #edit-popup-header {
+      background: var(--navy);
+      color: #fff;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    #edit-popup-header span { font-size: 13px; font-weight: 700; font-family: 'Noto Sans JP', sans-serif; }
+    #edit-popup-section {
+      font-size: 11px;
+      color: rgba(255,255,255,0.65);
+      font-family: 'Noto Sans JP', sans-serif;
+    }
+    #edit-popup-close {
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    #edit-popup-body { padding: 16px 20px 20px; }
+    #edit-popup-preview {
+      background: #f5f6f8;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: #555;
+      margin-bottom: 14px;
+      max-height: 60px;
+      overflow: hidden;
+      line-height: 1.6;
+      font-family: 'Noto Sans JP', sans-serif;
+    }
+    #edit-popup-preview strong { color: #1a2e5a; font-size: 11px; display: block; margin-bottom: 4px; }
+    #edit-popup textarea {
+      width: 100%;
+      min-height: 90px;
+      border: 2px solid #e8eaf0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-family: 'Noto Sans JP', sans-serif;
+      color: #222;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s;
+      box-sizing: border-box;
+    }
+    #edit-popup textarea:focus { border-color: #f26522; }
+    #edit-popup textarea::placeholder { color: #aaa; }
+    #edit-popup-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    #edit-copy-btn {
+      flex: 1;
+      background: #f26522;
+      color: #fff;
+      border: none;
+      border-radius: 50px;
+      padding: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: 'Noto Sans JP', sans-serif;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #edit-copy-btn:hover { background: #d4541b; }
+    #edit-copy-btn.copied { background: #2c6e49; }
+    #edit-cancel-btn {
+      background: #f5f6f8;
+      color: #555;
+      border: none;
+      border-radius: 50px;
+      padding: 12px 20px;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: 'Noto Sans JP', sans-serif;
+      cursor: pointer;
+    }
+    #edit-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.35);
+      z-index: 9150;
+    }
+    #edit-overlay.show { display: block; }
+
+    /* コピー成功トースト */
+    #edit-toast {
+      display: none;
+      position: fixed;
+      bottom: 80px;
+      right: 24px;
+      background: #2c6e49;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: 'Noto Sans JP', sans-serif;
+      padding: 10px 18px;
+      border-radius: 50px;
+      z-index: 9300;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    }
+    #edit-toast.show { display: block; }
+  </style>
+
+  <!-- フローティングボタン -->
+  <button id="edit-mode-btn" title="Shift+C で切り替え">
+    <span class="dot"></span>
+    <span id="edit-mode-label">✏️ 編集メモ</span>
+  </button>
+
+  <!-- オーバーレイ & ポップアップ -->
+  <div id="edit-overlay"></div>
+  <div id="edit-popup">
+    <div id="edit-popup-header">
+      <div>
+        <span>修正メモを書く</span><br>
+        <span id="edit-popup-section"></span>
+      </div>
+      <button id="edit-popup-close">✕</button>
+    </div>
+    <div id="edit-popup-body">
+      <div id="edit-popup-preview">
+        <strong>クリックした箇所のテキスト</strong>
+        <span id="edit-popup-text"></span>
+      </div>
+      <textarea id="edit-popup-note" placeholder="例：フォントをもう少し大きく／色をネイビーに／この文章を〇〇に変更　など"></textarea>
+      <div id="edit-popup-actions">
+        <button id="edit-copy-btn">📋 Claudeへのメッセージをコピー</button>
+        <button id="edit-cancel-btn">閉じる</button>
+      </div>
+    </div>
+  </div>
+  <div id="edit-toast">✅ コピーしました！Claudeに貼り付けてください</div>
+
+  <script>
+    (function() {
+      const btn       = document.getElementById('edit-mode-btn');
+      const label     = document.getElementById('edit-mode-label');
+      const popup     = document.getElementById('edit-popup');
+      const overlay   = document.getElementById('edit-overlay');
+      const closeBtn  = document.getElementById('edit-popup-close');
+      const cancelBtn = document.getElementById('edit-cancel-btn');
+      const copyBtn   = document.getElementById('edit-copy-btn');
+      const noteArea  = document.getElementById('edit-popup-note');
+      const toast     = document.getElementById('edit-toast');
+      const hlLabel   = document.createElement('div');
+      hlLabel.className = 'edit-highlight-label';
+      hlLabel.style.display = 'none';
+      document.body.appendChild(hlLabel);
+
+      let editMode = false;
+      let currentEl = null;
+      let currentSection = '';
+      let currentText = '';
+      let toastTimer;
+
+      // セクション名マップ
+      const sectionMap = {
+        'hero':        'ヒーロー（トップ）',
+        'about':       'ご利用の流れ',
+        'features':    'サービス内容',
+        'gallery':     '撮影サンプル',
+        'price':       '料金表',
+        'platforms':   '対応プラットフォーム',
+        'faq':         'よくある質問',
+        'contact':     'お問い合わせ',
+        'header':      'ヘッダー / ナビ',
+        'footer':      'フッター',
+      };
+
+      function getSectionName(el) {
+        let cur = el;
+        while (cur && cur !== document.body) {
+          const id = cur.id;
+          if (id && sectionMap[id]) return sectionMap[id];
+          if (cur.tagName === 'HEADER') return 'ヘッダー / ナビ';
+          if (cur.tagName === 'FOOTER') return 'フッター';
+          cur = cur.parentElement;
+        }
+        return 'ページ全体';
+      }
+
+      function getElementLabel(el) {
+        const tag = el.tagName.toLowerCase();
+        const labels = { h1:'見出し(H1)', h2:'見出し(H2)', h3:'見出し(H3)', p:'テキスト', a:'リンク', button:'ボタン', img:'画像', li:'リスト項目', th:'表のヘッダー', td:'表のセル', section:'セクション', nav:'ナビ', header:'ヘッダー', footer:'フッター' };
+        return labels[tag] || tag;
+      }
+
+      function getPreviewText(el) {
+        if (el.tagName === 'IMG') return `[画像] alt: ${el.alt || '（なし）'}`;
+        const txt = (el.innerText || el.textContent || '').trim().slice(0, 80);
+        return txt || '（テキストなし）';
+      }
+
+      function toggleEditMode() {
+        editMode = !editMode;
+        document.body.classList.toggle('edit-mode', editMode);
+        btn.classList.toggle('active', editMode);
+        label.textContent = editMode ? '🟠 編集メモ ON' : '✏️ 編集メモ';
+      }
+
+      // フローティングボタン
+      btn.addEventListener('click', e => { e.stopPropagation(); toggleEditMode(); });
+
+      // Shift+C ショートカット
+      document.addEventListener('keydown', e => {
+        if (e.shiftKey && e.key === 'C') toggleEditMode();
+        if (e.key === 'Escape') closePopup();
+      });
+
+      // ホバーハイライト
+      document.addEventListener('mouseover', e => {
+        if (!editMode) return;
+        if (popup.classList.contains('show')) return;
+        if (e.target.closest('#edit-mode-btn') || e.target.closest('#edit-popup') || e.target === hlLabel) return;
+        if (currentEl) currentEl.classList.remove('edit-highlight');
+        currentEl = e.target;
+        currentEl.classList.add('edit-highlight');
+        const rect = currentEl.getBoundingClientRect();
+        hlLabel.textContent = `${getSectionName(currentEl)}  ›  ${getElementLabel(currentEl)}`;
+        hlLabel.style.display = 'block';
+        hlLabel.style.top = Math.max(rect.top - 26, 8) + 'px';
+        hlLabel.style.left = Math.min(rect.left, window.innerWidth - hlLabel.offsetWidth - 8) + 'px';
+      });
+
+      document.addEventListener('mouseout', e => {
+        if (!editMode) return;
+        hlLabel.style.display = 'none';
+      });
+
+      // クリックでポップアップ
+      document.addEventListener('click', e => {
+        if (!editMode) return;
+        if (e.target.closest('#edit-mode-btn') || e.target.closest('#edit-popup') || e.target === hlLabel) return;
+        e.preventDefault();
+        e.stopPropagation();
+        currentSection = getSectionName(e.target);
+        currentText = getPreviewText(e.target);
+        const elLabel = getElementLabel(e.target);
+        document.getElementById('edit-popup-section').textContent = `${currentSection}  ›  ${elLabel}`;
+        document.getElementById('edit-popup-text').textContent = currentText;
+        noteArea.value = '';
+        copyBtn.textContent = '📋 Claudeへのメッセージをコピー';
+        copyBtn.classList.remove('copied');
+        popup.classList.add('show');
+        overlay.classList.add('show');
+        hlLabel.style.display = 'none';
+        setTimeout(() => noteArea.focus(), 50);
+      }, true);
+
+      // 閉じる
+      function closePopup() {
+        popup.classList.remove('show');
+        overlay.classList.remove('show');
+        if (currentEl) currentEl.classList.remove('edit-highlight');
+      }
+      closeBtn.addEventListener('click', closePopup);
+      cancelBtn.addEventListener('click', closePopup);
+      overlay.addEventListener('click', closePopup);
+
+      // コピー
+      copyBtn.addEventListener('click', () => {
+        const note = noteArea.value.trim() || '（内容未入力）';
+        const msg = `【サイト修正メモ】\nセクション：${currentSection}\n該当テキスト：${currentText}\n修正内容：${note}`;
+        navigator.clipboard.writeText(msg).then(() => {
+          copyBtn.textContent = '✅ コピーしました！';
+          copyBtn.classList.add('copied');
+          showToast();
+          setTimeout(closePopup, 1200);
+        }).catch(() => {
+          // フォールバック
+          const ta = document.createElement('textarea');
+          ta.value = msg;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          copyBtn.textContent = '✅ コピーしました！';
+          copyBtn.classList.add('copied');
+          showToast();
+          setTimeout(closePopup, 1200);
+        });
+      });
+
+      function showToast() {
+        toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove('show'), 3000);
+      }
+    })();
+  </script>
+
 </body>
 </html>
