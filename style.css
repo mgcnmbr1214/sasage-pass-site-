@@ -869,8 +869,28 @@ a { text-decoration: none; color: inherit; }
 }
 
 .gallery-note { text-align: center; font-size: 13px; color: var(--text-light); margin-top: 20px; }
-.gallery-placeholder span { font-size: 12px; }
-.gallery-note { text-align: center; font-size: 13px; color: var(--text-light); }
+.gallery-note i { color: var(--orange); margin-right: 4px; }
+
+/* インラインギャラリー（撮影セクション直下） */
+.gallery-inline {
+  margin-top: 40px;
+  padding: 36px 0 0;
+  border-top: 1px solid var(--gray-mid);
+}
+
+.gallery-block {
+  margin-bottom: 28px;
+}
+
+.gallery-block-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--navy);
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+  padding-left: 10px;
+  border-left: 3px solid var(--orange);
+}
 
 /* =============================================
    対応プラットフォーム
