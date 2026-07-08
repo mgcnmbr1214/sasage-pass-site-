@@ -322,24 +322,141 @@
   </section>
 
   <!-- 撮影サンプル -->
-  <section class="section" id="gallery">
+  <section class="section section-light" id="gallery">
     <div class="container">
       <div class="section-header">
         <p class="section-label">SAMPLE WORKS</p>
         <h2 class="section-title">撮影サンプル</h2>
-        <p class="section-desc">実際のささげ作業のクオリティをご覧ください。</p>
+        <p class="section-desc">1商品につき<strong>5〜10枚以上</strong>、さまざまな角度・ディテールを丁寧に撮影します。</p>
       </div>
-      <div class="gallery-grid">
-        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
-        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
-        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
-        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
-        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
-        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
-        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
-        <div class="gallery-item"><div class="gallery-placeholder"><i class="fa-solid fa-image"></i><span>サンプル写真</span></div></div>
+
+      <!-- 撮影箇所の説明バナー -->
+      <div class="gallery-info-banner">
+        <div class="gallery-info-main">
+          <i class="fa-solid fa-camera-retro"></i>
+          <span>1商品 <strong>5枚以上</strong> 撮影</span>
+        </div>
+        <div class="gallery-info-shots">
+          <span><i class="fa-solid fa-circle-check"></i> ①サムネイル</span>
+          <span><i class="fa-solid fa-circle-check"></i> ②正面</span>
+          <span><i class="fa-solid fa-circle-check"></i> ③背面</span>
+          <span><i class="fa-solid fa-circle-check"></i> ④ブランドタグ</span>
+          <span><i class="fa-solid fa-circle-check"></i> ⑤品質表示タグ</span>
+          <span><i class="fa-solid fa-circle-check"></i> ⑥サイズ表記</span>
+          <span><i class="fa-solid fa-circle-check"></i> ⑦ダメージ箇所</span>
+          <span><i class="fa-solid fa-circle-check"></i> ⑧ポケット・ファスナーなど</span>
+        </div>
       </div>
-      <p class="gallery-note">※ サンプル写真は後ほど追加します。</p>
+
+      <!-- カテゴリータブ -->
+      <div class="gallery-tabs">
+        <button class="gallery-tab active" data-category="jacket">ジャケット</button>
+        <button class="gallery-tab" data-category="pants">パンツ</button>
+        <button class="gallery-tab" data-category="shirt">シャツ</button>
+        <button class="gallery-tab" data-category="shoes">シューズ</button>
+        <button class="gallery-tab" data-category="bag">バッグ</button>
+        <button class="gallery-tab" data-category="accessory">アクセサリー</button>
+      </div>
+
+      <!-- ジャケット（Carhartt） -->
+      <div class="gallery-category active" id="cat-jacket">
+        <p class="gallery-cat-label">Carhartt デッキジャケット ／ 10カット撮影例</p>
+        <div class="gallery-shot-row">
+          <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/jacket-1.png" alt="ジャケット-サムネイル" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/jacket-2.png" alt="ジャケット-正面" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/jacket-3.png" alt="ジャケット-背面" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/jacket-4.png" alt="ジャケット-ブランドタグ" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/jacket-5.png" alt="ジャケット-品質タグ" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/jacket-6.png" alt="ジャケット-ディテール" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/jacket-7.png" alt="ジャケット-ポケット" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/jacket-8.png" alt="ジャケット-状態" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/jacket-9.png" alt="ジャケット-全体" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑩</span><img src="images/samples/jacket-10.png" alt="ジャケット-素材感" loading="lazy"></div>
+        </div>
+      </div>
+
+      <!-- パンツ（Levi's） -->
+      <div class="gallery-category" id="cat-pants">
+        <p class="gallery-cat-label">Levi's デニムパンツ ／ 10カット撮影例</p>
+        <div class="gallery-shot-row">
+          <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/pants-1.png" alt="パンツ-サムネイル" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/pants-2.png" alt="パンツ-正面" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/pants-3.png" alt="パンツ-背面" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/pants-4.png" alt="パンツ-ブランドタグ" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/pants-5.png" alt="パンツ-品質タグ" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/pants-6.png" alt="パンツ-ウエスト" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/pants-7.png" alt="パンツ-ポケット" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/pants-8.png" alt="パンツ-裾" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/pants-9.png" alt="パンツ-全体" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑩</span><img src="images/samples/pants-10.png" alt="パンツ-素材感" loading="lazy"></div>
+        </div>
+      </div>
+
+      <!-- シャツ（Ralph Lauren） -->
+      <div class="gallery-category" id="cat-shirt">
+        <p class="gallery-cat-label">Ralph Lauren シャツ ／ 9カット撮影例</p>
+        <div class="gallery-shot-row">
+          <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/shirt-1.png" alt="シャツ-サムネイル" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/shirt-2.png" alt="シャツ-正面" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/shirt-3.png" alt="シャツ-背面" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/shirt-4.png" alt="シャツ-ブランドタグ" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/shirt-5.png" alt="シャツ-品質タグ" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/shirt-6.png" alt="シャツ-ディテール" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/shirt-7.png" alt="シャツ-ボタン" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/shirt-8.png" alt="シャツ-状態" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/shirt-9.png" alt="シャツ-全体" loading="lazy"></div>
+        </div>
+      </div>
+
+      <!-- シューズ（RED WING） -->
+      <div class="gallery-category" id="cat-shoes">
+        <p class="gallery-cat-label">RED WING シューズ ／ 10カット撮影例</p>
+        <div class="gallery-shot-row">
+          <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/shoes-1.png" alt="シューズ-サムネイル" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/shoes-2.png" alt="シューズ-正面" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/shoes-3.png" alt="シューズ-背面" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/shoes-4.png" alt="シューズ-ブランドタグ" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/shoes-5.png" alt="シューズ-品質タグ" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/shoes-6.png" alt="シューズ-サイズ表記" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/shoes-7.png" alt="シューズ-ソール" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/shoes-8.png" alt="シューズ-側面" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/shoes-9.png" alt="シューズ-全体" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑩</span><img src="images/samples/shoes-10.png" alt="シューズ-素材感" loading="lazy"></div>
+        </div>
+      </div>
+
+      <!-- バッグ（Coach） -->
+      <div class="gallery-category" id="cat-bag">
+        <p class="gallery-cat-label">Coach バッグ ／ 9カット撮影例</p>
+        <div class="gallery-shot-row">
+          <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/bag-1.png" alt="バッグ-サムネイル" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/bag-2.png" alt="バッグ-正面" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/bag-3.png" alt="バッグ-背面" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/bag-4.png" alt="バッグ-ブランドタグ" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/bag-5.png" alt="バッグ-内側" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/bag-6.png" alt="バッグ-金具" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/bag-7.png" alt="バッグ-ファスナー" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/bag-8.png" alt="バッグ-状態" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/bag-9.png" alt="バッグ-全体" loading="lazy"></div>
+        </div>
+      </div>
+
+      <!-- アクセサリー（CHANEL） -->
+      <div class="gallery-category" id="cat-accessory">
+        <p class="gallery-cat-label">CHANEL ネックレス ／ 9カット撮影例</p>
+        <div class="gallery-shot-row">
+          <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/accessory-1.png" alt="アクセサリー-サムネイル" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/accessory-2.png" alt="アクセサリー-正面" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/accessory-3.png" alt="アクセサリー-背面" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/accessory-4.png" alt="アクセサリー-ブランドタグ" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/accessory-5.png" alt="アクセサリー-刻印" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/accessory-6.png" alt="アクセサリー-留め具" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/accessory-7.png" alt="アクセサリー-ディテール" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/accessory-8.png" alt="アクセサリー-状態" loading="lazy"></div>
+          <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/accessory-9.png" alt="アクセサリー-全体" loading="lazy"></div>
+        </div>
+      </div>
+
     </div>
   </section>
 
@@ -496,6 +613,16 @@
   </footer>
 
   <script>
+    // ギャラリー タブ切り替え
+    document.querySelectorAll('.gallery-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.gallery-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.gallery-category').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('cat-' + tab.dataset.category).classList.add('active');
+      });
+    });
+
     const hamburger = document.getElementById('hamburger');
     const mobileMenu = document.getElementById('mobileMenu');
 
