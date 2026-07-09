@@ -203,14 +203,14 @@
             <span>1商品 <strong>5枚以上</strong> 撮影</span>
           </div>
           <div class="gallery-info-shots">
-            <span><i class="fa-solid fa-circle-check"></i> ①サムネイル</span>
-            <span><i class="fa-solid fa-circle-check"></i> ②正面</span>
-            <span><i class="fa-solid fa-circle-check"></i> ③背面</span>
-            <span><i class="fa-solid fa-circle-check"></i> ④ブランドタグ</span>
-            <span><i class="fa-solid fa-circle-check"></i> ⑤品質表示タグ</span>
-            <span><i class="fa-solid fa-circle-check"></i> ⑥サイズ表記</span>
-            <span><i class="fa-solid fa-circle-check"></i> ⑦ダメージ箇所</span>
-            <span><i class="fa-solid fa-circle-check"></i> ⑧ポケット・ファスナーなど</span>
+            <span>①サムネイル</span>
+            <span>②正面</span>
+            <span>③背面</span>
+            <span>④ブランドタグ</span>
+            <span>⑤品質表示タグ</span>
+            <span>⑥サイズ表記</span>
+            <span>⑦ダメージ箇所</span>
+            <span>⑧ポケット・ファスナーなど</span>
           </div>
         </div>
 
@@ -243,7 +243,6 @@
             <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/jacket-7.jpg" alt="ジャケット⑦" loading="lazy"></div>
             <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/jacket-8.jpg" alt="ジャケット⑧" loading="lazy"></div>
             <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/jacket-9.jpg" alt="ジャケット⑨" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑩</span><img src="images/samples/jacket-10.jpg" alt="ジャケット⑩" loading="lazy"></div>
           </div>
         </div>
 
@@ -293,7 +292,6 @@
             <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/shoes-7.jpg" alt="シューズ⑦" loading="lazy"></div>
             <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/shoes-8.jpg" alt="シューズ⑧" loading="lazy"></div>
             <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/shoes-9.jpg" alt="シューズ⑨" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑩</span><img src="images/samples/shoes-10.jpg" alt="シューズ⑩" loading="lazy"></div>
           </div>
         </div>
 
@@ -309,7 +307,6 @@
             <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/accessory-6.jpg" alt="アクセサリー⑥" loading="lazy"></div>
             <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/accessory-7.jpg" alt="アクセサリー⑦" loading="lazy"></div>
             <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/accessory-8.jpg" alt="アクセサリー⑧" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/accessory-9.jpg" alt="アクセサリー⑨" loading="lazy"></div>
           </div>
         </div>
 
@@ -778,6 +775,13 @@
           window.scrollTo({ top, behavior: 'smooth' });
         }
       });
+    });
+  </script>
+
+  <script>
+    document.querySelectorAll('.gallery-shot-wrap img').forEach(img => {
+      img.setAttribute('draggable', 'false');
+      img.addEventListener('contextmenu', e => e.preventDefault());
     });
   </script>
 

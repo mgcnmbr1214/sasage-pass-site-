@@ -825,14 +825,14 @@ a { text-decoration: none; color: inherit; }
 /* 写真横並びスクロール行 */
 .gallery-shot-row {
   display: grid;
-  grid-template-columns: repeat(10, 1fr);
+  grid-template-columns: repeat(10, minmax(88px, 1fr));
   gap: 8px;
   overflow-x: auto;
   padding-bottom: 8px;
 }
 .gallery-shot-row::-webkit-scrollbar { height: 4px; }
 .gallery-shot-row::-webkit-scrollbar-track { background: var(--gray-mid); border-radius: 2px; }
-.gallery-shot-row::-webkit-scrollbar-thumb { background: var(--orange); border-radius: 2px; }
+.gallery-shot-row::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 2px; }
 
 .gallery-shot-wrap {
   position: relative;
@@ -849,7 +849,7 @@ a { text-decoration: none; color: inherit; }
 }
 .gallery-shot-wrap img:hover {
   border-color: var(--orange);
-  transform: scale(1.04);
+  transform: scale(1.10);
   box-shadow: var(--shadow-strong);
   z-index: 1;
   position: relative;
