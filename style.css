@@ -672,36 +672,52 @@ a { text-decoration: none; color: inherit; }
 }
 .svc-detail-points li i { color: var(--orange); flex-shrink: 0; }
 
-/* サービス横アイコン画像（透過PNG・背景なし） */
+/* サービス横アイコン画像（透過PNG・背景なし・枠なし） */
 .svc-icon-display {
   object-fit: contain !important;
   background: none;
   padding: 0;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  border: none !important;
 }
 
-/* サービスブロック背景画像（白オーバーレイなし） */
-#svc-cleaning,
-#svc-photo,
-#svc-measurement,
-#svc-listing {
-  border-radius: 16px;
-  padding: 48px 36px;
+/* サービスブロック：フルワイド背景 */
+.section-features { padding-bottom: 0; }
+
+.svc-bg-wrap {
+  padding: 80px 0;
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  position: relative;
+  scroll-margin-top: 96px;
 }
-#svc-cleaning  { background-image: url('images/backgrounds/cleaning.jpg'); }
-#svc-photo     { background-image: url('images/backgrounds/photo.jpg'); }
-#svc-measurement { background-image: url('images/backgrounds/measurement.jpg'); }
-#svc-listing   { background-image: url('images/backgrounds/listing.jpg'); }
+.svc-bg-wrap .svc-detail { padding: 0; }
 
-/* テキスト部分だけ白パネルで可読性を確保 */
-#svc-cleaning .svc-detail-body,
-#svc-photo .svc-detail-body,
-#svc-measurement .svc-detail-body,
-#svc-listing .svc-detail-body {
-  background: rgba(255,255,255,0.92);
+#svc-cleaning {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12)),
+    url('images/backgrounds/cleaning.jpg');
+}
+#svc-photo {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12)),
+    url('images/backgrounds/photo.jpg');
+}
+#svc-measurement {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12)),
+    url('images/backgrounds/measurement.jpg');
+}
+#svc-listing {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12)),
+    url('images/backgrounds/listing.jpg');
+}
+
+/* テキストエリアだけ白パネルで可読性確保 */
+.svc-bg-wrap .svc-detail-body {
+  background: rgba(255,255,255,0.90);
   border-radius: 14px;
   padding: 28px 32px;
   backdrop-filter: blur(4px);
