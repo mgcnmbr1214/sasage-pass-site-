@@ -416,18 +416,16 @@
                 <span class="svc-ec-dot svc-ec-dot-red"></span>
                 <span class="svc-ec-dot svc-ec-dot-yellow"></span>
                 <span class="svc-ec-dot svc-ec-dot-green"></span>
-                <span class="svc-ec-topbar-title"><i class="fa-solid fa-store"></i> <span>商品登録フォーム</span></span>
-                <span class="svc-ec-status"><span class="svc-ec-status-dot"></span><span>スタッフ入力中</span></span>
+                <span class="svc-ec-status"><span class="svc-ec-status-dot"></span></span>
               </div>
               <div class="svc-ec-body">
                 <div class="svc-ec-image">
-                  <span class="svc-ec-image-tag">商品画像</span>
                   <img src="images/steps/sample-jacket.jpg" alt="Levi's デニムジャケット" loading="lazy" draggable="false">
                 </div>
                 <div class="svc-ec-form">
                   <label class="svc-ec-label">商品名</label>
                   <div class="svc-ec-field svc-ec-field-title">
-                    <span class="svc-ec-typing" data-text="Levi's 70500-0401 ユーロモデル デニム トラッカージャケット　L ビンテージ 00年代 クロアチア製"></span><span class="svc-ec-cursor"></span>
+                    <span class="svc-ec-typing" data-text="Levi's 70500-0401 ユーロモデル ビンテージ デニム トラッカージャケット Lサイズ 00年代 クロアチア製"></span><span class="svc-ec-cursor"></span>
                   </div>
                   <div class="svc-ec-grid">
                     <div class="svc-ec-item" style="--d:1"><label class="svc-ec-label">表記サイズ</label><div class="svc-ec-field">L<i class="fa-solid fa-check svc-ec-check"></i></div></div>
@@ -903,6 +901,7 @@
       if (!mock) return;
       var typingEl = mock.querySelector('.svc-ec-typing');
       var cursorEl = mock.querySelector('.svc-ec-cursor');
+      var fieldEl = mock.querySelector('.svc-ec-field-title');
       var fullText = typingEl ? (typingEl.getAttribute('data-text') || '') : '';
       var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -917,6 +916,7 @@
         var timer = setInterval(function () {
           i++;
           typingEl.textContent = fullText.slice(0, i);
+          if (fieldEl) fieldEl.scrollLeft = fieldEl.scrollWidth;
           if (i >= fullText.length) {
             clearInterval(timer);
             setTimeout(function () {
