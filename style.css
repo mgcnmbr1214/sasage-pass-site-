@@ -2,19 +2,19 @@
    CSS Variables
    ============================================= */
 :root {
-  --navy: #1a2e5a;
-  --navy-dark: #0f1d3b;
-  --orange: #f26522;
-  --orange-dark: #d4541b;
+  --navy: #3B6EF8;
+  --navy-dark: #2454D6;
+  --orange: #FF6B35;
+  --orange-dark: #E8511E;
   --white: #fff;
-  --gray: #f5f6f8;
-  --gray-mid: #e8eaf0;
-  --text: #222;
-  --text-mid: #555;
-  --text-light: #888;
+  --gray: #F4F7FF;
+  --gray-mid: #DDE4F8;
+  --text: #1E293B;
+  --text-mid: #5A6A8A;
+  --text-light: #8A97B8;
   --radius: 12px;
-  --shadow: 0 4px 20px rgba(0,0,0,0.08);
-  --shadow-strong: 0 8px 32px rgba(0,0,0,0.14);
+  --shadow: 0 4px 20px rgba(0,0,0,0.07);
+  --shadow-strong: 0 8px 32px rgba(0,0,0,0.12);
   --transition: 0.22s ease;
 }
 
@@ -62,7 +62,7 @@ a { text-decoration: none; color: inherit; }
   background: var(--orange);
   color: var(--white);
 }
-.btn-primary:hover { background: var(--orange-dark); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(242,101,34,0.4); }
+.btn-primary:hover { background: var(--orange-dark); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255,107,53,0.4); }
 
 .btn-outline {
   background: transparent;
@@ -123,7 +123,7 @@ a { text-decoration: none; color: inherit; }
   border-radius: 6px;
   transition: var(--transition);
 }
-.nav > a:hover { color: var(--orange); background: rgba(242,101,34,0.07); }
+.nav > a:hover { color: var(--orange); background: rgba(59,110,248,0.07); }
 
 /* Dropdown */
 .nav-dropdown {
@@ -142,7 +142,7 @@ a { text-decoration: none; color: inherit; }
   transition: var(--transition);
   white-space: nowrap;
 }
-.nav-dropdown-trigger:hover { color: var(--orange); background: rgba(242,101,34,0.07); }
+.nav-dropdown-trigger:hover { color: var(--orange); background: rgba(59,110,248,0.07); }
 
 .nav-caret {
   font-size: 10px;
@@ -244,7 +244,7 @@ a { text-decoration: none; color: inherit; }
    ============================================= */
 .hero {
   padding: 148px 0 80px;
-  background: linear-gradient(135deg, var(--navy-dark) 0%, var(--navy) 60%, #2a4a8a 100%);
+  background: linear-gradient(135deg, #1A3FBF 0%, var(--navy) 60%, #5B8BFF 100%);
   color: var(--white);
 }
 
@@ -365,7 +365,7 @@ a { text-decoration: none; color: inherit; }
   text-transform: uppercase;
   margin-bottom: 8px;
 }
-.section-label-light { color: rgba(242,101,34,0.8); }
+.section-label-light { color: rgba(255,107,53,0.85); }
 .section-title {
   font-size: clamp(22px, 3vw, 32px);
   font-weight: 900;
@@ -418,12 +418,12 @@ a { text-decoration: none; color: inherit; }
   pointer-events: none;
   letter-spacing: -2px;
 }
-.flow-h-step:hover { border-color: var(--orange); box-shadow: 0 10px 40px rgba(242,101,34,0.15); transform: translateY(-4px); }
+.flow-h-step:hover { border-color: var(--orange); box-shadow: 0 10px 40px rgba(59,110,248,0.15); transform: translateY(-4px); }
 
 .flow-h-step-main {
   border-color: var(--orange);
-  background: linear-gradient(160deg, #fff8f3 0%, #fff 100%);
-  box-shadow: 0 8px 36px rgba(242,101,34,0.18);
+  background: linear-gradient(160deg, #FFF5F1 0%, #fff 100%);
+  box-shadow: 0 8px 36px rgba(255,107,53,0.18);
 }
 .flow-h-step-main::before {
   content: '';
@@ -468,13 +468,13 @@ a { text-decoration: none; color: inherit; }
   margin: 14px auto 18px;
   color: var(--white);
   font-size: 26px;
-  box-shadow: 0 4px 16px rgba(26,46,90,0.25);
+  box-shadow: 0 4px 16px rgba(59,110,248,0.25);
   transition: var(--transition);
 }
 .flow-h-step:hover .flow-h-icon { transform: scale(1.08); }
 .flow-h-icon-orange {
   background: linear-gradient(135deg, var(--orange), var(--orange-dark));
-  box-shadow: 0 4px 16px rgba(242,101,34,0.35);
+  box-shadow: 0 4px 16px rgba(255,107,53,0.35);
 }
 
 .flow-h-step h3 {
@@ -746,7 +746,7 @@ a { text-decoration: none; color: inherit; }
 /* 偶数ブロック：薄グレー */
 #svc-photo,
 #svc-listing {
-  background: #f3f5f9;
+  background: #EEF2FF;
 }
 
 /* 上部アクセントライン */
@@ -780,7 +780,7 @@ a { text-decoration: none; color: inherit; }
   width: 38px;
   height: 38px;
   border-radius: 10px;
-  background: #0f4c81;
+  background: var(--navy);
   color: white;
   display: flex;
   align-items: center;
@@ -848,7 +848,7 @@ a { text-decoration: none; color: inherit; }
 }
 .check { color: var(--orange); font-size: 20px; }
 .cross { color: var(--gray-mid); font-size: 18px; }
-.plan-featured td { background: #fff8f4; }
+.plan-featured td { background: #EEF2FF; }
 .plan-badge {
   display: inline-block;
   background: var(--orange);
