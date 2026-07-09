@@ -8,7 +8,7 @@ Add-Type -AssemblyName System.Web
 $AdminDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $SiteRoot  = Split-Path -Parent $AdminDir
 $IndexPath = Join-Path $SiteRoot "index.html"
-$Port      = 8787
+$Port      = 8799
 
 # ------------------------------------------------------------
 # 編集セクションのグループ分け（IDの接頭辞→表示名）
@@ -143,7 +143,7 @@ function Get-Fields {
 # 1フィールド分の新しい内側HTMLを作る
 # ------------------------------------------------------------
 function Build-InnerHtml {
-    param([string]$type, [string]$newValue, [string]$existingInner)
+    param([string]$type, [string]$newValue, [string]$existingInner, [string]$baseIndent = "          ")
 
     if ($type -eq "list") {
         # 既存の <li> からアイコンHTMLを順番に取得し、新しい行数に合わせて再利用
@@ -160,9 +160,9 @@ function Build-InnerHtml {
         for ($i = 0; $i -lt $lines.Count; $i++) {
             $icon = if ($i -lt $icons.Count) { $icons[$i] } else { $icons[$icons.Count - 1] }
             $text = ConvertTo-HtmlText $lines[$i].Trim()
-            [void]$out.Append("            <li>$icon $text</li>`n")
+            [void]$out.Append("$baseIndent  <li>$icon $text</li>`n")
         }
-        [void]$out.Append("          ")
+        [void]$out.Append("$baseIndent")
         return $out.ToString()
     } elseif ($type -eq "richtext") {
         return $newValue
@@ -181,19 +181,31 @@ function Save-Fields {
     $attrRegex = [regex]'data-edit-id="([^"]+)"\s+data-edit-label="([^"]+)"\s+data-edit-type="([^"]+)"'
 
     # 後ろから置換していくと、前方のインデックスがズレない
-    $matches = @($attrRegex.Matches($html))
-    for ($i = $matches.Count - 1; $i -ge 0; $i--) {
-        $m = $matches[$i]
+    # ($matches は -match 演算子が使う自動変数と衝突するため $attrMatches という名前にする)
+    $attrMatches = @($attrRegex.Matches($html))
+    for ($i = $attrMatches.Count - 1; $i -ge 0; $i--) {
+        $m = $attrMatches[$i]
         $id = $m.Groups[1].Value
         if (-not $updates.ContainsKey($id)) { continue }
 
         $type = $m.Groups[3].Value
         $range = Get-EditableElementRange -html $html -attrPos $m.Index
+
+        # 開始タグがある行の行頭インデントを取得（リスト再構築時のインデント合わせ用）
+        $ltPos = $html.LastIndexOf("<", $m.Index)
+        $lineStart = $html.LastIndexOf("`n", $ltPos) + 1
+        $baseIndent = $html.Substring($lineStart, $ltPos - $lineStart)
+        if ($baseIndent -match '\S') { $baseIndent = "          " }
+
         $existingInner = $html.Substring($range.InnerStart, $range.InnerEnd - $range.InnerStart)
-        $newInner = Build-InnerHtml -type $type -newValue $updates[$id] -existingInner $existingInner
+        $newInner = Build-InnerHtml -type $type -newValue $updates[$id] -existingInner $existingInner -baseIndent $baseIndent
 
         $html = $html.Substring(0, $range.InnerStart) + $newInner + $html.Substring($range.InnerEnd)
     }
+
+    # 改行コードを CRLF に統一（元ファイルとの余分な差分を防ぐ）
+    $html = $html -replace "`r`n", "`n"
+    $html = $html -replace "`n", "`r`n"
 
     [System.IO.File]::WriteAllText($IndexPath, $html, [System.Text.Encoding]::UTF8)
 }
@@ -203,18 +215,36 @@ function Save-Fields {
 # ------------------------------------------------------------
 function Publish-ToGit {
     Push-Location $SiteRoot
+    # git は通常メッセージも標準エラーに出すため、2>&1 と組み合わせると
+    # $ErrorActionPreference = "Stop" 環境では正常時にも例外化してしまう。
+    # ここではローカルに Continue へ緩め、成否は $LASTEXITCODE で判定する。
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     try {
-        $addOut = & git add index.html 2>&1 | Out-String
-        $statusOut = & git status --porcelain 2>&1 | Out-String
-        if ($statusOut.Trim() -eq "") {
+        # index.html 自体に変更があるかどうかだけを見る（リポジトリ全体の未追跡ファイルは無視）
+        $diffOut = (& git diff --name-only -- index.html) -join "`n"
+        $addOut  = (& git status --porcelain -- index.html) -join "`n"
+        if ($diffOut.Trim() -eq "" -and $addOut.Trim() -eq "") {
             return @{ ok = $true; output = "変更はありませんでした（公開済みの内容と同じです）。" }
         }
-        $commitOut = & git commit -m "管理画面からサイト内容を更新" 2>&1 | Out-String
-        $pushOut = & git push 2>&1 | Out-String
-        return @{ ok = $true; output = ($addOut + $commitOut + $pushOut) }
+
+        $addResult = (& git add index.html 2>&1) -join "`n"
+
+        $commitResult = (& git commit -m "管理画面からサイト内容を更新" 2>&1) -join "`n"
+        if ($LASTEXITCODE -ne 0) {
+            return @{ ok = $false; output = "コミットに失敗しました:`n$commitResult" }
+        }
+
+        $pushResult = (& git push 2>&1) -join "`n"
+        if ($LASTEXITCODE -ne 0) {
+            return @{ ok = $false; output = "push に失敗しました:`n$pushResult" }
+        }
+
+        return @{ ok = $true; output = "$commitResult`n$pushResult" }
     } catch {
         return @{ ok = $false; output = $_.Exception.Message }
     } finally {
+        $ErrorActionPreference = $prevEAP
         Pop-Location
     }
 }

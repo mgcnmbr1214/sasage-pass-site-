@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sasage-site",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "3000", "--directory", "C:\\Users\\81906\\Documents\\sasage-pass-site"],
+      "port": 3000
+    },
+    {
+      "name": "sasage-admin",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\Users\\81906\\Documents\\sasage-pass-site\\admin\\admin-server.ps1"],
+      "port": 8799
+    }
+  ]
+}

@@ -242,6 +242,7 @@
           inputEl.value = f.value;
           inputEl.rows = f.type === 'list' ? Math.max(2, f.value.split('\n').length) : 2;
         }
+        inputEl.id = 'field-' + f.id;
         fieldDiv.appendChild(inputEl);
 
         if (f.type === 'list') {
