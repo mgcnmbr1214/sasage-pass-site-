@@ -601,9 +601,9 @@ a { text-decoration: none; color: inherit; }
 .svc-heading-img {
   display: block;
   width: 100%;
-  max-width: 620px;
+  max-width: 300px;
   height: auto;
-  margin: 0 auto 28px;
+  margin: 0 0 32px;
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
@@ -1487,7 +1487,7 @@ a { text-decoration: none; color: inherit; }
     flex-direction: column;
     gap: 28px;
   }
-  .svc-heading-img { max-width: 460px; margin-bottom: 20px; }
+  .svc-heading-img { max-width: 240px; margin-bottom: 24px; }
 
   .platform-grid { grid-template-columns: repeat(4, 1fr); gap: 16px; }
   .plat-logo { width: 88px; height: 58px; }
