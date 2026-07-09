@@ -318,24 +318,26 @@ a { text-decoration: none; color: inherit; }
 /* サービスサムネイルグリッド（ヒーロー右側） */
 .hero-svc-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  width: 360px;
+  max-width: 100%;
 }
 .hero-svc-card {
   position: relative;
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
   display: block;
   transition: transform 0.22s, box-shadow 0.22s;
   box-shadow: 0 4px 16px rgba(0,0,0,0.25);
 }
 .hero-svc-card:hover {
-  transform: translateY(-4px) scale(1.02);
-  box-shadow: 0 10px 28px rgba(0,0,0,0.4);
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
 }
 .hero-svc-card img {
   width: 100%;
-  aspect-ratio: 1 / 1;
+  height: 150px;
   object-fit: cover;
   display: block;
 }
@@ -344,10 +346,10 @@ a { text-decoration: none; color: inherit; }
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 20px 12px 10px;
+  padding: 18px 10px 8px;
   background: linear-gradient(transparent, rgba(0,0,0,0.65));
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   text-align: center;
   letter-spacing: 0.04em;
@@ -678,43 +680,38 @@ a { text-decoration: none; color: inherit; }
 }
 .svc-detail-points li i { color: var(--orange); flex-shrink: 0; }
 
-/* PNG アイコン */
-.svc-icon-img-wrap {
-  background: transparent !important;
-  border-radius: 0 !important;
-  width: 64px;
-  height: 64px;
-}
-.svc-icon-img {
-  width: 64px;
-  height: 64px;
-  object-fit: contain;
+/* サービス横アイコン画像（object-fit: contain で全体表示） */
+.svc-icon-display {
+  object-fit: contain !important;
+  background: var(--gray);
+  padding: 16px;
 }
 
-/* サービスセクション背景画像 */
+/* サービスブロック背景画像 */
 #svc-cleaning,
 #svc-photo,
 #svc-measurement,
 #svc-listing {
-  border-radius: var(--radius);
+  border-radius: 16px;
+  padding: 48px 36px;
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
 }
 #svc-cleaning {
-  background-image: linear-gradient(rgba(255,255,255,0.93), rgba(255,255,255,0.93)),
+  background-image: linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.88)),
     url('images/backgrounds/cleaning.jpg');
 }
 #svc-photo {
-  background-image: linear-gradient(rgba(255,255,255,0.93), rgba(255,255,255,0.93)),
+  background-image: linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.88)),
     url('images/backgrounds/photo.jpg');
 }
 #svc-measurement {
-  background-image: linear-gradient(rgba(255,255,255,0.93), rgba(255,255,255,0.93)),
+  background-image: linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.88)),
     url('images/backgrounds/measurement.jpg');
 }
 #svc-listing {
-  background-image: linear-gradient(rgba(255,255,255,0.93), rgba(255,255,255,0.93)),
+  background-image: linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.88)),
     url('images/backgrounds/listing.jpg');
 }
 
