@@ -314,45 +314,37 @@ a { text-decoration: none; color: inherit; }
 }
 .hero-actions .btn-outline:hover { background: rgba(255,255,255,0.15); color: var(--white); }
 
-.hero-visual { flex: 0 0 380px; }
+.hero-visual { flex: 0 0 440px; }
 /* サービスサムネイルグリッド（ヒーロー右側） */
 .hero-svc-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  width: 360px;
-  max-width: 100%;
+  gap: 10px;
+  width: 100%;
 }
 .hero-svc-card {
   position: relative;
-  border-radius: 10px;
+  border-radius: 14px;
   overflow: hidden;
   display: block;
-  transition: transform 0.22s, box-shadow 0.22s;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  transition: transform 0.25s, box-shadow 0.25s;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+  border: 2px solid rgba(255,255,255,0.15);
 }
 .hero-svc-card:hover {
-  transform: translateY(-3px) scale(1.02);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  transform: translateY(-5px) scale(1.03);
+  box-shadow: 0 14px 36px rgba(0,0,0,0.45);
+  border-color: var(--orange);
 }
 .hero-svc-card img {
   width: 100%;
-  height: 150px;
+  height: 170px;
   object-fit: cover;
   display: block;
+  transition: transform 0.35s;
 }
-.hero-svc-card span {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 18px 10px 8px;
-  background: linear-gradient(transparent, rgba(0,0,0,0.65));
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  text-align: center;
-  letter-spacing: 0.04em;
+.hero-svc-card:hover img {
+  transform: scale(1.06);
 }
 
 /* =============================================
@@ -680,14 +672,14 @@ a { text-decoration: none; color: inherit; }
 }
 .svc-detail-points li i { color: var(--orange); flex-shrink: 0; }
 
-/* サービス横アイコン画像（object-fit: contain で全体表示） */
+/* サービス横アイコン画像（透過PNG・背景なし） */
 .svc-icon-display {
   object-fit: contain !important;
-  background: var(--gray);
-  padding: 16px;
+  background: none;
+  padding: 0;
 }
 
-/* サービスブロック背景画像 */
+/* サービスブロック背景画像（白オーバーレイなし） */
 #svc-cleaning,
 #svc-photo,
 #svc-measurement,
@@ -697,22 +689,22 @@ a { text-decoration: none; color: inherit; }
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
+  position: relative;
 }
-#svc-cleaning {
-  background-image: linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.88)),
-    url('images/backgrounds/cleaning.jpg');
-}
-#svc-photo {
-  background-image: linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.88)),
-    url('images/backgrounds/photo.jpg');
-}
-#svc-measurement {
-  background-image: linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.88)),
-    url('images/backgrounds/measurement.jpg');
-}
-#svc-listing {
-  background-image: linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.88)),
-    url('images/backgrounds/listing.jpg');
+#svc-cleaning  { background-image: url('images/backgrounds/cleaning.jpg'); }
+#svc-photo     { background-image: url('images/backgrounds/photo.jpg'); }
+#svc-measurement { background-image: url('images/backgrounds/measurement.jpg'); }
+#svc-listing   { background-image: url('images/backgrounds/listing.jpg'); }
+
+/* テキスト部分だけ白パネルで可読性を確保 */
+#svc-cleaning .svc-detail-body,
+#svc-photo .svc-detail-body,
+#svc-measurement .svc-detail-body,
+#svc-listing .svc-detail-body {
+  background: rgba(255,255,255,0.92);
+  border-radius: 14px;
+  padding: 28px 32px;
+  backdrop-filter: blur(4px);
 }
 
 .svc-option-box {
