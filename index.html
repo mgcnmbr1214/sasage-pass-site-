@@ -889,24 +889,46 @@
       var fieldEl = mock.querySelector('.svc-ec-field-title');
       var fullText = typingEl ? (typingEl.getAttribute('data-text') || '') : '';
       var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var revealed = false;
+      var BASE_SIZE = 13;
+      var MIN_SIZE = 10;
+
+      function fitFontSize() {
+        if (!fieldEl || !typingEl) return BASE_SIZE;
+        var available = fieldEl.clientWidth - 24;
+        var size = BASE_SIZE;
+        var prevText = typingEl.textContent;
+        typingEl.style.fontSize = size + 'px';
+        typingEl.textContent = fullText;
+        while (typingEl.getBoundingClientRect().width > available && size > MIN_SIZE) {
+          size -= 0.5;
+          typingEl.style.fontSize = size + 'px';
+        }
+        typingEl.textContent = prevText;
+        return size;
+      }
 
       function reveal() {
+        var size = fitFontSize();
+        if (cursorEl) cursorEl.style.height = (size + 2) + 'px';
+
         if (reduced || !typingEl) {
           if (typingEl) typingEl.textContent = fullText;
           if (cursorEl) cursorEl.classList.add('svc-ec-cursor-hidden');
           mock.classList.add('svc-ec-revealed');
+          revealed = true;
           return;
         }
         var i = 0;
         var timer = setInterval(function () {
           i++;
           typingEl.textContent = fullText.slice(0, i);
-          if (fieldEl) fieldEl.scrollLeft = fieldEl.scrollWidth;
           if (i >= fullText.length) {
             clearInterval(timer);
             setTimeout(function () {
               if (cursorEl) cursorEl.classList.add('svc-ec-cursor-hidden');
               mock.classList.add('svc-ec-revealed');
+              revealed = true;
             }, 450);
           }
         }, 32);
@@ -925,6 +947,17 @@
       } else {
         reveal();
       }
+
+      var resizeTimer;
+      window.addEventListener('resize', function () {
+        if (!revealed || !typingEl) return;
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function () {
+          var size = fitFontSize();
+          typingEl.textContent = fullText;
+          if (cursorEl) cursorEl.style.height = (size + 2) + 'px';
+        }, 150);
+      });
     })();
   </script>
 
