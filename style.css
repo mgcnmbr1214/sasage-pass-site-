@@ -682,46 +682,16 @@ a { text-decoration: none; color: inherit; }
   border: none !important;
 }
 
-/* サービスブロック：フルワイド背景 */
+/* サービスブロック */
 .section-features { padding-bottom: 0; }
 
 .svc-bg-wrap {
   padding: 80px 0;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
   scroll-margin-top: 96px;
 }
 .svc-bg-wrap .svc-detail { padding: 0; }
 
-#svc-cleaning {
-  background-image:
-    linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12)),
-    url('images/backgrounds/cleaning.jpg');
-}
-#svc-photo {
-  background-image:
-    linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12)),
-    url('images/backgrounds/photo.jpg');
-}
-#svc-measurement {
-  background-image:
-    linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12)),
-    url('images/backgrounds/measurement.jpg');
-}
-#svc-listing {
-  background-image:
-    linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12)),
-    url('images/backgrounds/listing.jpg');
-}
-
-/* テキストエリアだけ白パネルで可読性確保 */
-.svc-bg-wrap .svc-detail-body {
-  background: rgba(255,255,255,0.90);
-  border-radius: 14px;
-  padding: 28px 32px;
-  backdrop-filter: blur(4px);
-}
+#svc-cleaning, #svc-photo, #svc-measurement, #svc-listing { background: none; }
 
 .svc-option-box {
   display: flex;
