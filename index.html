@@ -227,7 +227,12 @@
             <li><i class="fa-solid fa-circle-check"></i> ディテール・タグ・状態確認カット含む</li>
           </ul>
           <div class="svc-spec-strip">
-            <p class="svc-spec-label"><i class="fa-solid fa-file-image"></i> 納品フォーマット：大手ECモールの基準に対応</p>
+            <p class="svc-spec-label"><i class="fa-solid fa-file-image"></i> 基本納品フォーマット（指定なしお任せの場合）</p>
+            <div class="svc-spec-samples">
+              <div class="svc-spec-sample-img"><img src="images/steps/format-shoes.jpg" alt="納品フォーマットサンプル：シューズ" loading="lazy" draggable="false"></div>
+              <div class="svc-spec-sample-img"><img src="images/steps/format-tshirt.jpg" alt="納品フォーマットサンプル：Tシャツ" loading="lazy" draggable="false"></div>
+              <div class="svc-spec-sample-img"><img src="images/steps/format-accessory.jpg" alt="納品フォーマットサンプル：アクセサリー" loading="lazy" draggable="false"></div>
+            </div>
             <div class="svc-spec-chips">
               <span class="svc-spec-chip">白背景</span>
               <span class="svc-spec-chip">アスペクト比 1:1</span>
@@ -868,7 +873,7 @@
   </script>
 
   <script>
-    document.querySelectorAll('.gallery-shot-wrap img, .svc-substep-img img').forEach(img => {
+    document.querySelectorAll('.gallery-shot-wrap img, .svc-substep-img img, .svc-spec-sample-img img').forEach(img => {
       img.setAttribute('draggable', 'false');
       img.addEventListener('contextmenu', e => e.preventDefault());
     });
