@@ -598,6 +598,17 @@ a { text-decoration: none; color: inherit; }
 /* =============================================
    サービス詳細
    ============================================= */
+.svc-heading-img {
+  display: block;
+  width: 100%;
+  max-width: 620px;
+  height: auto;
+  margin: 0 auto 28px;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 .svc-detail {
   display: flex;
   align-items: flex-start;
@@ -605,57 +616,6 @@ a { text-decoration: none; color: inherit; }
   padding: 56px 0;
 }
 .svc-detail-reverse { flex-direction: row-reverse; }
-
-.svc-detail-icon-col {
-  flex: 0 0 260px;
-  text-align: center;
-}
-
-.svc-thumb {
-  width: 100%;
-  max-width: 260px;
-  height: 200px;
-  object-fit: cover;
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-strong);
-}
-
-.svc-thumb-placeholder {
-  width: 260px;
-  height: 200px;
-  background: var(--gray);
-  border: 2px dashed var(--gray-mid);
-  border-radius: var(--radius);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: var(--text-light);
-}
-.svc-thumb-placeholder i { font-size: 36px; }
-.svc-thumb-placeholder span { font-size: 11px; text-align: center; padding: 0 16px; }
-
-.svc-thumb-wrap {
-  position: relative;
-  display: inline-block;
-  width: 100%;
-  max-width: 260px;
-}
-
-.svc-free-pill {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  background: #2c6e49;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 5px 14px;
-  border-radius: 50px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-  letter-spacing: 0.05em;
-}
 
 .svc-detail-body { flex: 1; min-width: 0; }
 
@@ -1527,9 +1487,7 @@ a { text-decoration: none; color: inherit; }
     flex-direction: column;
     gap: 28px;
   }
-  .svc-detail-icon-col { flex: none; width: 100%; display: flex; flex-direction: column; align-items: center; }
-  .svc-thumb { max-width: 100%; height: 180px; }
-  .svc-thumb-placeholder { width: 100%; max-width: 360px; }
+  .svc-heading-img { max-width: 460px; margin-bottom: 20px; }
 
   .platform-grid { grid-template-columns: repeat(4, 1fr); gap: 16px; }
   .plat-logo { width: 88px; height: 58px; }

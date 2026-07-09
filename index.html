@@ -156,13 +156,8 @@
     <!-- クリーニング -->
     <div class="svc-bg-wrap" id="svc-cleaning">
       <div class="container">
+      <img src="images/headings/cleaning.png" alt="クリーニング" class="svc-heading-img" loading="lazy" draggable="false">
       <div class="svc-detail">
-        <div class="svc-detail-icon-col">
-          <div class="svc-thumb-wrap">
-            <img src="images/thumbnails/cleaning.jpg" alt="クリーニング" class="svc-thumb">
-            <span class="svc-free-pill">無料</span>
-          </div>
-        </div>
         <div class="svc-detail-body">
           <div class="svc-detail-header">
             <div class="svc-detail-icon-wrap"><i class="fa-solid fa-soap"></i></div>
@@ -207,10 +202,8 @@
     <!-- 撮影 -->
     <div class="svc-bg-wrap" id="svc-photo">
       <div class="container">
+      <img src="images/headings/photo.png" alt="撮影" class="svc-heading-img" loading="lazy" draggable="false">
       <div class="svc-detail svc-detail-reverse">
-        <div class="svc-detail-icon-col">
-          <img src="images/thumbnails/photo.jpg" alt="撮影" class="svc-thumb">
-        </div>
         <div class="svc-detail-body">
           <div class="svc-detail-header">
             <div class="svc-detail-icon-wrap" style="background:var(--navy)"><i class="fa-solid fa-camera"></i></div>
@@ -371,10 +364,8 @@
     <!-- 採寸 -->
     <div class="svc-bg-wrap" id="svc-measurement">
       <div class="container">
+      <img src="images/headings/measurement.png" alt="採寸" class="svc-heading-img" loading="lazy" draggable="false">
       <div class="svc-detail">
-        <div class="svc-detail-icon-col">
-          <img src="images/thumbnails/measurement.jpg" alt="採寸" class="svc-thumb">
-        </div>
         <div class="svc-detail-body">
           <div class="svc-detail-header">
             <div class="svc-detail-icon-wrap" style="background:#2c6e49"><i class="fa-solid fa-ruler"></i></div>
@@ -432,10 +423,8 @@
     <!-- 出品 -->
     <div class="svc-bg-wrap" id="svc-listing">
       <div class="container">
+      <img src="images/headings/listing.png" alt="出品" class="svc-heading-img" loading="lazy" draggable="false">
       <div class="svc-detail svc-detail-reverse">
-        <div class="svc-detail-icon-col">
-          <img src="images/thumbnails/listing.jpg" alt="出品" class="svc-thumb">
-        </div>
         <div class="svc-detail-body">
           <div class="svc-detail-header">
             <div class="svc-detail-icon-wrap" style="background:#7b2d8b"><i class="fa-solid fa-store"></i></div>
@@ -874,7 +863,7 @@
   </script>
 
   <script>
-    document.querySelectorAll('.gallery-shot-wrap img, .svc-substep-img img, .svc-spec-sample-img img, .svc-ec-image img, .svc-measure-diagram img').forEach(img => {
+    document.querySelectorAll('.gallery-shot-wrap img, .svc-substep-img img, .svc-spec-sample-img img, .svc-ec-image img, .svc-measure-diagram img, .svc-heading-img').forEach(img => {
       img.setAttribute('draggable', 'false');
       img.addEventListener('contextmenu', e => e.preventDefault());
     });
