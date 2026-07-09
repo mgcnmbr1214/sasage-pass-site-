@@ -573,15 +573,25 @@ a { text-decoration: none; color: inherit; }
 .svc-thumb-placeholder i { font-size: 36px; }
 .svc-thumb-placeholder span { font-size: 11px; text-align: center; padding: 0 16px; }
 
-.svc-free-pill {
+.svc-thumb-wrap {
+  position: relative;
   display: inline-block;
-  margin-top: 12px;
-  background: #e6f4ea;
-  color: #2c6e49;
+  width: 100%;
+  max-width: 260px;
+}
+
+.svc-free-pill {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: #2c6e49;
+  color: #fff;
   font-size: 12px;
   font-weight: 700;
-  padding: 4px 14px;
+  padding: 5px 14px;
   border-radius: 50px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  letter-spacing: 0.05em;
 }
 
 .svc-detail-body { flex: 1; min-width: 0; }
