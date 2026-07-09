@@ -1303,32 +1303,26 @@ a { text-decoration: none; color: inherit; }
 .plat-logo {
   width: 110px;
   height: 72px;
+  padding: 10px;
   border-radius: 12px;
+  background: var(--white);
+  border: 1px solid var(--gray-mid);
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow);
   transition: var(--transition);
 }
-.plat-logo:hover { transform: translateY(-3px); box-shadow: var(--shadow-strong); }
-.plat-logo-text {
-  font-size: 14px;
-  font-weight: 900;
-  color: white;
-  line-height: 1.3;
-  text-align: center;
+.plat-logo:hover { transform: translateY(-3px); box-shadow: var(--shadow-strong); border-color: var(--orange); }
+.plat-logo img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
-.plat-logo-sub { font-size: 10px; color: rgba(255,255,255,0.85); font-weight: 600; }
-
-.plat-bg-mercari  { background: linear-gradient(135deg, #FF0211 0%, #ff4d57 100%); }
-.plat-bg-base     { background: linear-gradient(135deg, #111 0%, #333 100%); }
-.plat-bg-stores   { background: linear-gradient(135deg, #3b5bdb 0%, #6c8ee8 100%); }
-.plat-bg-payid    { background: linear-gradient(135deg, #003087 0%, #0055cc 100%); }
-.plat-bg-yahoo    { background: linear-gradient(135deg, #cc0000 0%, #ff3333 100%); }
-.plat-bg-yahushop { background: linear-gradient(135deg, #d50000 0%, #ff1a1a 100%); }
-.plat-bg-shopify  { background: linear-gradient(135deg, #5a8f1b 0%, #96bf48 100%); }
-.plat-bg-rakuten  { background: linear-gradient(135deg, #bf0000 0%, #e60000 100%); }
 
 /* =============================================
    FAQ
@@ -1491,7 +1485,6 @@ a { text-decoration: none; color: inherit; }
 
   .platform-grid { grid-template-columns: repeat(4, 1fr); gap: 16px; }
   .plat-logo { width: 88px; height: 58px; }
-  .plat-logo-text { font-size: 12px; }
 
   .gallery-shot-row { grid-template-columns: repeat(10, minmax(100px, 1fr)); }
 }
@@ -1504,7 +1497,6 @@ a { text-decoration: none; color: inherit; }
 
   .platform-grid { grid-template-columns: repeat(4, 1fr); gap: 10px; }
   .plat-logo { width: 70px; height: 50px; }
-  .plat-logo-text { font-size: 10px; }
   .platform-item { font-size: 10px; gap: 6px; }
 
   .contact-form { padding: 28px 22px; }
