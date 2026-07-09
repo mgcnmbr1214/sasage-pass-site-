@@ -315,20 +315,43 @@ a { text-decoration: none; color: inherit; }
 .hero-actions .btn-outline:hover { background: rgba(255,255,255,0.15); color: var(--white); }
 
 .hero-visual { flex: 0 0 380px; }
-.hero-image-placeholder {
-  background: rgba(255,255,255,0.1);
-  border: 2px dashed rgba(255,255,255,0.3);
-  border-radius: 16px;
-  height: 280px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: rgba(255,255,255,0.5);
+/* サービスサムネイルグリッド（ヒーロー右側） */
+.hero-svc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
-.hero-image-placeholder i { font-size: 48px; }
-.hero-image-placeholder p { font-size: 14px; }
+.hero-svc-card {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  display: block;
+  transition: transform 0.22s, box-shadow 0.22s;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+.hero-svc-card:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.4);
+}
+.hero-svc-card img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  display: block;
+}
+.hero-svc-card span {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 20px 12px 10px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.65));
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.04em;
+}
 
 /* =============================================
    Section Commons
@@ -654,6 +677,46 @@ a { text-decoration: none; color: inherit; }
   color: var(--text);
 }
 .svc-detail-points li i { color: var(--orange); flex-shrink: 0; }
+
+/* PNG アイコン */
+.svc-icon-img-wrap {
+  background: transparent !important;
+  border-radius: 0 !important;
+  width: 64px;
+  height: 64px;
+}
+.svc-icon-img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}
+
+/* サービスセクション背景画像 */
+#svc-cleaning,
+#svc-photo,
+#svc-measurement,
+#svc-listing {
+  border-radius: var(--radius);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+#svc-cleaning {
+  background-image: linear-gradient(rgba(255,255,255,0.93), rgba(255,255,255,0.93)),
+    url('images/backgrounds/cleaning.jpg');
+}
+#svc-photo {
+  background-image: linear-gradient(rgba(255,255,255,0.93), rgba(255,255,255,0.93)),
+    url('images/backgrounds/photo.jpg');
+}
+#svc-measurement {
+  background-image: linear-gradient(rgba(255,255,255,0.93), rgba(255,255,255,0.93)),
+    url('images/backgrounds/measurement.jpg');
+}
+#svc-listing {
+  background-image: linear-gradient(rgba(255,255,255,0.93), rgba(255,255,255,0.93)),
+    url('images/backgrounds/listing.jpg');
+}
 
 .svc-option-box {
   display: flex;
