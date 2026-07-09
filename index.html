@@ -390,23 +390,8 @@
             <li><i class="fa-solid fa-circle-check"></i> カラー・素材・状態ランクまで登録</li>
             <li><i class="fa-solid fa-circle-check"></i> CSV・Excel・紙面でのデータ納品に対応</li>
           </ul>
-          <div class="svc-measure-grid">
-            <div class="svc-measure-item">
-              <h4><i class="fa-solid fa-shirt"></i> トップス</h4>
-              <p>着丈／肩幅／身幅／袖丈</p>
-            </div>
-            <div class="svc-measure-item">
-              <h4><i class="fa-solid fa-person"></i> パンツ</h4>
-              <p>ウエスト／レングス／総丈／裾幅</p>
-            </div>
-            <div class="svc-measure-item">
-              <h4><i class="fa-solid fa-bag-shopping"></i> バッグ</h4>
-              <p>高さ／幅／マチ</p>
-            </div>
-            <div class="svc-measure-item">
-              <h4><i class="fa-solid fa-gem"></i> アクセサリー</h4>
-              <p>全長／トップの高さ・幅</p>
-            </div>
+          <div class="svc-measure-diagram">
+            <img src="images/steps/measure-points.jpg" alt="採寸箇所：トップス・ボトム・バッグ・アクセサリー" loading="lazy" draggable="false">
           </div>
           <p class="svc-note">※ 帽子・財布などその他のアイテムも、需要が高い箇所を計測します。弊社マニュアルのもと正確に計測しますが、計測方法により数mm〜数cmの誤差が発生する場合がございます。</p>
           <div class="svc-reg-sample">
@@ -889,7 +874,7 @@
   </script>
 
   <script>
-    document.querySelectorAll('.gallery-shot-wrap img, .svc-substep-img img, .svc-spec-sample-img img, .svc-ec-image img').forEach(img => {
+    document.querySelectorAll('.gallery-shot-wrap img, .svc-substep-img img, .svc-spec-sample-img img, .svc-ec-image img, .svc-measure-diagram img').forEach(img => {
       img.setAttribute('draggable', 'false');
       img.addEventListener('contextmenu', e => e.preventDefault());
     });

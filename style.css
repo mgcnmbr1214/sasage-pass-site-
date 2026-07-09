@@ -938,34 +938,22 @@ a { text-decoration: none; color: inherit; }
   border-radius: 50px;
 }
 
-/* 採寸：アイテム別採寸箇所 */
-.svc-measure-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+/* 採寸：アイテム別採寸箇所（図解） */
+.svc-measure-diagram {
   margin-top: 20px;
-}
-.svc-measure-item {
   background: var(--white);
   border: 1px solid var(--gray-mid);
   border-radius: var(--radius);
-  padding: 14px 16px;
+  padding: 18px;
   box-shadow: var(--shadow);
 }
-.svc-measure-item h4 {
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--navy-dark);
-  margin-bottom: 6px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.svc-measure-item h4 i { color: var(--navy); font-size: 14px; }
-.svc-measure-item p {
-  font-size: 12px;
-  color: var(--text-mid);
-  line-height: 1.7;
+.svc-measure-diagram img {
+  width: 100%;
+  height: auto;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 /* 採寸：登録情報サンプルカード */
@@ -1548,8 +1536,6 @@ a { text-decoration: none; color: inherit; }
   .plat-logo-text { font-size: 12px; }
 
   .gallery-shot-row { grid-template-columns: repeat(10, minmax(100px, 1fr)); }
-
-  .svc-measure-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 768px) {
@@ -1591,7 +1577,7 @@ a { text-decoration: none; color: inherit; }
   .gallery-tabs { gap: 6px; }
   .gallery-tab { font-size: 12px; padding: 7px 14px; }
 
-  .svc-measure-grid { grid-template-columns: 1fr; }
+  .svc-measure-diagram { padding: 10px; }
 
   .svc-ec-body { padding: 16px; gap: 16px; }
   .svc-ec-grid { grid-template-columns: 1fr; }
