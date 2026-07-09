@@ -688,10 +688,35 @@ a { text-decoration: none; color: inherit; }
 .svc-bg-wrap {
   padding: 80px 0;
   scroll-margin-top: 96px;
+  position: relative;
 }
-.svc-bg-wrap .svc-detail { padding: 0; }
 
-#svc-cleaning, #svc-photo, #svc-measurement, #svc-listing { background: none; }
+/* 奇数ブロック：白 */
+#svc-cleaning,
+#svc-measurement {
+  background: var(--white);
+}
+
+/* 偶数ブロック：薄グレー */
+#svc-photo,
+#svc-listing {
+  background: #f3f5f9;
+}
+
+/* 上部アクセントライン */
+.svc-bg-wrap::before {
+  content: '';
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--navy) 0%, var(--orange) 60%, transparent 100%);
+  opacity: 0.18;
+}
+
+.svc-bg-wrap .svc-detail { padding: 0; }
 
 .svc-option-box {
   display: flex;
@@ -807,8 +832,8 @@ a { text-decoration: none; color: inherit; }
   background: var(--navy);
   color: var(--white);
   border-radius: var(--radius);
-  padding: 20px 28px;
-  margin-bottom: 32px;
+  padding: 16px 24px;
+  margin-bottom: 20px;
   display: flex;
   align-items: flex-start;
   gap: 24px;
@@ -921,13 +946,13 @@ a { text-decoration: none; color: inherit; }
 
 /* インラインギャラリー（撮影セクション直下） */
 .gallery-inline {
-  margin-top: 40px;
-  padding: 36px 0 0;
+  margin-top: 28px;
+  padding: 24px 0 0;
   border-top: 1px solid var(--gray-mid);
 }
 
 .gallery-block {
-  margin-bottom: 28px;
+  margin-bottom: 16px;
 }
 
 .gallery-block-label {
@@ -935,7 +960,7 @@ a { text-decoration: none; color: inherit; }
   font-weight: 700;
   color: var(--navy);
   letter-spacing: 0.05em;
-  margin-bottom: 10px;
+  margin-bottom: 7px;
   padding-left: 10px;
   border-left: 3px solid var(--orange);
 }
