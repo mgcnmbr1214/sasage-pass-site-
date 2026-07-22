@@ -1119,17 +1119,6 @@ a { text-decoration: none; color: inherit; }
 .check { color: var(--orange); font-size: 20px; }
 .cross { color: var(--gray-mid); font-size: 18px; }
 .plan-featured td { background: #EEF2FF; }
-.plan-badge {
-  display: inline-block;
-  background: var(--orange);
-  color: white;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 50px;
-  margin-left: 6px;
-  vertical-align: middle;
-}
 .price-note {
   font-size: 13px;
   color: var(--text-light);
