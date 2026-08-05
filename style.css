@@ -58,20 +58,13 @@ a { text-decoration: none; color: inherit; }
   border: 2px solid transparent;
   white-space: nowrap;
 }
-.btn-primary {
+.btn-primary, .btn-primary:visited {
   background: var(--orange);
   color: var(--white);
 }
 .btn-primary:hover { background: var(--orange-dark); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255,107,53,0.4); }
 
-.btn-outline {
-  background: transparent;
-  color: var(--navy);
-  border-color: var(--navy);
-}
-.btn-outline:hover { background: var(--navy); color: var(--white); }
-
-.btn-nav {
+.btn-nav, .btn-nav:visited {
   background: var(--orange);
   color: var(--white);
   padding: 9px 20px;
@@ -79,8 +72,12 @@ a { text-decoration: none; color: inherit; }
   border-radius: 50px;
 }
 .btn-nav:hover { background: var(--orange-dark); }
+/* .nav > a の color 指定より詳細度を上げて白文字を確実に優先させる */
+.nav > a.btn-nav, .nav > a.btn-nav:visited { color: var(--white); }
+.nav > a.btn-nav:hover { color: var(--white); }
 
 .btn-full { width: 100%; justify-content: center; font-size: 16px; padding: 16px; }
+.btn-lg { padding: 18px 38px; font-size: 17px; }
 
 /* =============================================
    Header / Nav
@@ -237,7 +234,7 @@ a { text-decoration: none; color: inherit; }
 .mobile-group-label { font-size: 12px; color: var(--text-light); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 12px 24px 4px; }
 .mobile-sub { padding-left: 40px; font-size: 14px; color: var(--text-mid); }
 .mobile-sub i { color: var(--orange); width: 16px; }
-.mobile-cta { background: var(--orange); color: var(--white); border-radius: 8px; margin: 8px 16px; justify-content: center; }
+.mobile-cta, .mobile-cta:visited { background: var(--orange); color: var(--white); border-radius: 8px; margin: 8px 16px; justify-content: center; }
 
 /* =============================================
    Hero
@@ -308,12 +305,6 @@ a { text-decoration: none; color: inherit; }
   gap: 14px;
   flex-wrap: wrap;
 }
-.hero-actions .btn-outline {
-  color: var(--white);
-  border-color: rgba(255,255,255,0.5);
-}
-.hero-actions .btn-outline:hover { background: rgba(255,255,255,0.15); color: var(--white); }
-
 .hero-visual { flex: 0 0 440px; }
 /* サービスサムネイルグリッド（ヒーロー右側） */
 .hero-svc-grid {
