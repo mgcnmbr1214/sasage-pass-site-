@@ -122,6 +122,15 @@ function Get-Fields {
                 $lines += (ConvertFrom-HtmlText $li.Groups[2].Value.Trim())
             }
             $value = [string]::Join("`n", $lines)
+        } elseif ($type -eq "qalist") {
+            $itemRegex = [regex]'(?s)<details class="faq-item">\s*<summary class="faq-q"><i[^>]*></i>\s*<span>(.*?)</span></summary>\s*<div class="faq-a">(.*?)</div>\s*</details>'
+            $pairs = @()
+            foreach ($im in $itemRegex.Matches($inner)) {
+                $q = ConvertFrom-HtmlText $im.Groups[1].Value.Trim()
+                $a = ConvertFrom-HtmlText $im.Groups[2].Value.Trim()
+                $pairs += "Q: $q`nA: $a"
+            }
+            $value = [string]::Join("`n`n", $pairs)
         } elseif ($type -eq "richtext") {
             $value = $inner.Trim()
         } else {
@@ -161,6 +170,30 @@ function Build-InnerHtml {
             $icon = if ($i -lt $icons.Count) { $icons[$i] } else { $icons[$icons.Count - 1] }
             $text = ConvertTo-HtmlText $lines[$i].Trim()
             [void]$out.Append("$baseIndent  <li>$icon $text</li>`n")
+        }
+        [void]$out.Append("$baseIndent")
+        return $out.ToString()
+    } elseif ($type -eq "qalist") {
+        # 空行区切りの "Q: .../A: ..." ブロックを、質問と回答のペアに分解して組み立て直す
+        # （並べ替え・削除・追加はテキストの行を編集するだけで反映される）
+        $blocks = [regex]::Split($newValue.Trim(), '(?:\r?\n){2,}')
+        $out = New-Object System.Text.StringBuilder
+        [void]$out.Append("`n")
+        foreach ($block in $blocks) {
+            $blockTrim = $block.Trim()
+            if ($blockTrim -eq "") { continue }
+            $lines = $blockTrim -split "`r?`n"
+            $qLine = $lines[0].Trim() -replace '^[QＱ]\s*[:：]\s*', ''
+            $aLines = @()
+            if ($lines.Count -gt 1) { $aLines = $lines[1..($lines.Count - 1)] }
+            $aText = ($aLines -join "`n").Trim() -replace '^[AＡ]\s*[:：]\s*', ''
+            if ($qLine -eq "" -and $aText -eq "") { continue }
+            $qHtml = ConvertTo-HtmlText $qLine
+            $aHtml = ConvertTo-HtmlText $aText
+            [void]$out.Append("$baseIndent  <details class=`"faq-item`">`n")
+            [void]$out.Append("$baseIndent    <summary class=`"faq-q`"><i class=`"fa-solid fa-circle-question`"></i> <span>$qHtml</span></summary>`n")
+            [void]$out.Append("$baseIndent    <div class=`"faq-a`">$aHtml</div>`n")
+            [void]$out.Append("$baseIndent  </details>`n")
         }
         [void]$out.Append("$baseIndent")
         return $out.ToString()

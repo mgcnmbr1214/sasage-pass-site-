@@ -1118,7 +1118,6 @@ a { text-decoration: none; color: inherit; }
 }
 .check { color: var(--orange); font-size: 20px; }
 .cross { color: var(--gray-mid); font-size: 18px; }
-.plan-featured td { background: #EEF2FF; }
 .price-note {
   font-size: 13px;
   color: var(--text-light);

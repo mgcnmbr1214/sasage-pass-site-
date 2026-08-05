@@ -142,6 +142,75 @@
   .field .rte { min-height: 46px; }
   .field .hint { font-size: 11px; color: var(--text-light); margin-top: 4px; }
 
+  .qalist-wrap { display: flex; flex-direction: column; gap: 12px; }
+  .qa-box {
+    border: 1px solid var(--gray-mid);
+    border-radius: 10px;
+    padding: 12px 14px;
+    background: var(--gray);
+  }
+  .qa-box-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .qa-box-num { font-size: 12px; font-weight: 800; color: var(--navy-dark); }
+  .qa-box-controls { display: flex; gap: 6px; }
+  .qa-ctrl-btn {
+    border: 1px solid var(--gray-mid);
+    background: #fff;
+    color: var(--text-mid);
+    border-radius: 6px;
+    padding: 3px 9px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .qa-ctrl-btn:hover:not(:disabled) { background: var(--gray-mid); }
+  .qa-ctrl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .qa-ctrl-del { color: var(--red); border-color: #f5b9b8; }
+  .qa-ctrl-del:hover { background: #fdeceb; }
+  .qa-inner-label {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--text-light);
+    margin: 8px 0 4px;
+  }
+  .qa-inner-label:first-of-type { margin-top: 0; }
+  .qa-q-input, .qa-a-input {
+    width: 100%;
+    border: 1px solid var(--gray-mid);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 13.5px;
+    font-family: inherit;
+    color: var(--text);
+    line-height: 1.6;
+    background: #fff;
+  }
+  .qa-a-input { resize: vertical; }
+  .qa-q-input:focus, .qa-a-input:focus {
+    outline: none;
+    border-color: var(--navy);
+    box-shadow: 0 0 0 3px rgba(59,110,248,0.12);
+  }
+  .qa-add-row { margin-top: 4px; }
+  .qa-add-btn {
+    border: 1px dashed var(--navy);
+    background: #fff;
+    color: var(--navy);
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    width: 100%;
+  }
+  .qa-add-btn:hover { background: var(--gray); }
+
   #loading, #empty {
     text-align: center;
     color: var(--text-light);
@@ -193,6 +262,130 @@
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  function parseQaList(text) {
+    const blocks = text.trim().split(/\r?\n\s*\r?\n+/).filter(b => b.trim() !== '');
+    return blocks.map(block => {
+      const lines = block.trim().split(/\r?\n/);
+      const q = (lines[0] || '').trim().replace(/^[QＱ]\s*[:：]\s*/, '');
+      const a = lines.slice(1).join('\n').trim().replace(/^[AＡ]\s*[:：]\s*/, '');
+      return { q, a };
+    });
+  }
+
+  function serializeQaList(pairs) {
+    return pairs.map(p => 'Q: ' + p.q + '\nA: ' + p.a).join('\n\n');
+  }
+
+  function buildQaListField(f) {
+    const wrap = document.createElement('div');
+    wrap.className = 'qalist-wrap';
+    const pairs = parseQaList(f.value);
+
+    const addRow = document.createElement('div');
+    addRow.className = 'qa-add-row';
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'qa-add-btn';
+    addBtn.textContent = '＋ 質問を追加';
+    addBtn.addEventListener('click', () => {
+      pairs.push({ q: '', a: '' });
+      renderBoxes();
+    });
+    addRow.appendChild(addBtn);
+
+    function renderBoxes() {
+      wrap.querySelectorAll('.qa-box').forEach(el => el.remove());
+      pairs.forEach((pair, i) => {
+        const box = document.createElement('div');
+        box.className = 'qa-box';
+
+        const numLabel = document.createElement('div');
+        numLabel.className = 'qa-box-num';
+        numLabel.textContent = (i + 1) + '.';
+
+        const controls = document.createElement('div');
+        controls.className = 'qa-box-controls';
+
+        const upBtn = document.createElement('button');
+        upBtn.type = 'button';
+        upBtn.className = 'qa-ctrl-btn';
+        upBtn.textContent = '↑';
+        upBtn.title = '上へ移動';
+        upBtn.disabled = i === 0;
+        upBtn.addEventListener('click', () => {
+          [pairs[i - 1], pairs[i]] = [pairs[i], pairs[i - 1]];
+          renderBoxes();
+        });
+
+        const downBtn = document.createElement('button');
+        downBtn.type = 'button';
+        downBtn.className = 'qa-ctrl-btn';
+        downBtn.textContent = '↓';
+        downBtn.title = '下へ移動';
+        downBtn.disabled = i === pairs.length - 1;
+        downBtn.addEventListener('click', () => {
+          [pairs[i + 1], pairs[i]] = [pairs[i], pairs[i + 1]];
+          renderBoxes();
+        });
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'qa-ctrl-btn qa-ctrl-del';
+        delBtn.textContent = '削除';
+        delBtn.addEventListener('click', () => {
+          if (!confirm('この質問を削除しますか？')) return;
+          pairs.splice(i, 1);
+          renderBoxes();
+        });
+
+        controls.appendChild(upBtn);
+        controls.appendChild(downBtn);
+        controls.appendChild(delBtn);
+
+        const header = document.createElement('div');
+        header.className = 'qa-box-header';
+        header.appendChild(numLabel);
+        header.appendChild(controls);
+
+        const qLabel = document.createElement('label');
+        qLabel.className = 'qa-inner-label';
+        qLabel.textContent = '質問';
+        const qInput = document.createElement('input');
+        qInput.type = 'text';
+        qInput.className = 'qa-q-input';
+        qInput.value = pair.q;
+        qInput.placeholder = '質問を入力';
+        qInput.addEventListener('input', () => { pair.q = qInput.value; });
+
+        const aLabel = document.createElement('label');
+        aLabel.className = 'qa-inner-label';
+        aLabel.textContent = '回答';
+        const aInput = document.createElement('textarea');
+        aInput.className = 'qa-a-input';
+        aInput.rows = 3;
+        aInput.value = pair.a;
+        aInput.placeholder = '回答を入力';
+        aInput.addEventListener('input', () => { pair.a = aInput.value; });
+
+        box.appendChild(header);
+        box.appendChild(qLabel);
+        box.appendChild(qInput);
+        box.appendChild(aLabel);
+        box.appendChild(aInput);
+
+        wrap.insertBefore(box, addRow);
+      });
+    }
+
+    wrap.appendChild(addRow);
+    renderBoxes();
+
+    return {
+      el: wrap,
+      getValue: () => serializeQaList(pairs.filter(p => p.q.trim() !== '' || p.a.trim() !== ''))
+    };
+  }
+
   function render(fields) {
     loadingEl.style.display = 'none';
     if (!fields || fields.length === 0) {
@@ -230,6 +423,18 @@
         const label = document.createElement('label');
         label.textContent = f.label;
         fieldDiv.appendChild(label);
+
+        if (f.type === 'qalist') {
+          const qa = buildQaListField(f);
+          fieldDiv.appendChild(qa.el);
+          const hint = document.createElement('div');
+          hint.className = 'hint';
+          hint.textContent = '↑↓ボタンで並べ替え、「削除」ボタンで削除、「＋ 質問を追加」で新しい質問を追加できます。';
+          fieldDiv.appendChild(hint);
+          body.appendChild(fieldDiv);
+          fieldEls[f.id] = { type: 'qalist', getValue: qa.getValue };
+          return;
+        }
 
         let inputEl;
         if (f.type === 'richtext') {
@@ -270,8 +475,14 @@
   function collectValues() {
     const out = {};
     Object.keys(fieldEls).forEach(id => {
-      const { type, el } = fieldEls[id];
-      out[id] = (type === 'richtext') ? el.innerHTML : el.value;
+      const entry = fieldEls[id];
+      if (entry.type === 'qalist') {
+        out[id] = entry.getValue();
+      } else if (entry.type === 'richtext') {
+        out[id] = entry.el.innerHTML;
+      } else {
+        out[id] = entry.el.value;
+      }
     });
     return out;
   }
