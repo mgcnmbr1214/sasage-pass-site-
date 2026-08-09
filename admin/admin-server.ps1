@@ -22,6 +22,7 @@ $GroupMap = [ordered]@{
     "svc-listing"     = "サービス：出品"
     "price"           = "料金表"
     "faq"             = "Q&A"
+    "company"         = "会社概要"
     "contact"         = "お問い合わせ"
     "footer"          = "フッター"
 }
