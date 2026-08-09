@@ -1361,6 +1361,12 @@ a { text-decoration: none; color: inherit; }
   border-bottom: 1px solid var(--gray-mid);
   padding: 24px 0;
 }
+.company-info-heading {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 10px;
+}
 .company-info-list p {
   margin: 0 0 6px;
   font-size: 13px;
