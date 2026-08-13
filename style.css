@@ -1350,6 +1350,7 @@ a { text-decoration: none; color: inherit; }
   font-size: 14px;
   color: var(--text-mid);
   line-height: 1.9;
+  white-space: pre-line;
 }
 
 /* =============================================
