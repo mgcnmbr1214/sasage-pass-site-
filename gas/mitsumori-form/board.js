@@ -37,14 +37,14 @@ const BOARD_STATUS_RENAMES = { '手続き待ち': BOARD_STATUS_SIGNING };
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
   '案件ID', 'ステータス', 'お客様', '予定点数', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
-  '顧客ID', '依頼内容', '単価', '請求書送付日', '署名・支払確認日',
+  '顧客ID', '依頼内容', '単価', '請求書送付日', 'Square請求書ID', '署名・支払確認日',
   '追跡番号', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
 const BOARD_COL = {
   caseId: 1, status: 2, customer: 3, qty: 4, startDate: 5, dueFrom: 6, dueTo: 7, todo: 8,
-  customerId: 9, detail: 10, unitPrice: 11, invoiceSent: 12, signedAt: 13,
-  tracking: 14, guideDraftAt: 15, lastContact: 16, memo: 17, sourceRow: 18
+  customerId: 9, detail: 10, unitPrice: 11, invoiceSent: 12, invoiceId: 13, signedAt: 14,
+  tracking: 15, guideDraftAt: 16, lastContact: 17, memo: 18, sourceRow: 19
 };
 
 const BOARD_CUSTOMER_HEADERS = [
@@ -165,6 +165,15 @@ function boardMigrateCases_(ss) {
     boardLog_('移行', '納期予定を（自）（至）の2列に分割しました');
   }
 
+  if (headers.indexOf('Square請求書ID') < 0) {
+    const sent = headers.indexOf('請求書送付日');
+    if (sent >= 0) {
+      sheet.insertColumnAfter(sent + 1);
+      sheet.getRange(1, sent + 2).setValue('Square請求書ID');
+      boardLog_('移行', 'Square請求書ID 列を追加しました');
+    }
+  }
+
   boardRenameStatuses_(sheet);
 }
 
@@ -233,6 +242,7 @@ function boardApplyCaseFormatting_(sheet) {
 
   [BOARD_COL.startDate, BOARD_COL.dueFrom, BOARD_COL.dueTo, BOARD_COL.invoiceSent,
    BOARD_COL.signedAt, BOARD_COL.guideDraftAt, BOARD_COL.lastContact].forEach(function (col) {
+    // 日付列のみ書式を揃える
     sheet.getRange(2, col, maxRows, 1).setNumberFormat('yyyy/mm/dd');
   });
 }
@@ -306,12 +316,20 @@ function boardSeedKnowledge_(sheet) {
 }
 
 function boardSeedTemplates_(sheet) {
-  if (sheet.getLastRow() <= 1) {
-    sheet.getRange(2, 1, 2, 5).setValues([
-      ['T2', '案内メール（依頼確定時）', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定（自）が未入力なら下書きを作成しない。予定点数・初回注記は空なら該当行が自動で消える'],
-      ['T4', '手続き完了のご連絡', '【ササゲパス】お手続きを確認いたしました', boardDefaultDoneBody_(), '署名・カード登録の確認後に送る']
-    ]);
+  const existing = {};
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().forEach(function (row) {
+      if (row[0]) existing[String(row[0]).trim()] = true;
+    });
   }
+  const seeds = [
+    ['T2', '案内メール（依頼確定時）', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定（自）が未入力なら下書きを作成しない。予定点数・初回注記は空なら該当行が自動で消える'],
+    ['T4', '手続き完了のご連絡', '【ササゲパス】お手続きを確認いたしました', boardDefaultDoneBody_(), '署名・カード登録の確認後に送る'],
+    ['S1', 'Square請求書（登録手数料220円）', SQUARE_INVOICE_TITLE, squareInvoiceDescription_(), '過去の請求書と同一の文面。Squareの請求書メッセージ欄に入る']
+  ];
+  seeds.forEach(function (seed) {
+    if (!existing[seed[0]]) sheet.appendRow(seed);
+  });
   const rows = Math.max(sheet.getLastRow() - 1, 1);
   sheet.getRange(2, 4, rows, 1).setWrap(true).setVerticalAlignment('top');
   sheet.setRowHeights(2, rows, 300);

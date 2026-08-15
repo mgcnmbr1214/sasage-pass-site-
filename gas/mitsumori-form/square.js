@@ -9,7 +9,49 @@
 const SQUARE_PROP_TOKEN = 'SQUARE_ACCESS_TOKEN';
 const SQUARE_API_BASE = 'https://connect.squareup.com/v2';
 const SQUARE_API_VERSION = '2025-01-23';
-const SQUARE_TEMPLATE_TITLE = 'サービスご利用における決済情報のご登録とご署名に関するお願い';
+const SQUARE_INVOICE_TITLE = 'サービスご利用における決済情報のご登録とご署名に関するお願い';
+const SQUARE_TEMPLATE_TITLE = SQUARE_INVOICE_TITLE;
+
+/**
+ * 登録手数料の請求内容。過去の請求書（invoice_number 000014 / 000016 / 000022）から抽出した
+ * 実績値をそのまま定数化している。変更するときは Square 側の運用と必ず突き合わせること。
+ */
+const SQUARE_FEE_ITEM_NAME = '登録手数料';
+const SQUARE_FEE_AMOUNT = 200;          // 税抜。消費税10%が加算され合計220円になる
+const SQUARE_TAX_NAME = '消費税';
+const SQUARE_TAX_PERCENTAGE = '10.0';
+const SQUARE_CURRENCY = 'JPY';
+const SQUARE_DUE_DAYS = 2;              // 発行日から支払期限までの日数（過去実績と同じ）
+
+/** 過去の請求書のメッセージ欄と完全に同一の文面（空行・全角空白まで一致させている）。 */
+function squareInvoiceDescription_() {
+  return [
+    'ササゲパス運営事務局です。',
+    '',
+    '',
+    'サービスご利用にあたり、お手数ですが下記2点のご対応をお願いいたします。',
+    '',
+    '1. カード情報の保存について',
+    ' 　',
+    'メール画面の「カードで支払う」ボタンからお支払い手続きをお願いします。',
+    'お手数ですが「Google Pay」ではなく「クレジットカード」を選択し、 ',
+    '**「カード情報をササゲパスに保存する 」**に必ずチェックを入れたうえで決済を完了してください。',
+    '',
+    '　※以降は、毎月のご利用実績に応じて発生したご請求額が、保存いただいたカードから自動的に引き落としされます。',
+    '',
+    '',
+    '2. 契約書へのご署名について',
+    ' ',
+    'メール画面下部の**「契約書を表示」**より契約書をご確認いただき、内容に問題がなければ電子署名をお願いいたします。',
+    '',
+    '',
+    'ご不明点がございましたらメールにてお気軽にご連絡ください。',
+    '今後ともどうぞよろしくお願いいたします。',
+    '',
+    '',
+    'ササゲパス運営事務局'
+  ].join('\n');
+}
 
 // ------------------------------------------------------------
 // アクセストークンの登録
@@ -174,6 +216,191 @@ function squareDescribeOrder_(order) {
     total_tax_money: order.total_tax_money,
     pricing_options: order.pricing_options
   }, null, 1);
+}
+
+// ------------------------------------------------------------
+// 請求書の作成と送信
+// ------------------------------------------------------------
+
+/**
+ * 案件に対する登録手数料の請求書を「下書き」として作成する。
+ * この時点ではお客様には届かない。内容を確認してから squarePublishForCase で送信する。
+ */
+function squareCreateDraftForCase(caseRow) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  const row = Number(caseRow);
+  const values = sheet.getRange(row, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
+
+  const existing = String(values[BOARD_COL.invoiceId - 1] || '').trim();
+  if (existing) {
+    const current = squareGetInvoice_(existing);
+    if (current && current.status !== 'CANCELED') {
+      return {
+        invoiceId: existing,
+        status: current.status,
+        url: squareDashboardUrl_(existing),
+        message: 'この案件にはすでに請求書があります（状態: ' + current.status + '）。'
+      };
+    }
+  }
+
+  const customer = boardFindCustomer_(ss, values[BOARD_COL.customerId - 1]);
+  if (!customer || !boardIsEmail_(customer.email)) {
+    throw new Error('顧客のメールアドレスが登録されていません。「顧客」タブをご確認ください。');
+  }
+
+  const location = squareListLocations_()[0];
+  if (!location) throw new Error('Squareの店舗情報を取得できませんでした。');
+
+  const customerId = squareFindOrCreateCustomer_(customer);
+  const order = squareCreateFeeOrder_(location.id, customerId);
+  const template = boardFindTemplate_(ss, 'S1');
+  const today = new Date();
+
+  const invoice = squareFetch_('POST', '/invoices', {
+    idempotency_key: Utilities.getUuid(),
+    invoice: {
+      location_id: location.id,
+      order_id: order.id,
+      primary_recipient: { customer_id: customerId },
+      delivery_method: 'EMAIL',
+      title: template ? template.subject : SQUARE_INVOICE_TITLE,
+      description: template ? template.body : squareInvoiceDescription_(),
+      sale_or_service_date: squareDateString_(today, 0),
+      accepted_payment_methods: {
+        card: true,
+        square_gift_card: false,
+        bank_account: false,
+        buy_now_pay_later: false,
+        cash_app_pay: false
+      },
+      store_payment_method_enabled: true,
+      payment_requests: [{
+        request_type: 'BALANCE',
+        due_date: squareDateString_(today, SQUARE_DUE_DAYS),
+        tipping_enabled: false,
+        automatic_payment_source: 'NONE'
+      }]
+    }
+  }).invoice;
+
+  sheet.getRange(row, BOARD_COL.invoiceId).setValue(invoice.id);
+  boardLog_('Square', values[BOARD_COL.caseId - 1] + ' の請求書を下書き作成しました（' + invoice.id + '）');
+
+  return {
+    invoiceId: invoice.id,
+    status: invoice.status,
+    url: squareDashboardUrl_(invoice.id),
+    message: '請求書を下書きとして作成しました。まだお客様には届いていません。'
+  };
+}
+
+/** 下書きの請求書を送信する。ここで初めてお客様にメールが届く。 */
+function squarePublishForCase(caseRow) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  const row = Number(caseRow);
+  const invoiceId = String(sheet.getRange(row, BOARD_COL.invoiceId).getValue() || '').trim();
+  if (!invoiceId) throw new Error('先に請求書を作成してください。');
+
+  const current = squareGetInvoice_(invoiceId);
+  if (!current) throw new Error('請求書が見つかりません。');
+  if (current.status !== 'DRAFT') {
+    return {
+      status: current.status,
+      url: squareDashboardUrl_(invoiceId),
+      message: 'この請求書はすでに送信済みです（状態: ' + current.status + '）。'
+    };
+  }
+
+  const published = squareFetch_('POST', '/invoices/' + invoiceId + '/publish', {
+    version: current.version,
+    idempotency_key: Utilities.getUuid()
+  }).invoice;
+
+  sheet.getRange(row, BOARD_COL.invoiceSent).setValue(new Date());
+  sheet.getRange(row, BOARD_COL.status).setValue(BOARD_STATUS_SIGNING);
+  boardSetTodoFormula_(sheet, row);
+  boardLog_('Square', invoiceId + ' の請求書を送信しました');
+
+  return {
+    status: published.status,
+    url: published.public_url || squareDashboardUrl_(invoiceId),
+    message: '請求書を送信しました。お客様にメールが届きます。'
+  };
+}
+
+function squareGetInvoiceStatusForCase(caseRow) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_CASES);
+  const invoiceId = String(sheet.getRange(Number(caseRow), BOARD_COL.invoiceId).getValue() || '').trim();
+  if (!invoiceId) return { invoiceId: '', status: '', url: '' };
+  const invoice = squareGetInvoice_(invoiceId);
+  return {
+    invoiceId: invoiceId,
+    status: invoice ? invoice.status : '(取得できません)',
+    url: (invoice && invoice.public_url) || squareDashboardUrl_(invoiceId)
+  };
+}
+
+function squareFindOrCreateCustomer_(customer) {
+  const found = squareFetch_('POST', '/customers/search', {
+    query: { filter: { email_address: { exact: customer.email } } },
+    limit: 1
+  });
+  if (found.customers && found.customers.length > 0) return found.customers[0].id;
+
+  const created = squareFetch_('POST', '/customers', {
+    idempotency_key: Utilities.getUuid(),
+    given_name: String(customer.name || '').trim() || undefined,
+    company_name: String(customer.company || '').trim() || undefined,
+    email_address: customer.email,
+    phone_number: String(customer.tel || '').trim() || undefined
+  });
+  return created.customer.id;
+}
+
+function squareCreateFeeOrder_(locationId, customerId) {
+  const data = squareFetch_('POST', '/orders', {
+    idempotency_key: Utilities.getUuid(),
+    order: {
+      location_id: locationId,
+      customer_id: customerId,
+      line_items: [{
+        name: SQUARE_FEE_ITEM_NAME,
+        quantity: '1',
+        base_price_money: { amount: SQUARE_FEE_AMOUNT, currency: SQUARE_CURRENCY },
+        applied_taxes: [{ tax_uid: 'fee-tax' }]
+      }],
+      taxes: [{
+        uid: 'fee-tax',
+        name: SQUARE_TAX_NAME,
+        percentage: SQUARE_TAX_PERCENTAGE,
+        type: 'ADDITIVE',
+        scope: 'LINE_ITEM'
+      }]
+    }
+  });
+  return data.order;
+}
+
+function squareGetInvoice_(invoiceId) {
+  try {
+    return squareFetch_('GET', '/invoices/' + invoiceId).invoice || null;
+  } catch (err) {
+    boardLog_('Square', '請求書の取得に失敗: ' + err.message);
+    return null;
+  }
+}
+
+function squareDashboardUrl_(invoiceId) {
+  return 'https://squareup.com/dashboard/invoices/' + invoiceId;
+}
+
+function squareDateString_(base, addDays) {
+  const date = new Date(base.getTime());
+  date.setDate(date.getDate() + addDays);
+  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd');
 }
 
 // ------------------------------------------------------------
