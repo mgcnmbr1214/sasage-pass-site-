@@ -291,8 +291,70 @@ function mailGetCustomerMessage(row) {
 /** 対応種別の一覧を画面に渡す。 */
 function mailGetResponseTypes() {
   return BOARD_RESPONSE_TYPES.map(function (t) {
-    return { id: t.id, name: t.name, status: t.status, tasks: t.tasks };
+    return {
+      id: t.id, name: t.name, status: t.status,
+      fields: (t.fields || []).map(function (key) {
+        return { key: key, label: BOARD_CASE_FIELDS[key].label, type: BOARD_CASE_FIELDS[key].type };
+      }),
+      invoice: !!t.invoice,
+      requires: (t.requires || []).map(function (key) { return BOARD_CASE_FIELDS[key].label; }),
+      requireKeys: t.requires || []
+    };
   });
+}
+
+/** この返信に紐づく案件の、入力欄とSquare請求書の状態。 */
+function mailGetCaseContext(row) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  const values = sheet.getRange(Number(row), 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
+  const caseRow = boardFindLatestCaseRow_(ss, values[BOARD_MAIL_COL.customerId - 1]);
+  if (!caseRow) return { caseRow: 0 };
+
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  const v = cases.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
+  const invoiceId = String(v[BOARD_COL.invoiceId - 1] || '').trim();
+  const invoice = invoiceId ? squareGetInvoice_(invoiceId) : null;
+  const settings = boardGetSettings_(ss);
+
+  return {
+    caseRow: caseRow,
+    caseId: v[BOARD_COL.caseId - 1],
+    caseStatus: v[BOARD_COL.status - 1],
+    startDate: boardToInputDate_(v[BOARD_COL.startDate - 1]),
+    dueFrom: boardToInputDate_(v[BOARD_COL.dueFrom - 1]),
+    dueTo: boardToInputDate_(v[BOARD_COL.dueTo - 1]),
+    qty: v[BOARD_COL.qty - 1],
+    signedAt: boardToInputDate_(v[BOARD_COL.signedAt - 1]),
+    invoiceId: invoiceId,
+    invoiceStatus: invoice ? invoice.status : '',
+    invoiceUrl: invoiceId ? squareDashboardUrl_(invoiceId) : '',
+    invoiceSteps: String(settings['請求書送信の手順'] || ''),
+    sentAt: boardFormatDate_(v[BOARD_COL.invoiceSent - 1])
+  };
+}
+
+/** 対応種別に応じた入力欄の値を案件へ保存する。 */
+function mailSaveCaseFields(caseRow, data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  const row = Number(caseRow);
+
+  Object.keys(data || {}).forEach(function (key) {
+    const field = BOARD_CASE_FIELDS[key];
+    if (!field) return;
+    const col = BOARD_COL[field.col];
+    const value = data[key];
+    if (field.type === 'number') {
+      sheet.getRange(row, col).setValue(value === '' ? '' : Number(value));
+    } else {
+      sheet.getRange(row, col).setValue(boardFromInputDate_(value));
+    }
+  });
+
+  boardSetTodoFormula_(sheet, row);
+  boardLog_('保存', '案件 ' + sheet.getRange(row, BOARD_COL.caseId).getValue() + ' を更新しました');
+  return { message: '案件の内容を保存しました。' };
 }
 
 /**
@@ -309,14 +371,14 @@ function mailApplyResponseType(row, typeId) {
   sheet.getRange(Number(row), BOARD_MAIL_COL.responseType).setValue(type.name);
 
   if (!type.template) {
-    return { text: values[BOARD_MAIL_COL.aiFirst - 1] || '', tasks: type.tasks, status: type.status };
+    return { text: values[BOARD_MAIL_COL.aiFirst - 1] || '', status: type.status };
   }
 
   const caseRow = boardFindLatestCaseRow_(ss, values[BOARD_MAIL_COL.customerId - 1]);
   if (!caseRow) throw new Error('このお客様の案件が案件ボードに見つかりません。');
 
   const built = boardBuildTemplateText_(ss, caseRow, type.template);
-  return { text: built.body, tasks: type.tasks, status: type.status };
+  return { text: built.body, status: type.status };
 }
 
 /** 画面で編集した本文をシートに保存する（下書きにはしない）。 */
@@ -451,8 +513,7 @@ function mailApproveToDraft(row, text) {
   boardLog_('②下書き保存', values[BOARD_MAIL_COL.subject - 1] + ' の下書きを保存しました');
   return {
     message: 'Gmailの下書きに保存しました。内容を確認して送信してください。\n' +
-      '実際に送信するまでこの一覧には残ります（下書きを消してもやり直せます）。' + statusNote,
-    tasks: type ? type.tasks : []
+      '実際に送信するまでこの一覧には残ります（下書きを消してもやり直せます）。' + statusNote
   };
 }
 

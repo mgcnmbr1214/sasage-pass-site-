@@ -39,6 +39,14 @@
   .tasks-title { font-size: 12px; font-weight: 700; color: #C24A18; margin-bottom: 4px; }
   .tasks ul { margin: 0; padding-left: 18px; }
   .tasks li { font-size: 12.5px; color: #5A6A8A; line-height: 1.8; }
+  .extras { background: #FFF6F1; border: 1px solid #FFD9C7; border-radius: 8px; padding: 11px 13px; margin-top: 10px; }
+  .extras-title { font-size: 12px; font-weight: 700; color: #C24A18; margin-bottom: 6px; }
+  .ex-label { display: block; font-size: 11.5px; font-weight: 700; color: #5A6A8A; margin: 9px 0 4px; }
+  .extras input { width: 100%; box-sizing: border-box; border: 1px solid #FFD9C7; border-radius: 8px; padding: 7px 10px; font-size: 13px; font-family: inherit; background: #fff; }
+  .inv { border-top: 1px solid #FFD9C7; margin-top: 12px; padding-top: 10px; }
+  .inv-state { font-size: 12.5px; color: #5A6A8A; margin-bottom: 2px; }
+  .steps-text { font-size: 12px; color: #5A6A8A; line-height: 1.9; white-space: pre-wrap; background: #fff; border-radius: 8px; padding: 8px 11px; margin: 8px 0 0; }
+  .hint { font-size: 11.5px; color: #8A97B8; margin-top: 6px; line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -52,6 +60,7 @@
   var items = [];
   var types = [];
   var current = null;
+  var ctx = null;
 
   function el(id) { return document.getElementById(id); }
 
@@ -71,17 +80,111 @@
   function renderTasks(type) {
     var box = el('tasks');
     if (!type) { box.innerHTML = ''; return; }
-    var html = '';
-    if (type.status) {
-      html += '<div class="tasks-note">下書きに保存すると、案件のステータスが' +
-        '<b>「' + type.status + '」</b>に変わります。</div>';
+    box.innerHTML = type.status
+      ? '<div class="tasks-note">下書きに保存すると、案件のステータスが' +
+        '<b>「' + type.status + '」</b>に変わります。</div>'
+      : '';
+  }
+
+  var INVOICE_LABELS = {
+    DRAFT: '下書き（未送信）', UNPAID: '送信済・未払い', SCHEDULED: '送信予約済',
+    PAID: '支払い済み', PARTIALLY_PAID: '一部支払い済み', CANCELED: 'キャンセル済み', FAILED: '失敗'
+  };
+
+  function renderExtras(type) {
+    var box = el('extras');
+    if (!type || (type.fields.length === 0 && !type.invoice)) { box.innerHTML = ''; updateApprove(); return; }
+    if (!ctx || !ctx.caseRow) {
+      box.innerHTML = '<div class="tasks"><div class="tasks-title">案件が見つかりません</div>' +
+        '<div style="font-size:12.5px;color:#5A6A8A">このお客様の案件が案件ボードにないため、日程の入力や請求書の作成ができません。</div></div>';
+      updateApprove();
+      return;
     }
-    if (type.tasks && type.tasks.length > 0) {
-      html += '<div class="tasks"><div class="tasks-title">この対応と同時に必要な処理</div><ul>';
-      type.tasks.forEach(function (t) { html += '<li>' + t.replace(/</g, '&lt;') + '</li>'; });
-      html += '</ul></div>';
+
+    var html = '<div class="extras"><div class="extras-title">この対応に必要な入力（案件 ' + esc(ctx.caseId) + '）</div>';
+    type.fields.forEach(function (f) {
+      html += '<label class="ex-label">' + esc(f.label) +
+        (type.requireKeys.indexOf(f.key) >= 0 ? ' <span style="color:#e5484d">*</span>' : '') + '</label>' +
+        '<input type="' + f.type + '" id="fx_' + f.key + '" value="' + esc(ctx[f.key] == null ? '' : ctx[f.key]) + '">';
+    });
+    if (type.fields.length > 0) {
+      html += '<div class="btns"><button class="b-sub" id="btnFields">入力内容を保存する</button></div>';
     }
-    box.innerHTML = html;
+
+    if (type.invoice) {
+      var sent = !!ctx.sentAt || (ctx.invoiceStatus && ctx.invoiceStatus !== 'DRAFT');
+      html += '<div class="inv"><div class="extras-title">初回登録の請求書（220円・税込）</div>' +
+        '<div class="inv-state">' + (ctx.invoiceId
+          ? '状態: ' + (INVOICE_LABELS[ctx.invoiceStatus] || ctx.invoiceStatus)
+          : 'まだ作成されていません') + '</div>' +
+        '<div class="btns"><button class="b-sub" id="btnInvNew">請求書を作成する</button></div>' +
+        '<div class="steps-text">' + esc(ctx.invoiceSteps) + '</div>' +
+        '<div class="btns"><button class="b-sub" id="btnInvOpen">Squareで請求書を開く</button>' +
+        '<button class="b-sub" id="btnInvSent">送信しました</button></div></div>';
+    }
+    box.innerHTML = html + '</div>';
+
+    if (type.fields.length > 0) {
+      el('btnFields').addEventListener('click', function () {
+        var data = {};
+        type.fields.forEach(function (f) { data[f.key] = el('fx_' + f.key).value; });
+        google.script.run.withSuccessHandler(function (r) { show('ok', r.message); loadContext(type); })
+          .withFailureHandler(function (e) { show('err', e.message); })
+          .mailSaveCaseFields(ctx.caseRow, data);
+      });
+      type.fields.forEach(function (f) {
+        el('fx_' + f.key).addEventListener('change', updateApprove);
+      });
+    }
+
+    if (type.invoice) {
+      var invSent = !!ctx.sentAt || (ctx.invoiceStatus && ctx.invoiceStatus !== 'DRAFT');
+      el('btnInvNew').disabled = !!ctx.invoiceId;
+      el('btnInvOpen').disabled = !ctx.invoiceId;
+      el('btnInvSent').disabled = !ctx.invoiceId || invSent;
+      el('btnInvNew').addEventListener('click', function () {
+        el('btnInvNew').disabled = true;
+        show('ok', '請求書を作成しています...');
+        google.script.run.withSuccessHandler(function (r) { show('ok', r.message); loadContext(type); })
+          .withFailureHandler(function (e) { show('err', e.message); loadContext(type); })
+          .squareCreateDraftForCase(ctx.caseRow);
+      });
+      el('btnInvOpen').addEventListener('click', function () { window.open(ctx.invoiceUrl, '_blank'); });
+      el('btnInvSent').addEventListener('click', function () {
+        el('btnInvSent').disabled = true;
+        google.script.run.withSuccessHandler(function (r) { show('ok', r.message); loadContext(type); })
+          .withFailureHandler(function (e) { show('err', e.message); loadContext(type); })
+          .squareConfirmSent(ctx.caseRow);
+      });
+    }
+
+    updateApprove();
+  }
+
+  function updateApprove() {
+    var type = findType(el('rtype') ? el('rtype').value : '');
+    var btn = el('btnApprove');
+    if (!btn || !type) return;
+    var missing = [];
+    (type.requireKeys || []).forEach(function (key) {
+      var input = el('fx_' + key);
+      if (!input || !input.value) missing.push(key);
+    });
+    btn.disabled = missing.length > 0;
+    var hint = el('approveHint');
+    if (hint) {
+      hint.textContent = missing.length > 0
+        ? '「' + type.requires.join('」「') + '」を入力すると押せるようになります。'
+        : '';
+    }
+  }
+
+  function loadContext(type) {
+    google.script.run.withSuccessHandler(function (data) {
+      ctx = data;
+      renderExtras(type);
+    }).withFailureHandler(function (e) { show('err', e.message); })
+      .mailGetCaseContext(current.row);
   }
 
   function show(kind, text) {
@@ -127,7 +230,7 @@
       '<div class="log" id="log"></div></div>' +
       '<div class="card"><label>どの状況での対応か</label>' +
       '<select id="rtype"></select>' +
-      '<div id="tasks"></div></div>' +
+      '<div id="tasks"></div><div id="extras"></div></div>' +
       '<div class="card"><label>返信案（そのまま編集できます）</label>' +
       '<textarea id="editor"></textarea>' +
       '<div class="btns">' +
@@ -135,7 +238,7 @@
       '<button class="b-sub" id="btnOpenThread">Gmailで開く</button>' +
       '<button class="b-sub" id="btnSave">編集内容だけ保存</button>' +
       '<button class="b-sub" id="btnSkip">対応不要</button>' +
-      '</div></div>' +
+      '</div><div class="hint" id="approveHint"></div></div>' +
       '<div class="card"><label>AIに修正を依頼する</label>' +
       '<textarea id="instruction" placeholder="例：もう少し短く。補償の話は書かないで、納期の目安だけ伝えて。"></textarea>' +
       '<div class="btns"><button class="b-ai" id="btnAi">この指示で書き直す</button>' +
@@ -159,10 +262,12 @@
       sel.appendChild(o);
     });
     renderTasks(findType(sel.value));
+    loadContext(findType(sel.value));
 
     sel.addEventListener('change', function () {
       var type = findType(sel.value);
       renderTasks(type);
+      loadContext(type);
       if (!confirmReplace(type)) return;
       show('ok', '文面を差し替えています...');
       google.script.run.withSuccessHandler(function (r) {
@@ -211,11 +316,7 @@
       busy(true);
       show('ok', '下書きに保存しています...');
       google.script.run.withSuccessHandler(function (r) {
-        var text = r.message;
-        if (r.tasks && r.tasks.length > 0) {
-          text += '\n\n【このあと必要な処理】\n・' + r.tasks.join('\n・');
-        }
-        show('ok', text);
+        show('ok', r.message);
         busy(false);
         reload(false);
       }).withFailureHandler(function (e) { show('err', e.message); busy(false); })

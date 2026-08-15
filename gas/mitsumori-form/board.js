@@ -70,29 +70,46 @@ const BOARD_MAIL_COL = {
  * メール以外に必要な処理が変わる。
  */
 const BOARD_RESPONSE_TYPES = [
-  { id: 'REPLY', name: '通常返信（AIの回答）', template: '', status: '返信済', tasks: [] },
-  { id: 'T1', name: 'T1 見積もり回答', template: 'T1', status: '返信済', tasks: [] },
   {
-    id: 'T2', name: 'T2 案内メール（依頼確定）', template: 'T2', status: BOARD_STATUS_SIGNING,
-    tasks: [
-      '受付開始日と納期予定を入力する（未入力だと日付が空欄のまま送られます）',
-      'メニュー「初回登録の請求書を送る」から、220円の請求書を作成・送信する'
-    ]
+    id: 'REPLY', name: '通常の返信（AIが問い合わせ内容に応じて回答します）',
+    template: '', status: '返信済', fields: [], invoice: false, requires: []
   },
   {
-    id: 'T4', name: 'T4 手続き完了の連絡', template: 'T4', status: '発送待ち',
-    tasks: [
-      'Squareで支払いと契約書への署名が完了しているか確認する',
-      '案件ボードの「署名・支払確認日」を入力する'
-    ]
+    id: 'T1', name: '見積もり回答（料金・納期の目安・ご利用条件をお伝えします）',
+    template: 'T1', status: '返信済', fields: [], invoice: false, requires: []
   },
-  { id: 'T5', name: 'T5 リマインド（手続き未完了）', template: 'T5', status: '', tasks: [] },
-  { id: 'T6', name: 'T6 リマインド（追跡番号未着）', template: 'T6', status: '', tasks: [] },
   {
-    id: 'T7', name: 'T7 お預かり完了の連絡', template: 'T7', status: '作業中',
-    tasks: ['到着した商品の点数を確認し、案件ボードの「予定点数」を実数に更新する']
+    id: 'T2', name: '依頼確定（受付開始日・納期を回答し、依頼内容・支払い・発送に関する事項を伝えます）',
+    template: 'T2', status: BOARD_STATUS_SIGNING,
+    fields: ['startDate', 'dueFrom', 'dueTo', 'qty'], invoice: true,
+    requires: ['startDate', 'dueFrom']
+  },
+  {
+    id: 'T4', name: '手続き完了（支払いと署名の確認をお伝えし、発送をご案内します）',
+    template: 'T4', status: '発送待ち', fields: ['signedAt'], invoice: false, requires: []
+  },
+  {
+    id: 'T5', name: '手続きの催促（支払い・署名がお済みでない方へご確認をお願いします）',
+    template: 'T5', status: '', fields: [], invoice: false, requires: []
+  },
+  {
+    id: 'T6', name: '発送の催促（発送状況の確認と、追跡番号のご連絡をお願いします）',
+    template: 'T6', status: '', fields: [], invoice: false, requires: []
+  },
+  {
+    id: 'T7', name: 'お預かり完了（商品の到着と点数をお知らせし、納期の目安を再度お伝えします）',
+    template: 'T7', status: '作業中', fields: ['qty'], invoice: false, requires: []
   }
 ];
+
+/** 対応種別ごとに出す入力欄の定義。 */
+const BOARD_CASE_FIELDS = {
+  startDate: { label: '受付開始日', type: 'date', col: 'startDate' },
+  dueFrom: { label: '納期予定（自）', type: 'date', col: 'dueFrom' },
+  dueTo: { label: '納期予定（至）', type: 'date', col: 'dueTo' },
+  qty: { label: '予定点数', type: 'number', col: 'qty' },
+  signedAt: { label: '署名・支払確認日', type: 'date', col: 'signedAt' }
+};
 
 function boardFindResponseTypeByName_(name) {
   const key = String(name || '').trim();
@@ -136,11 +153,11 @@ function onOpen() {
     .addItem('対応を選ぶ', 'mailOpenReviewPanel')
     .addItem('新着メールを今すぐ確認する', 'mailCheckNow')
     .addSeparator()
-    .addItem('案件を開く', 'boardOpenPanel')
-    .addItem('初回登録の請求書を送る', 'squareOpenFlow')
-    .addSeparator()
     .addItem('フォーム回答を取り込む', 'boardImportResponses')
     .addSeparator()
+    .addSubMenu(ui.createMenu('別途対応メニュー')
+      .addItem('受付開始日・納期・点数だけを入力する', 'boardOpenPanel')
+      .addItem('初回登録の請求書だけを作成・送信する', 'squareOpenFlow'))
     .addSubMenu(ui.createMenu('設定')
       .addItem('初期セットアップ', 'boardSetup')
       .addSeparator()
