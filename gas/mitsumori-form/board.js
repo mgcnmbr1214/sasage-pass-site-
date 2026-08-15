@@ -48,7 +48,18 @@ const BOARD_CUSTOMER_HEADERS = [
   '依頼内容', '月間予定数', '単価', '初回問い合わせ日', '最終更新日', 'メモ'
 ];
 
-const BOARD_MAIL_HEADERS = ['日時', '顧客ID', '差出人', '件名', '種別', '要約', 'AI返信案', '状態', 'GmailスレッドID'];
+const BOARD_MAIL_HEADERS = [
+  '日時', '顧客ID', '差出人', '件名', '要約',
+  'AI初回案', '修正指示ログ', '最終文面', '状態', 'GmailスレッドID', '下書き保存日時'
+];
+
+const BOARD_MAIL_COL = {
+  date: 1, customerId: 2, from: 3, subject: 4, summary: 5,
+  aiFirst: 6, instructions: 7, finalText: 8, status: 9, threadId: 10, savedAt: 11
+};
+
+const BOARD_SHEET_EXAMPLES = '返信実例';
+const BOARD_EXAMPLE_HEADERS = ['日時', '顧客', '件名', 'AI初回案', '修正指示', '最終文面', '抽出した方針'];
 const BOARD_TEMPLATE_HEADERS = ['ID', '名称', '件名', '本文', '備考'];
 const BOARD_KNOWLEDGE_HEADERS = ['分類', '内容', '更新日'];
 const BOARD_SETTINGS_HEADERS = ['項目', '値', '説明'];
@@ -75,6 +86,7 @@ function onOpen() {
     .addItem('フォーム回答を取り込む', 'boardImportResponses')
     .addItem('顧客・案件を作り直す', 'boardRebuild')
     .addSeparator()
+    .addItem('返信案を確認する', 'mailOpenReviewPanel')
     .addItem('返信案を今すぐ作る', 'mailCheckNow')
     .addSubMenu(SpreadsheetApp.getUi().createMenu('メール返信支援の設定')
       .addItem('APIキーを登録する', 'mailSetApiKey')
@@ -96,7 +108,8 @@ function boardSetup() {
 
   boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS, [90, 100, 150, 70, 95, 95, 95, 200]);
   boardSetupSheet_(ss, BOARD_SHEET_CUSTOMERS, BOARD_CUSTOMER_HEADERS, [80, 170, 120, 220, 130]);
-  boardSetupSheet_(ss, BOARD_SHEET_MAILS, BOARD_MAIL_HEADERS, [140, 80, 200, 240]);
+  boardSetupSheet_(ss, BOARD_SHEET_MAILS, BOARD_MAIL_HEADERS, [140, 80, 200, 240, 240, 300, 260, 300, 110, 200, 140]);
+  boardSetupSheet_(ss, BOARD_SHEET_EXAMPLES, BOARD_EXAMPLE_HEADERS, [140, 150, 240, 300, 260, 300, 320]);
   boardSetupSheet_(ss, BOARD_SHEET_TEMPLATES, BOARD_TEMPLATE_HEADERS, [50, 200, 260, 460, 200]);
   boardSetupSheet_(ss, BOARD_SHEET_KNOWLEDGE, BOARD_KNOWLEDGE_HEADERS, [140, 560, 100]);
   boardSetupSheet_(ss, BOARD_SHEET_SETTINGS, BOARD_SETTINGS_HEADERS, [220, 300, 340]);
@@ -205,7 +218,8 @@ function boardHideSourceSheets_(ss) {
 
 function boardOrderSheets_(ss) {
   const order = [BOARD_SHEET_CASES, BOARD_SHEET_CUSTOMERS, BOARD_SHEET_MAILS,
-    BOARD_SHEET_TEMPLATES, BOARD_SHEET_KNOWLEDGE, BOARD_SHEET_SETTINGS, BOARD_SHEET_LOGS];
+    BOARD_SHEET_TEMPLATES, BOARD_SHEET_KNOWLEDGE, BOARD_SHEET_EXAMPLES,
+    BOARD_SHEET_SETTINGS, BOARD_SHEET_LOGS];
   order.forEach(function (name, index) {
     const sheet = ss.getSheetByName(name);
     if (!sheet) return;

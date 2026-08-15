@@ -1,8 +1,9 @@
 /**
  * ササゲパス 業務ボード ②メール返信支援
  *
- * 顧客からの新着メールを検知し、Claude API で返信案を生成して
- * Gmail の下書きとして保存する。送信は必ず人が行う。自動送信は実装しない。
+ * 顧客からの新着メールを検知し、Claude API で返信案を生成して「メール履歴」に保存する。
+ * 確認・修正はスプレッドシート上の画面で行い、承認したものだけを Gmail の下書きにする。
+ * 自動送信は実装しない。
  */
 
 const MAIL_LABEL_DONE = 'ササゲパス/返信案作成済';
@@ -12,26 +13,38 @@ const MAIL_LOOKBACK_DAYS = 30;
 const MAIL_MAX_THREADS_PER_RUN = 5;
 const MAIL_MAX_BODY_CHARS = 4000;
 const MAIL_TRIGGER_MINUTES = 10;
+const MAIL_EXAMPLE_COUNT = 3;
+
+const MAIL_STATUS_PENDING = '未確認';
+const MAIL_STATUS_EDITING = '修正中';
+const MAIL_STATUS_SAVED = '下書き保存済';
+const MAIL_STATUS_SKIP = '対応不要';
 
 // ------------------------------------------------------------
 // メニューから呼ぶ操作
 // ------------------------------------------------------------
 
+function mailOpenReviewPanel() {
+  const html = HtmlService.createTemplateFromFile('Reply').evaluate()
+    .setWidth(900)
+    .setHeight(680);
+  SpreadsheetApp.getUi().showModalDialog(html, '返信案の確認');
+}
+
 function mailCheckNow() {
   const result = mailScan_();
-  SpreadsheetApp.getUi().alert(
-    result.drafted > 0
-      ? result.drafted + ' 件の返信案を作成しました。Gmailの下書きをご確認ください。'
-      : '新しく返信が必要なメールはありませんでした。' + (result.note ? '\n\n' + result.note : '')
-  );
+  const ui = SpreadsheetApp.getUi();
+  if (result.drafted > 0) {
+    ui.alert(result.drafted + ' 件の返信案を作成しました。続けて確認画面を開きます。');
+    mailOpenReviewPanel();
+    return;
+  }
+  ui.alert('新しく返信が必要なメールはありませんでした。' + (result.note ? '\n\n' + result.note : ''));
 }
 
 function mailStartAutoCheck() {
   mailStopAutoCheck_();
-  ScriptApp.newTrigger('mailScanFromTrigger')
-    .timeBased()
-    .everyMinutes(MAIL_TRIGGER_MINUTES)
-    .create();
+  ScriptApp.newTrigger('mailScanFromTrigger').timeBased().everyMinutes(MAIL_TRIGGER_MINUTES).create();
   boardLog_('②自動チェック', MAIL_TRIGGER_MINUTES + '分ごとの自動チェックを開始しました');
   SpreadsheetApp.getUi().alert(MAIL_TRIGGER_MINUTES + '分ごとの自動チェックを開始しました。');
 }
@@ -60,14 +73,14 @@ function mailScanFromTrigger() {
 }
 
 // ------------------------------------------------------------
-// 本体
+// 新着検知と返信案の生成
 // ------------------------------------------------------------
 
 function mailScan_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const apiKey = PropertiesService.getScriptProperties().getProperty(MAIL_PROP_API_KEY);
+  const apiKey = mailGetApiKey_();
   if (!apiKey) {
-    return { drafted: 0, note: 'Anthropic APIキーが未設定です。「ササゲパス」→「APIキーを登録する」から設定してください。' };
+    return { drafted: 0, note: 'Anthropic APIキーが未設定です。「メール返信支援の設定」→「APIキーを登録する」から設定してください。' };
   }
 
   const customers = mailLoadCustomers_(ss);
@@ -76,6 +89,7 @@ function mailScan_() {
   const label = mailGetLabel_();
   const settings = boardGetSettings_(ss);
   const knowledge = mailLoadKnowledge_(ss);
+  const examples = mailLoadExamples_(ss);
   let drafted = 0;
 
   for (let i = 0; i < customers.length && drafted < MAIL_MAX_THREADS_PER_RUN; i++) {
@@ -100,8 +114,27 @@ function mailScan_() {
       if (last.getFrom().indexOf(customer.email) < 0) continue;
 
       try {
-        mailDraftReply_(ss, thread, messages, customer, knowledge, settings, apiKey);
+        const reply = mailGenerateReply_(apiKey, {
+          knowledge: knowledge,
+          examples: examples,
+          caseInfo: mailFindCaseSummary_(ss, customer.customerId),
+          customer: customer,
+          thread: mailBuildThreadText_(messages)
+        });
+
+        mailAppendHistory_(ss, {
+          customerId: customer.customerId,
+          from: customer.email,
+          subject: thread.getFirstMessageSubject(),
+          summary: mailFirstLines_(last.getPlainBody(), 3),
+          aiFirst: reply,
+          finalText: reply,
+          status: MAIL_STATUS_PENDING,
+          threadId: thread.getId()
+        });
+
         thread.addLabel(label);
+        mailNotify_(ss, settings, customer, thread, reply);
         drafted++;
       } catch (err) {
         boardLog_('②エラー', customer.email + ': ' + err.message);
@@ -113,36 +146,212 @@ function mailScan_() {
   return { drafted: drafted, note: '' };
 }
 
-function mailDraftReply_(ss, thread, messages, customer, knowledge, settings, apiKey) {
-  const context = mailBuildThreadText_(messages);
-  const caseInfo = mailFindCaseSummary_(ss, customer.customerId);
-  const reply = mailAskClaude_(apiKey, {
-    knowledge: knowledge,
-    caseInfo: caseInfo,
-    customer: customer,
-    thread: context
-  });
+function mailNotify_(ss, settings, customer, thread, reply) {
+  const to = String(settings['通知先メールアドレス'] || '').trim();
+  if (!to) return;
+  const body = [
+    (customer.company || customer.name || customer.email) + ' 様から返信がありました。',
+    '返信案を作成しましたので、内容をご確認ください。',
+    '',
+    '件名: ' + thread.getFirstMessageSubject(),
+    '',
+    '確認・修正はスプレッドシートで行います:',
+    ss.getUrl(),
+    '　→ メニュー「ササゲパス」→「返信案を確認する」',
+    '',
+    '───────── 返信案 ─────────',
+    reply,
+    '─────────────────────────',
+    '',
+    'この案はまだ下書きにも保存されていません。',
+    '確認画面で承認した時点で、Gmailの下書きに保存されます。'
+  ].join('\n');
 
+  MailApp.sendEmail({
+    to: to,
+    subject: '【要対応】' + (customer.company || customer.name || customer.email) + ' ─ 返信案ができました',
+    body: body,
+    name: 'ササゲパス業務ボード'
+  });
+}
+
+// ------------------------------------------------------------
+// 確認画面から呼ばれる操作
+// ------------------------------------------------------------
+
+function mailGetPendingList() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
+  const out = [];
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const status = String(rows[i][BOARD_MAIL_COL.status - 1] || '').trim();
+    if (status !== MAIL_STATUS_PENDING && status !== MAIL_STATUS_EDITING) continue;
+    out.push({
+      row: i + 2,
+      date: boardFormatDate_(rows[i][BOARD_MAIL_COL.date - 1]),
+      from: rows[i][BOARD_MAIL_COL.from - 1],
+      subject: rows[i][BOARD_MAIL_COL.subject - 1],
+      summary: rows[i][BOARD_MAIL_COL.summary - 1],
+      text: rows[i][BOARD_MAIL_COL.finalText - 1] || rows[i][BOARD_MAIL_COL.aiFirst - 1],
+      instructions: rows[i][BOARD_MAIL_COL.instructions - 1],
+      status: status
+    });
+  }
+  return out;
+}
+
+/** 画面で編集した本文をシートに保存する（下書きにはしない）。 */
+function mailSaveText(row, text) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
+  sheet.getRange(Number(row), BOARD_MAIL_COL.finalText).setValue(text);
+  sheet.getRange(Number(row), BOARD_MAIL_COL.status).setValue(MAIL_STATUS_EDITING);
+  return { message: '保存しました。' };
+}
+
+/** AIに修正を依頼する。指示は履歴として蓄積する。 */
+function mailReviseText(row, text, instruction) {
+  const trimmed = String(instruction || '').trim();
+  if (!trimmed) throw new Error('修正の指示を入力してください。');
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const apiKey = mailGetApiKey_();
+  if (!apiKey) throw new Error('Anthropic APIキーが未設定です。');
+
+  const revised = mailAskClaude_(apiKey, [
+    'あなたは「ササゲパス」のメール担当者です。',
+    '既存の返信文を、指示に従って書き直してください。',
+    '指示された箇所以外の文体・構成はできるだけ変えないでください。',
+    '書き直した返信文の本文だけを出力し、説明は加えないでください。',
+    '',
+    '【守るべき回答方針】',
+    mailLoadKnowledge_(ss) || '（登録なし）'
+  ].join('\n'), [
+    '【現在の返信文】',
+    text,
+    '',
+    '【修正の指示】',
+    trimmed
+  ].join('\n'));
+
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  const cell = sheet.getRange(Number(row), BOARD_MAIL_COL.instructions);
+  const log = String(cell.getValue() || '');
+  cell.setValue((log ? log + '\n' : '') +
+    Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MM/dd HH:mm') + ' ' + trimmed);
+  sheet.getRange(Number(row), BOARD_MAIL_COL.finalText).setValue(revised);
+  sheet.getRange(Number(row), BOARD_MAIL_COL.status).setValue(MAIL_STATUS_EDITING);
+  boardLog_('②修正依頼', trimmed);
+
+  return { text: revised };
+}
+
+/** 承認して Gmail の下書きに保存する。ここで学習用の記録も残す。 */
+function mailApproveToDraft(row, text) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  const r = Number(row);
+  const values = sheet.getRange(r, 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
+  const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
+  if (!threadId) throw new Error('元のメールスレッドが見つかりません。');
+
+  const thread = GmailApp.getThreadById(threadId);
+  if (!thread) throw new Error('元のメールスレッドが見つかりません。');
+
+  const settings = boardGetSettings_(ss);
   const options = { name: 'ササゲパス' };
   const alias = settings['送信元エイリアス'];
   if (alias && GmailApp.getAliases().indexOf(alias) >= 0) options.from = alias;
-  thread.createDraftReply(reply, options);
+  thread.createDraftReply(text, options);
 
-  mailAppendHistory_(ss, {
-    customerId: customer.customerId,
-    from: customer.email,
-    subject: thread.getFirstMessageSubject(),
-    kind: 'AI下書き',
-    summary: mailFirstLines_(messages[messages.length - 1].getPlainBody(), 3),
-    reply: reply,
-    status: '下書き済',
-    threadId: thread.getId()
+  sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(text);
+  sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SAVED);
+  sheet.getRange(r, BOARD_MAIL_COL.savedAt).setValue(new Date());
+
+  mailRecordExample_(ss, {
+    customer: values[BOARD_MAIL_COL.from - 1],
+    subject: values[BOARD_MAIL_COL.subject - 1],
+    aiFirst: values[BOARD_MAIL_COL.aiFirst - 1],
+    instructions: values[BOARD_MAIL_COL.instructions - 1],
+    finalText: text
   });
 
-  mailNotify_(settings, customer, thread, reply);
+  boardLog_('②下書き保存', values[BOARD_MAIL_COL.subject - 1] + ' の下書きを保存しました');
+  return { message: 'Gmailの下書きに保存しました。内容を確認して送信してください。' };
 }
 
-function mailAskClaude_(apiKey, ctx) {
+function mailDismiss(row) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
+  sheet.getRange(Number(row), BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SKIP);
+  return { message: '対応不要にしました。' };
+}
+
+// ------------------------------------------------------------
+// 学習（修正内容の記録と方針の抽出）
+// ------------------------------------------------------------
+
+function mailRecordExample_(ss, data) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_EXAMPLES);
+  if (!sheet) return;
+
+  const changed = String(data.aiFirst || '').trim() !== String(data.finalText || '').trim();
+  let lesson = '';
+  if (changed) {
+    try {
+      lesson = mailExtractLesson_(data);
+    } catch (err) {
+      boardLog_('②学習', '方針の抽出に失敗: ' + err.message);
+    }
+  }
+
+  sheet.appendRow([
+    new Date(), data.customer, data.subject,
+    data.aiFirst, data.instructions, data.finalText, lesson
+  ]);
+
+  if (lesson) mailAppendKnowledge_(ss, lesson);
+}
+
+/** 初回案と最終文面の差から、次回に活かせる方針を1〜2行で抽出する。 */
+function mailExtractLesson_(data) {
+  const apiKey = mailGetApiKey_();
+  if (!apiKey) return '';
+  const lesson = mailAskClaude_(apiKey, [
+    'あなたはメール文面の編集ログを分析する担当者です。',
+    'AIが作った返信案と、担当者が実際に採用した文面を比較し、',
+    '次回以降のAI生成に活かせる指示を1〜2行で書いてください。',
+    '',
+    '守ること:',
+    '- 「〜する」「〜しない」という行動指針の形にする。',
+    '- この案件だけに当てはまる固有名詞や日付は含めない。一般化する。',
+    '- 変更が誤字修正や些細な言い換えだけの場合は、何も出力せず「なし」とだけ書く。'
+  ].join('\n'), [
+    '【AIが作った案】',
+    String(data.aiFirst || '').slice(0, 2000),
+    '',
+    '【担当者が出した修正指示】',
+    String(data.instructions || '（指示なし。直接編集）'),
+    '',
+    '【採用された最終文面】',
+    String(data.finalText || '').slice(0, 2000)
+  ].join('\n'), 300);
+
+  const text = String(lesson || '').trim();
+  return (text === 'なし' || text === '') ? '' : text;
+}
+
+function mailAppendKnowledge_(ss, lesson) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_KNOWLEDGE);
+  if (!sheet) return;
+  sheet.appendRow(['学習（要確認）', lesson, new Date()]);
+}
+
+// ------------------------------------------------------------
+// Claude API
+// ------------------------------------------------------------
+
+function mailGenerateReply_(apiKey, ctx) {
   const system = [
     'あなたは「ササゲパス」（古着・アパレルEC向けのささげ代行サービス。運営：合同会社ケセラセラ）の',
     'メール担当者です。お客様からのメールに対する返信文の下書きを作成してください。',
@@ -155,7 +364,10 @@ function mailAskClaude_(apiKey, ctx) {
     '- 答えたくないと方針に書かれている内容は、角が立たない形でやんわりと返す。',
     '- 箇条書きを適度に使い、見出しは「■」を用いる。',
     '- 署名は不要（システム側で付与するため本文のみ）。',
-    '- 冒頭は宛名から始める。'
+    '- 冒頭は宛名から始める。',
+    '',
+    '【過去に採用された返信の例】文体と距離感の参考にすること。内容は流用しない。',
+    ctx.examples || '（まだ例がありません）'
   ].join('\n');
 
   const user = [
@@ -175,13 +387,17 @@ function mailAskClaude_(apiKey, ctx) {
     '以上を踏まえ、最新のお客様のメールに対する返信本文だけを出力してください。'
   ].join('\n');
 
+  return mailAskClaude_(apiKey, system, user);
+}
+
+function mailAskClaude_(apiKey, system, user, maxTokens) {
   const response = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
     method: 'post',
     contentType: 'application/json',
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
     payload: JSON.stringify({
       model: MAIL_MODEL,
-      max_tokens: 2000,
+      max_tokens: maxTokens || 2000,
       system: system,
       messages: [{ role: 'user', content: user }]
     }),
@@ -198,36 +414,13 @@ function mailAskClaude_(apiKey, ctx) {
   return parts.map(function (c) { return c.text; }).join('\n').trim();
 }
 
-function mailNotify_(settings, customer, thread, reply) {
-  const to = String(settings['通知先メールアドレス'] || '').trim();
-  if (!to) return;
-  const link = 'https://mail.google.com/mail/u/0/#all/' + thread.getId();
-  const body = [
-    (customer.company || customer.name || customer.email) + ' 様から返信がありました。',
-    '返信案を Gmail の下書きに保存しています。',
-    '',
-    '件名: ' + thread.getFirstMessageSubject(),
-    'スレッドを開く: ' + link,
-    '',
-    '───────── 返信案 ─────────',
-    reply,
-    '─────────────────────────',
-    '',
-    '内容を確認し、必要に応じて修正のうえ送信してください。',
-    'このメールから自動送信されることはありません。'
-  ].join('\n');
-
-  MailApp.sendEmail({
-    to: to,
-    subject: '【要対応】' + (customer.company || customer.name || customer.email) + ' ─ 返信案を作成しました',
-    body: body,
-    name: 'ササゲパス業務ボード'
-  });
-}
-
 // ------------------------------------------------------------
 // 読み込み・整形
 // ------------------------------------------------------------
+
+function mailGetApiKey_() {
+  return PropertiesService.getScriptProperties().getProperty(MAIL_PROP_API_KEY);
+}
 
 function mailLoadCustomers_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
@@ -245,6 +438,16 @@ function mailLoadKnowledge_(ss) {
   return sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues()
     .filter(function (row) { return row[1]; })
     .map(function (row) { return '・[' + (row[0] || 'メモ') + '] ' + row[1]; })
+    .join('\n');
+}
+
+function mailLoadExamples_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_EXAMPLES);
+  if (!sheet || sheet.getLastRow() < 2) return '';
+  const start = Math.max(2, sheet.getLastRow() - MAIL_EXAMPLE_COUNT + 1);
+  return sheet.getRange(start, 6, sheet.getLastRow() - start + 1, 1).getValues()
+    .filter(function (row) { return row[0]; })
+    .map(function (row) { return '---\n' + String(row[0]).slice(0, 1200); })
     .join('\n');
 }
 
@@ -291,8 +494,8 @@ function mailAppendHistory_(ss, data) {
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   if (!sheet) return;
   sheet.appendRow([
-    new Date(), data.customerId, data.from, data.subject,
-    data.kind, data.summary, data.reply, data.status, data.threadId
+    new Date(), data.customerId, data.from, data.subject, data.summary,
+    data.aiFirst, '', data.finalText, data.status, data.threadId, ''
   ]);
 }
 
@@ -311,7 +514,7 @@ function mailHasLabel_(thread, label) {
 
 function mailSetApiKey() {
   const ui = SpreadsheetApp.getUi();
-  const current = PropertiesService.getScriptProperties().getProperty(MAIL_PROP_API_KEY);
+  const current = mailGetApiKey_();
   const response = ui.prompt(
     'Anthropic APIキーの登録',
     (current ? '現在登録済みです（先頭: ' + current.slice(0, 12) + '…）。\n変更する場合は新しいキーを、' : 'console.anthropic.com で発行したキーを') +
