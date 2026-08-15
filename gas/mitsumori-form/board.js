@@ -75,6 +75,12 @@ function onOpen() {
     .addItem('フォーム回答を取り込む', 'boardImportResponses')
     .addItem('顧客・案件を作り直す', 'boardRebuild')
     .addSeparator()
+    .addItem('返信案を今すぐ作る', 'mailCheckNow')
+    .addSubMenu(SpreadsheetApp.getUi().createMenu('メール返信支援の設定')
+      .addItem('APIキーを登録する', 'mailSetApiKey')
+      .addItem('自動チェックを開始する', 'mailStartAutoCheck')
+      .addItem('自動チェックを停止する', 'mailStopAutoCheck'))
+    .addSeparator()
     .addItem('初期セットアップ', 'boardSetup')
     .addToUi();
 }
@@ -213,20 +219,36 @@ function boardOrderSheets_(ss) {
 // 初期データ
 // ------------------------------------------------------------
 
+const BOARD_DEFAULT_SETTINGS = [
+  ['通知先メールアドレス', 'sasagepass@gmail.com', '②の返信案ができたときの通知先'],
+  ['送信元エイリアス', 'info@sasagepass.com', 'メール下書きの差出人。Gmailにエイリアス登録が必要'],
+  ['営業所コード', '160652', '案内メールの発送先'],
+  ['営業所名', '松原柴垣営業所', ''],
+  ['発送先郵便番号', '580-0017', ''],
+  ['発送先宛名', '合同会社ケセラセラ', ''],
+  ['発送先TEL', '050-6870-8948', 'ヤマト送り状に記載する電話番号'],
+  ['品名', '衣類', ''],
+  ['手続き待ちリマインド日数', 5, '署名・支払いが確認できないまま経過した日数'],
+  ['発送待ちリマインド日数', 7, '追跡番号の連絡がないまま経過した日数'],
+  ['返信案の自動チェック', 'オン', 'オフにすると定期チェックで返信案を作らない']
+];
+
+/** 既存の値は上書きせず、未登録・空欄の項目だけを補う。 */
 function boardSeedSettings_(sheet) {
-  if (sheet.getLastRow() > 1) return;
-  sheet.getRange(2, 1, 10, 3).setValues([
-    ['通知先メールアドレス', 'sasagepass@gmail.com', '②の返信案ができたときの通知先'],
-    ['送信元エイリアス', 'info@sasagepass.com', 'メール下書きの差出人。Gmailにエイリアス登録が必要'],
-    ['営業所コード', '160652', '案内メールの発送先'],
-    ['営業所名', '松原柴垣営業所', ''],
-    ['発送先郵便番号', '580-0017', ''],
-    ['発送先宛名', '合同会社ケセラセラ', ''],
-    ['発送先TEL', '', 'ヤマト送り状に記載する電話番号。ここに入力してください'],
-    ['品名', '衣類', ''],
-    ['手続き待ちリマインド日数', 5, '署名・支払いが確認できないまま経過した日数'],
-    ['発送待ちリマインド日数', 7, '追跡番号の連絡がないまま経過した日数']
-  ]);
+  const existing = {};
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues().forEach(function (row, i) {
+      if (row[0]) existing[String(row[0]).trim()] = { row: i + 2, value: row[1] };
+    });
+  }
+  BOARD_DEFAULT_SETTINGS.forEach(function (item) {
+    const hit = existing[item[0]];
+    if (!hit) {
+      sheet.appendRow(item);
+    } else if (hit.value === '' || hit.value === null) {
+      sheet.getRange(hit.row, 2).setValue(item[1]);
+    }
+  });
 }
 
 function boardSeedKnowledge_(sheet) {
