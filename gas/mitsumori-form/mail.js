@@ -39,18 +39,21 @@ function mailCheckNow() {
   const result = mailScan_();
   const ui = SpreadsheetApp.getUi();
   if (result.drafted > 0) {
-    ui.alert(result.drafted + ' 件の返信案を作成しました。続けて確認画面を開きます。');
+    ui.alert(result.drafted + ' 件の新着メールを取り込み、返信案を作成しました。\n続けて「対応を選ぶ」画面を開きます。');
     mailOpenReviewPanel();
     return;
   }
-  ui.alert('新しく返信が必要なメールはありませんでした。' + (result.note ? '\n\n' + result.note : ''));
+  ui.alert('新しく届いたメールはありませんでした。' + (result.note ? '\n\n' + result.note : ''));
 }
 
 function mailStartAutoCheck() {
   mailStopAutoCheck_();
   ScriptApp.newTrigger('mailScanFromTrigger').timeBased().everyMinutes(MAIL_TRIGGER_MINUTES).create();
   boardLog_('②自動チェック', MAIL_TRIGGER_MINUTES + '分ごとの自動チェックを開始しました');
-  SpreadsheetApp.getUi().alert(MAIL_TRIGGER_MINUTES + '分ごとの自動チェックを開始しました。');
+  SpreadsheetApp.getUi().alert(
+    MAIL_TRIGGER_MINUTES + '分ごとに新着メールを自動で確認します。\n' +
+    '返信案ができたら通知メールが届きます。'
+  );
 }
 
 function mailStopAutoCheck() {
@@ -251,6 +254,38 @@ function mailOwnAddresses_(ss) {
   }
   GmailApp.getAliases().forEach(function (alias) { list.push(String(alias).toLowerCase()); });
   return list.filter(function (a) { return a; });
+}
+
+/** 確認画面に表示する、お客様から届いたメールの全文。 */
+function mailGetCustomerMessage(row) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
+  const values = sheet.getRange(Number(row), 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
+  const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
+  const fallback = String(values[BOARD_MAIL_COL.summary - 1] || '(本文を取得できませんでした)');
+  if (!threadId) return { text: fallback };
+
+  try {
+    const thread = GmailApp.getThreadById(threadId);
+    if (!thread) return { text: fallback };
+    const from = String(values[BOARD_MAIL_COL.from - 1] || '').toLowerCase();
+    const messages = thread.getMessages();
+
+    let target = messages[messages.length - 1];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (String(messages[i].getFrom() || '').toLowerCase().indexOf(from) >= 0) {
+        target = messages[i];
+        break;
+      }
+    }
+
+    const body = target.getPlainBody().replace(/\n{3,}/g, '\n\n').trim();
+    const header = Utilities.formatDate(target.getDate(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm') +
+      '　' + target.getFrom() + '\n' + '件名: ' + target.getSubject() + '\n' +
+      '────────────────────\n';
+    return { text: header + body };
+  } catch (err) {
+    return { text: fallback };
+  }
 }
 
 /** 対応種別の一覧を画面に渡す。 */

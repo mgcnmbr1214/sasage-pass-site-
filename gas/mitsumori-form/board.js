@@ -131,25 +131,27 @@ const BOARD_SOURCE_FIELDS = {
 };
 
 function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('ササゲパス')
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('ササゲパス')
+    .addItem('対応を選ぶ', 'mailOpenReviewPanel')
+    .addItem('新着メールを今すぐ確認する', 'mailCheckNow')
+    .addSeparator()
     .addItem('案件を開く', 'boardOpenPanel')
+    .addItem('初回登録の請求書を送る', 'squareOpenFlow')
     .addSeparator()
     .addItem('フォーム回答を取り込む', 'boardImportResponses')
-    .addItem('顧客・案件を作り直す', 'boardRebuild')
     .addSeparator()
-    .addItem('対応を選ぶ', 'mailOpenReviewPanel')
-    .addItem('返信案を今すぐ作る', 'mailCheckNow')
-    .addSubMenu(SpreadsheetApp.getUi().createMenu('メール返信支援の設定')
-      .addItem('APIキーを登録する', 'mailSetApiKey')
-      .addItem('自動チェックを開始する', 'mailStartAutoCheck')
-      .addItem('自動チェックを停止する', 'mailStopAutoCheck'))
-    .addItem('初回登録の請求書を送る', 'squareOpenFlow')
-    .addSubMenu(SpreadsheetApp.getUi().createMenu('Square連携の設定')
+    .addSubMenu(ui.createMenu('設定')
+      .addItem('初期セットアップ', 'boardSetup')
+      .addSeparator()
+      .addItem('Anthropic APIキーを登録する', 'mailSetApiKey')
+      .addItem('新着メールの自動確認を開始する', 'mailStartAutoCheck')
+      .addItem('新着メールの自動確認を停止する', 'mailStopAutoCheck')
+      .addSeparator()
       .addItem('Squareトークンを登録する', 'squareSetToken')
-      .addItem('過去の請求書の設定を読み取る', 'squareInspectTemplate'))
-    .addSeparator()
-    .addItem('初期セットアップ', 'boardSetup')
+      .addItem('過去の請求書の設定を読み取る', 'squareInspectTemplate')
+      .addSeparator()
+      .addItem('顧客・案件を作り直す', 'boardRebuild'))
     .addToUi();
 }
 
