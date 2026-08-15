@@ -31,15 +31,15 @@ const BOARD_STATUS_COLORS = {
 
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
-  '案件ID', 'ステータス', 'お客様', '予定点数', '受付開始日', '納期予定', '次にやること',
+  '案件ID', 'ステータス', 'お客様', '予定点数', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
   '顧客ID', '依頼内容', '単価', '請求書送付日', '署名・支払確認日',
   '追跡番号', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
 const BOARD_COL = {
-  caseId: 1, status: 2, customer: 3, qty: 4, startDate: 5, dueDate: 6, todo: 7,
-  customerId: 8, detail: 9, unitPrice: 10, invoiceSent: 11, signedAt: 12,
-  tracking: 13, guideDraftAt: 14, lastContact: 15, memo: 16, sourceRow: 17
+  caseId: 1, status: 2, customer: 3, qty: 4, startDate: 5, dueFrom: 6, dueTo: 7, todo: 8,
+  customerId: 9, detail: 10, unitPrice: 11, invoiceSent: 12, signedAt: 13,
+  tracking: 14, guideDraftAt: 15, lastContact: 16, memo: 17, sourceRow: 18
 };
 
 const BOARD_CUSTOMER_HEADERS = [
@@ -88,7 +88,7 @@ function boardSetup() {
 
   boardMigrateCases_(ss);
 
-  boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS, [90, 100, 150, 70, 95, 95, 200]);
+  boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS, [90, 100, 150, 70, 95, 95, 95, 200]);
   boardSetupSheet_(ss, BOARD_SHEET_CUSTOMERS, BOARD_CUSTOMER_HEADERS, [80, 170, 120, 220, 130]);
   boardSetupSheet_(ss, BOARD_SHEET_MAILS, BOARD_MAIL_HEADERS, [140, 80, 200, 240]);
   boardSetupSheet_(ss, BOARD_SHEET_TEMPLATES, BOARD_TEMPLATE_HEADERS, [50, 200, 260, 460, 200]);
@@ -114,15 +114,28 @@ function boardSetup() {
   );
 }
 
-/** 旧レイアウト（請求書URL 列あり）からの移行。 */
+/** 旧レイアウトからの移行。列の増減を伴うため、見出し書き換えより先に実行する。 */
 function boardMigrateCases_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-  if (!sheet || sheet.getLastColumn() < 11) return;
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const index = headers.indexOf('請求書URL');
-  if (index >= 0) {
-    sheet.deleteColumn(index + 1);
+  if (!sheet || sheet.getLastColumn() < 10) return;
+
+  let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+
+  const invoiceUrl = headers.indexOf('請求書URL');
+  if (invoiceUrl >= 0) {
+    sheet.deleteColumn(invoiceUrl + 1);
     boardLog_('移行', '請求書URL 列を削除しました');
+    headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+      .map(function (h) { return String(h || '').trim(); });
+  }
+
+  const due = headers.indexOf('納期予定');
+  if (due >= 0) {
+    sheet.getRange(1, due + 1).setValue('納期予定（自）');
+    sheet.insertColumnAfter(due + 1);
+    sheet.getRange(1, due + 2).setValue('納期予定（至）');
+    boardLog_('移行', '納期予定を（自）（至）の2列に分割しました');
   }
 }
 
@@ -171,7 +184,7 @@ function boardApplyCaseFormatting_(sheet) {
   });
   sheet.setConditionalFormatRules(rules);
 
-  [BOARD_COL.startDate, BOARD_COL.dueDate, BOARD_COL.invoiceSent,
+  [BOARD_COL.startDate, BOARD_COL.dueFrom, BOARD_COL.dueTo, BOARD_COL.invoiceSent,
    BOARD_COL.signedAt, BOARD_COL.guideDraftAt, BOARD_COL.lastContact].forEach(function (col) {
     sheet.getRange(2, col, maxRows, 1).setNumberFormat('yyyy/mm/dd');
   });
@@ -229,13 +242,15 @@ function boardSeedKnowledge_(sheet) {
 }
 
 function boardSeedTemplates_(sheet) {
-  if (sheet.getLastRow() > 1) return;
-  sheet.getRange(2, 1, 2, 5).setValues([
-    ['T2', '案内メール（依頼確定時）', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定が未入力の場合は下書きを作成しない。予定点数が空なら該当行は自動で消える'],
-    ['T4', '手続き完了のご連絡', '【ササゲパス】お手続きを確認いたしました', boardDefaultDoneBody_(), '署名・カード登録の確認後に送る']
-  ]);
-  sheet.getRange(2, 4, 2, 1).setWrap(true);
-  sheet.setRowHeights(2, 2, 120);
+  if (sheet.getLastRow() <= 1) {
+    sheet.getRange(2, 1, 2, 5).setValues([
+      ['T2', '案内メール（依頼確定時）', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定（自）が未入力なら下書きを作成しない。予定点数・初回注記は空なら該当行が自動で消える'],
+      ['T4', '手続き完了のご連絡', '【ササゲパス】お手続きを確認いたしました', boardDefaultDoneBody_(), '署名・カード登録の確認後に送る']
+    ]);
+  }
+  const rows = Math.max(sheet.getLastRow() - 1, 1);
+  sheet.getRange(2, 4, rows, 1).setWrap(true).setVerticalAlignment('top');
+  sheet.setRowHeights(2, rows, 300);
 }
 
 function boardDefaultGuideBody_() {
@@ -255,7 +270,8 @@ function boardDefaultGuideBody_() {
     '　単　　　価　：{{単価}}／点',
     '　受付開始日　：{{受付開始日}}',
     '　納期の目安　：{{納期予定}}',
-    '　※納期は商品到着後の状況により前後する場合がございます。',
+    '　※上記受付開始日に到着した際のおおよその目安です。',
+    '{{初回注記}}',
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     '■ ご発送前のお手続き（お支払い方法のご登録）',
@@ -316,6 +332,8 @@ function boardDefaultDoneBody_() {
     '',
     '　受付開始日　：{{受付開始日}}',
     '　納期の目安　：{{納期予定}}',
+    '　※上記受付開始日に到着した際のおおよその目安です。',
+    '{{初回注記}}',
     '',
     'どうぞよろしくお願い申し上げます。'
   ].join('\n');
@@ -460,17 +478,19 @@ function boardUpsertCustomer_(sheet, data) {
 function boardSetTodoFormula_(sheet, row) {
   const cell = function (col) { return '$' + boardColLetter_(col) + row; };
   const b = cell(BOARD_COL.status);
-  const e = cell(BOARD_COL.startDate);
-  const f = cell(BOARD_COL.dueDate);
-  const g = cell(BOARD_COL.guideDraftAt);
-  const elapsed = '" ("&TEXT(TODAY()-' + g + ',"0")&"日経過)"';
+  const start = cell(BOARD_COL.startDate);
+  const from = cell(BOARD_COL.dueFrom);
+  const to = cell(BOARD_COL.dueTo);
+  const draft = cell(BOARD_COL.guideDraftAt);
+  const dueEnd = 'IF(' + to + '="",' + from + ',' + to + ')';
+  const elapsed = '" ("&TEXT(TODAY()-' + draft + ',"0")&"日経過)"';
   const formula = '=IF(' + cell(BOARD_COL.caseId) + '="","",IFS(' +
     b + '="問合せ","返信案を確認して返信",' +
     b + '="返信済","お客様の返信待ち",' +
-    b + '="依頼確定",IF(OR(' + e + '="",' + f + '=""),"日付を入れて案内メール","案内メールを送る"),' +
-    b + '="手続き待ち","署名・支払い待ち"&IF(' + g + '="","",' + elapsed + '),' +
+    b + '="依頼確定",IF(OR(' + start + '="",' + from + '=""),"日付を入れて案内メール","案内メールを送る"),' +
+    b + '="手続き待ち","署名・支払い待ち"&IF(' + draft + '="","",' + elapsed + '),' +
     b + '="発送待ち","追跡番号の連絡待ち",' +
-    b + '="作業中","作業"&IF(' + f + '="","","（納期 "&TEXT(' + f + ',"m/d")&"）"),' +
+    b + '="作業中","作業"&IF(' + from + '="","","（納期 "&TEXT(' + dueEnd + ',"m/d")&"）"),' +
     'TRUE,""))';
   sheet.getRange(row, BOARD_COL.todo).setFormula(formula);
 }
@@ -532,7 +552,8 @@ function boardGetActiveCase() {
     customer: v[BOARD_COL.customer - 1],
     qty: v[BOARD_COL.qty - 1],
     startDate: boardToInputDate_(v[BOARD_COL.startDate - 1]),
-    dueDate: boardToInputDate_(v[BOARD_COL.dueDate - 1]),
+    dueFrom: boardToInputDate_(v[BOARD_COL.dueFrom - 1]),
+    dueTo: boardToInputDate_(v[BOARD_COL.dueTo - 1]),
     todo: v[BOARD_COL.todo - 1],
     customerId: v[BOARD_COL.customerId - 1],
     detail: v[BOARD_COL.detail - 1],
@@ -548,7 +569,8 @@ function boardSaveCase(data) {
   const row = Number(data.row);
   sheet.getRange(row, BOARD_COL.qty).setValue(data.qty === '' ? '' : Number(data.qty));
   sheet.getRange(row, BOARD_COL.startDate).setValue(boardFromInputDate_(data.startDate));
-  sheet.getRange(row, BOARD_COL.dueDate).setValue(boardFromInputDate_(data.dueDate));
+  sheet.getRange(row, BOARD_COL.dueFrom).setValue(boardFromInputDate_(data.dueFrom));
+  sheet.getRange(row, BOARD_COL.dueTo).setValue(boardFromInputDate_(data.dueTo));
   boardSetTodoFormula_(sheet, row);
   boardLog_('保存', data.caseId + ' を更新しました');
   return boardGetActiveCase();
@@ -562,8 +584,8 @@ function boardCreateGuideDraft(data) {
   boardSaveCase(data);
 
   const v = sheet.getRange(row, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
-  if (!v[BOARD_COL.startDate - 1] || !v[BOARD_COL.dueDate - 1]) {
-    throw new Error('受付開始日と納期予定を両方入力してください。');
+  if (!v[BOARD_COL.startDate - 1] || !v[BOARD_COL.dueFrom - 1]) {
+    throw new Error('受付開始日と納期予定（自）を入力してください。');
   }
 
   const customerId = v[BOARD_COL.customerId - 1];
@@ -588,7 +610,9 @@ function boardCreateGuideDraft(data) {
     '予定点数': qty,
     '単価': v[BOARD_COL.unitPrice - 1],
     '受付開始日': boardFormatDate_(v[BOARD_COL.startDate - 1]),
-    '納期予定': boardFormatDate_(v[BOARD_COL.dueDate - 1]),
+    '納期予定': boardFormatDateRange_(v[BOARD_COL.dueFrom - 1], v[BOARD_COL.dueTo - 1]),
+    '初回注記': boardIsFirstCase_(ss, customerId, v[BOARD_COL.caseId - 1])
+      ? '　※初回のみ、ストア情報登録のため、通常より大幅に納期をいただいております。' : '',
     '営業所コード': settings['営業所コード'],
     '営業所名': settings['営業所名'],
     '発送先郵便番号': settings['発送先郵便番号'],
@@ -600,6 +624,9 @@ function boardCreateGuideDraft(data) {
   let bodySource = String(tpl.body || '');
   if (qty === '' || qty === null || qty === undefined) {
     bodySource = boardDropLinesWith_(bodySource, '{{予定点数}}');
+  }
+  if (!vars['初回注記']) {
+    bodySource = boardDropLinesWith_(bodySource, '{{初回注記}}');
   }
 
   const subject = boardFill_(tpl.subject, vars);
@@ -675,6 +702,25 @@ function boardDropLinesWith_(text, needle) {
   return String(text || '').split('\n').filter(function (line) {
     return line.indexOf(needle) < 0;
   }).join('\n');
+}
+
+function boardFormatDateRange_(from, to) {
+  if (!from) return '';
+  if (!to) return boardFormatDate_(from);
+  return boardFormatDate_(from) + ' 〜 ' + boardFormatDate_(to);
+}
+
+/** その顧客にとって最初の案件かどうか（自分より前の案件が無ければ初回）。 */
+function boardIsFirstCase_(ss, customerId, caseId) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 2 || !customerId) return true;
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][BOARD_COL.customerId - 1]).trim() !== String(customerId).trim()) continue;
+    if (String(rows[i][BOARD_COL.caseId - 1]).trim() === String(caseId).trim()) return true;
+    if (rows[i][BOARD_COL.guideDraftAt - 1]) return false;
+  }
+  return true;
 }
 
 function boardFormatDate_(value) {

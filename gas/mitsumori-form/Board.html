@@ -41,7 +41,10 @@
   <input type="date" id="startDate">
 
   <label>納期予定 <span style="color:#e5484d">*</span></label>
-  <input type="date" id="dueDate">
+  <input type="date" id="dueFrom">
+  <div style="text-align:center;color:#8A97B8;font-size:12px;margin:4px 0;">〜</div>
+  <input type="date" id="dueTo">
+  <div class="hint">終了日は任意です。1日だけの場合は上だけ入力してください。</div>
 
   <label>予定点数（任意）</label>
   <input type="number" id="qty" min="0" placeholder="空欄ならメールに記載しません">
@@ -71,16 +74,17 @@
       caseId: current.caseId,
       qty: document.getElementById('qty').value,
       startDate: document.getElementById('startDate').value,
-      dueDate: document.getElementById('dueDate').value
+      dueFrom: document.getElementById('dueFrom').value,
+      dueTo: document.getElementById('dueTo').value
     };
   }
 
   function refreshButton() {
-    var ok = document.getElementById('startDate').value && document.getElementById('dueDate').value;
+    var ok = document.getElementById('startDate').value && document.getElementById('dueFrom').value;
     document.getElementById('btnDraft').disabled = !ok;
     document.getElementById('hint').textContent = ok
       ? '押すとGmailに下書きが作られます。送信は手動です。'
-      : '受付開始日と納期予定を入力すると押せるようになります。';
+      : '受付開始日と納期予定の開始日を入力すると押せるようになります。';
   }
 
   function render(data) {
@@ -95,13 +99,15 @@
     emailEl.style.color = data.emailValid ? '' : '#e5484d';
     document.getElementById('detail').textContent = data.detail || '';
     document.getElementById('startDate').value = data.startDate || '';
-    document.getElementById('dueDate').value = data.dueDate || '';
+    document.getElementById('dueFrom').value = data.dueFrom || '';
+    document.getElementById('dueTo').value = data.dueTo || '';
     document.getElementById('qty').value = data.qty || '';
     refreshButton();
   }
 
-  document.getElementById('startDate').addEventListener('change', refreshButton);
-  document.getElementById('dueDate').addEventListener('change', refreshButton);
+  ['startDate', 'dueFrom', 'dueTo'].forEach(function (id) {
+    document.getElementById(id).addEventListener('change', refreshButton);
+  });
 
   document.getElementById('btnSave').addEventListener('click', function () {
     google.script.run.withSuccessHandler(function (d) { render(d); show('ok', '保存しました。'); })
