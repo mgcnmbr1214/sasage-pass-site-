@@ -16,18 +16,23 @@ const BOARD_SHEET_LOGS = 'ログ';
 
 const BOARD_SOURCE_SHEET = 'Responses';
 
-const BOARD_STATUSES = ['問合せ', '返信済', '依頼確定', '手続き待ち', '発送待ち', '作業中', '返送済', '見送り'];
+const BOARD_STATUS_SIGNING = '支払い情報登録・契約書署名待ち';
+
+const BOARD_STATUSES = ['問合せ', '返信済', '依頼確定', BOARD_STATUS_SIGNING, '発送待ち', '作業中', '返送済', '見送り'];
 
 const BOARD_STATUS_COLORS = {
   '問合せ': '#FAEEDA',
   '返信済': '#FAEEDA',
   '依頼確定': '#EEEDFE',
-  '手続き待ち': '#E6F1FB',
+  '支払い情報登録・契約書署名待ち': '#E6F1FB',
   '発送待ち': '#E1F5EE',
   '作業中': '#F1EFE8',
   '返送済': '#F1EFE8',
   '見送り': '#F1EFE8'
 };
+
+/** 旧名称 → 新名称。セットアップ時に既存の値を書き換える。 */
+const BOARD_STATUS_RENAMES = { '手続き待ち': BOARD_STATUS_SIGNING };
 
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
@@ -92,6 +97,9 @@ function onOpen() {
       .addItem('APIキーを登録する', 'mailSetApiKey')
       .addItem('自動チェックを開始する', 'mailStartAutoCheck')
       .addItem('自動チェックを停止する', 'mailStopAutoCheck'))
+    .addSubMenu(SpreadsheetApp.getUi().createMenu('Square連携')
+      .addItem('Squareトークンを登録する', 'squareSetToken')
+      .addItem('過去の請求書の設定を読み取る', 'squareInspectTemplate'))
     .addSeparator()
     .addItem('初期セットアップ', 'boardSetup')
     .addToUi();
@@ -106,7 +114,7 @@ function boardSetup() {
 
   boardMigrateCases_(ss);
 
-  boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS, [90, 100, 150, 70, 95, 95, 95, 200]);
+  boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS, [90, 210, 150, 70, 95, 95, 95, 220]);
   boardSetupSheet_(ss, BOARD_SHEET_CUSTOMERS, BOARD_CUSTOMER_HEADERS, [80, 170, 120, 220, 130]);
   boardSetupSheet_(ss, BOARD_SHEET_MAILS, BOARD_MAIL_HEADERS, [140, 80, 200, 240, 240, 300, 260, 300, 110, 200, 140]);
   boardSetupSheet_(ss, BOARD_SHEET_EXAMPLES, BOARD_EXAMPLE_HEADERS, [140, 150, 240, 300, 260, 300, 320]);
@@ -155,6 +163,26 @@ function boardMigrateCases_(ss) {
     sheet.insertColumnAfter(due + 1);
     sheet.getRange(1, due + 2).setValue('納期予定（至）');
     boardLog_('移行', '納期予定を（自）（至）の2列に分割しました');
+  }
+
+  boardRenameStatuses_(sheet);
+}
+
+/** 旧ステータス名を新名称へ置き換える。入力規則より先に実行する。 */
+function boardRenameStatuses_(sheet) {
+  if (sheet.getLastRow() < 2) return;
+  const range = sheet.getRange(2, BOARD_COL.status, sheet.getLastRow() - 1, 1);
+  const values = range.getValues();
+  let changed = 0;
+  const next = values.map(function (row) {
+    const name = String(row[0] || '').trim();
+    if (BOARD_STATUS_RENAMES[name]) { changed++; return [BOARD_STATUS_RENAMES[name]]; }
+    return [row[0]];
+  });
+  if (changed > 0) {
+    range.setDataValidation(null);
+    range.setValues(next);
+    boardLog_('移行', 'ステータス名を ' + changed + ' 件更新しました');
   }
 }
 
@@ -242,7 +270,7 @@ const BOARD_DEFAULT_SETTINGS = [
   ['発送先宛名', '合同会社ケセラセラ', ''],
   ['発送先TEL', '050-6870-8948', 'ヤマト送り状に記載する電話番号'],
   ['品名', '衣類', ''],
-  ['手続き待ちリマインド日数', 5, '署名・支払いが確認できないまま経過した日数'],
+  ['署名待ちリマインド日数', 5, '支払い情報の登録・契約書署名が確認できないまま経過した日数'],
   ['発送待ちリマインド日数', 7, '追跡番号の連絡がないまま経過した日数'],
   ['返信案の自動チェック', 'オン', 'オフにすると定期チェックで返信案を作らない']
 ];
@@ -524,7 +552,7 @@ function boardSetTodoFormula_(sheet, row) {
     b + '="問合せ","返信案を確認して返信",' +
     b + '="返信済","お客様の返信待ち",' +
     b + '="依頼確定",IF(OR(' + start + '="",' + from + '=""),"日付を入れて案内メール","案内メールを送る"),' +
-    b + '="手続き待ち","署名・支払い待ち"&IF(' + draft + '="","",' + elapsed + '),' +
+    b + '="' + BOARD_STATUS_SIGNING + '","支払い情報の登録・署名待ち"&IF(' + draft + '="","",' + elapsed + '),' +
     b + '="発送待ち","追跡番号の連絡待ち",' +
     b + '="作業中","作業"&IF(' + from + '="","","（納期 "&TEXT(' + dueEnd + ',"m/d")&"）"),' +
     'TRUE,""))';
@@ -677,7 +705,7 @@ function boardCreateGuideDraft(data) {
   if (!sheet.getRange(row, BOARD_COL.invoiceSent).getValue()) {
     sheet.getRange(row, BOARD_COL.invoiceSent).setValue(new Date());
   }
-  sheet.getRange(row, BOARD_COL.status).setValue('手続き待ち');
+  sheet.getRange(row, BOARD_COL.status).setValue(BOARD_STATUS_SIGNING);
   boardSetTodoFormula_(sheet, row);
   boardLog_('下書き作成', v[BOARD_COL.caseId - 1] + ' の案内メール下書きを作成しました');
 
