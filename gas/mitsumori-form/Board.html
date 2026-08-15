@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<style>
+  body { font-family: 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif; font-size: 13px; color: #1E293B; margin: 0; padding: 14px; }
+  .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .case-id { font-weight: 700; font-size: 15px; }
+  .badge { background: #EEEDFE; color: #3C3489; padding: 3px 9px; border-radius: 8px; font-size: 11.5px; }
+  label { display: block; font-size: 11.5px; color: #5A6A8A; font-weight: 700; margin: 12px 0 4px; }
+  input, select { width: 100%; box-sizing: border-box; border: 1px solid #DDE4F8; border-radius: 8px; padding: 7px 9px; font-size: 13px; font-family: inherit; }
+  input:focus, select:focus { outline: none; border-color: #3B6EF8; }
+  .row-info { font-size: 12px; color: #5A6A8A; line-height: 1.7; background: #F4F7FF; border-radius: 8px; padding: 9px 11px; margin-bottom: 4px; }
+  button { width: 100%; border: none; border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 700; font-family: inherit; cursor: pointer; margin-top: 8px; }
+  .btn-main { background: #FF6B35; color: #fff; }
+  .btn-main:disabled { background: #E4E7EF; color: #A0A8BC; cursor: not-allowed; }
+  .btn-sub { background: #fff; color: #3B6EF8; border: 1px solid #DDE4F8; }
+  .msg { margin-top: 12px; padding: 9px 11px; border-radius: 8px; font-size: 12px; line-height: 1.6; display: none; white-space: pre-wrap; }
+  .msg-ok { background: #e6f6ec; color: #2c9e5e; }
+  .msg-err { background: #fdeceb; color: #e5484d; }
+  .hint { font-size: 11px; color: #8A97B8; margin-top: 5px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div id="loading">読み込み中...</div>
+
+<div id="panel" style="display:none">
+  <div class="head">
+    <span class="case-id" id="caseId"></span>
+    <span class="badge" id="status"></span>
+  </div>
+
+  <div class="row-info">
+    <div id="customer"></div>
+    <div id="email"></div>
+    <div id="detail"></div>
+  </div>
+
+  <label>受付開始日 <span style="color:#e5484d">*</span></label>
+  <input type="date" id="startDate">
+
+  <label>納期予定 <span style="color:#e5484d">*</span></label>
+  <input type="date" id="dueDate">
+
+  <label>点数</label>
+  <input type="number" id="qty" min="0">
+
+  <label>Square 請求書URL</label>
+  <input type="text" id="invoiceUrl" placeholder="https://squareup.com/...">
+
+  <button class="btn-main" id="btnDraft" disabled>案内メールの下書きを作る</button>
+  <div class="hint" id="hint">受付開始日と納期予定を入力すると押せるようになります。</div>
+
+  <button class="btn-sub" id="btnSave">入力内容を保存する</button>
+  <button class="btn-sub" id="btnMail">このお客様のメールを開く</button>
+
+  <div class="msg" id="msg"></div>
+</div>
+
+<script>
+  var current = null;
+
+  function show(kind, text) {
+    var el = document.getElementById('msg');
+    el.className = 'msg msg-' + kind;
+    el.textContent = text;
+    el.style.display = 'block';
+  }
+
+  function collect() {
+    return {
+      row: current.row,
+      caseId: current.caseId,
+      qty: document.getElementById('qty').value,
+      startDate: document.getElementById('startDate').value,
+      dueDate: document.getElementById('dueDate').value,
+      invoiceUrl: document.getElementById('invoiceUrl').value
+    };
+  }
+
+  function refreshButton() {
+    var ok = document.getElementById('startDate').value && document.getElementById('dueDate').value;
+    document.getElementById('btnDraft').disabled = !ok;
+    document.getElementById('hint').textContent = ok
+      ? '押すとGmailに下書きが作られます。送信は手動です。'
+      : '受付開始日と納期予定を入力すると押せるようになります。';
+  }
+
+  function render(data) {
+    current = data;
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('panel').style.display = 'block';
+    document.getElementById('caseId').textContent = data.caseId;
+    document.getElementById('status').textContent = data.status;
+    document.getElementById('customer').textContent = data.customer || '(顧客名なし)';
+    document.getElementById('email').textContent = data.email || '(メールアドレス未登録)';
+    document.getElementById('detail').textContent = data.detail || '';
+    document.getElementById('startDate').value = data.startDate || '';
+    document.getElementById('dueDate').value = data.dueDate || '';
+    document.getElementById('qty').value = data.qty || '';
+    document.getElementById('invoiceUrl').value = data.invoiceUrl || '';
+    refreshButton();
+  }
+
+  document.getElementById('startDate').addEventListener('change', refreshButton);
+  document.getElementById('dueDate').addEventListener('change', refreshButton);
+
+  document.getElementById('btnSave').addEventListener('click', function () {
+    google.script.run.withSuccessHandler(function (d) { render(d); show('ok', '保存しました。'); })
+      .withFailureHandler(function (e) { show('err', e.message); })
+      .boardSaveCase(collect());
+  });
+
+  document.getElementById('btnDraft').addEventListener('click', function () {
+    document.getElementById('btnDraft').disabled = true;
+    google.script.run.withSuccessHandler(function (r) {
+      show('ok', r.message + '\n宛先: ' + r.to);
+      google.script.run.withSuccessHandler(render).boardGetActiveCase();
+    }).withFailureHandler(function (e) {
+      show('err', e.message);
+      refreshButton();
+    }).boardCreateGuideDraft(collect());
+  });
+
+  document.getElementById('btnMail').addEventListener('click', function () {
+    if (!current || !current.email) { show('err', 'メールアドレスが登録されていません。'); return; }
+    window.open('https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(current.email), '_blank');
+  });
+
+  google.script.run.withSuccessHandler(render)
+    .withFailureHandler(function (e) { document.getElementById('loading').textContent = e.message; })
+    .boardGetActiveCase();
+</script>
+</body>
+</html>

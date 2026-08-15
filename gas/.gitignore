@@ -1,0 +1,5 @@
+# 既存の見積もりフォーム本体は公開リポジトリに含めない。
+# 管理画面キーの初期値がコード内に含まれているため。
+# ローカルには clasp clone で取得済みで、業務ボード側のコードのみを追跡する。
+mitsumori-form/code.js
+mitsumori-form/Index.html
