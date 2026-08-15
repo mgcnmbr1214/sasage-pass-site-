@@ -29,11 +29,18 @@ const BOARD_STATUS_COLORS = {
   '見送り': '#F1EFE8'
 };
 
+/** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
-  '案件ID', 'ステータス', 'お客様', '点数', '受付開始日', '納期予定', '次にやること',
-  '顧客ID', '依頼内容', '単価', '請求書URL', '請求書送付日', '署名・支払確認日',
+  '案件ID', 'ステータス', 'お客様', '予定点数', '受付開始日', '納期予定', '次にやること',
+  '顧客ID', '依頼内容', '単価', '請求書送付日', '署名・支払確認日',
   '追跡番号', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
+
+const BOARD_COL = {
+  caseId: 1, status: 2, customer: 3, qty: 4, startDate: 5, dueDate: 6, todo: 7,
+  customerId: 8, detail: 9, unitPrice: 10, invoiceSent: 11, signedAt: 12,
+  tracking: 13, guideDraftAt: 14, lastContact: 15, memo: 16, sourceRow: 17
+};
 
 const BOARD_CUSTOMER_HEADERS = [
   '顧客ID', '会社名・屋号', '担当者名', 'メールアドレス', '電話番号',
@@ -47,12 +54,26 @@ const BOARD_KNOWLEDGE_HEADERS = ['分類', '内容', '更新日'];
 const BOARD_SETTINGS_HEADERS = ['項目', '値', '説明'];
 const BOARD_LOG_HEADERS = ['日時', '種別', '内容'];
 
+/** Responses シートの見出し候補。列の位置ではなく見出し名で解決する。 */
+const BOARD_SOURCE_FIELDS = {
+  date: ['送信日時', 'タイムスタンプ'],
+  company: ['会社名', '会社名・屋号', '貴社名 / 屋号名'],
+  name: ['お名前', 'ご担当者名', '担当者名'],
+  email: ['メールアドレス', 'メール'],
+  tel: ['電話番号', 'お電話番号'],
+  monthly: ['月間予定数', '月間の依頼予定数量'],
+  detail: ['選択内容'],
+  unitPrice: ['概算単価'],
+  inquiry: ['お問い合わせ・ご要望']
+};
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('ササゲパス')
     .addItem('案件を開く', 'boardOpenPanel')
     .addSeparator()
     .addItem('フォーム回答を取り込む', 'boardImportResponses')
+    .addItem('顧客・案件を作り直す', 'boardRebuild')
     .addSeparator()
     .addItem('初期セットアップ', 'boardSetup')
     .addToUi();
@@ -65,7 +86,9 @@ function onOpen() {
 function boardSetup() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS, [90, 100, 150, 55, 95, 95, 200]);
+  boardMigrateCases_(ss);
+
+  boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS, [90, 100, 150, 70, 95, 95, 200]);
   boardSetupSheet_(ss, BOARD_SHEET_CUSTOMERS, BOARD_CUSTOMER_HEADERS, [80, 170, 120, 220, 130]);
   boardSetupSheet_(ss, BOARD_SHEET_MAILS, BOARD_MAIL_HEADERS, [140, 80, 200, 240]);
   boardSetupSheet_(ss, BOARD_SHEET_TEMPLATES, BOARD_TEMPLATE_HEADERS, [50, 200, 260, 460, 200]);
@@ -80,6 +103,7 @@ function boardSetup() {
 
   boardOrderSheets_(ss);
   boardHideSourceSheets_(ss);
+
   const imported = boardImportResponses_(ss);
   boardLog_('セットアップ', '初期セットアップを実行しました（取込 ' + imported + ' 件）');
 
@@ -88,6 +112,18 @@ function boardSetup() {
     'フォーム回答の取り込み：' + imported + ' 件\n\n' +
     '「案件ボード」タブをご確認ください。'
   );
+}
+
+/** 旧レイアウト（請求書URL 列あり）からの移行。 */
+function boardMigrateCases_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastColumn() < 11) return;
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const index = headers.indexOf('請求書URL');
+  if (index >= 0) {
+    sheet.deleteColumn(index + 1);
+    boardLog_('移行', '請求書URL 列を削除しました');
+  }
 }
 
 function boardSetupSheet_(ss, name, headers, widths) {
@@ -110,12 +146,11 @@ function boardApplyCaseFormatting_(sheet) {
   sheet.setFrozenColumns(3);
 
   const maxRows = Math.max(sheet.getMaxRows() - 1, 1);
-  const statusRange = sheet.getRange(2, 2, maxRows, 1);
-  const rule = SpreadsheetApp.newDataValidation()
+  const statusRange = sheet.getRange(2, BOARD_COL.status, maxRows, 1);
+  statusRange.setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(BOARD_STATUSES, true)
     .setAllowInvalid(false)
-    .build();
-  statusRange.setDataValidation(rule);
+    .build());
 
   const rules = [];
   BOARD_STATUSES.forEach(function (status) {
@@ -126,23 +161,20 @@ function boardApplyCaseFormatting_(sheet) {
       .build());
   });
 
-  const todoRange = sheet.getRange(2, 7, maxRows, 1);
-  rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenTextContains('日付を入れて')
-    .setFontColor('#A32D2D')
-    .setRanges([todoRange])
-    .build());
-  rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenTextContains('経過')
-    .setFontColor('#A32D2D')
-    .setRanges([todoRange])
-    .build());
-
+  const todoRange = sheet.getRange(2, BOARD_COL.todo, maxRows, 1);
+  ['日付を入れて', '経過'].forEach(function (word) {
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextContains(word)
+      .setFontColor('#A32D2D')
+      .setRanges([todoRange])
+      .build());
+  });
   sheet.setConditionalFormatRules(rules);
 
-  sheet.getRange(2, 5, maxRows, 2).setNumberFormat('yyyy/mm/dd');
-  sheet.getRange(2, 12, maxRows, 2).setNumberFormat('yyyy/mm/dd');
-  sheet.getRange(2, 15, maxRows, 2).setNumberFormat('yyyy/mm/dd');
+  [BOARD_COL.startDate, BOARD_COL.dueDate, BOARD_COL.invoiceSent,
+   BOARD_COL.signedAt, BOARD_COL.guideDraftAt, BOARD_COL.lastContact].forEach(function (col) {
+    sheet.getRange(2, col, maxRows, 1).setNumberFormat('yyyy/mm/dd');
+  });
 }
 
 function boardHideSourceSheets_(ss) {
@@ -199,7 +231,7 @@ function boardSeedKnowledge_(sheet) {
 function boardSeedTemplates_(sheet) {
   if (sheet.getLastRow() > 1) return;
   sheet.getRange(2, 1, 2, 5).setValues([
-    ['T2', '案内メール（依頼確定時）', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定が未入力の場合は下書きを作成しない'],
+    ['T2', '案内メール（依頼確定時）', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定が未入力の場合は下書きを作成しない。予定点数が空なら該当行は自動で消える'],
     ['T4', '手続き完了のご連絡', '【ササゲパス】お手続きを確認いたしました', boardDefaultDoneBody_(), '署名・カード登録の確認後に送る']
   ]);
   sheet.getRange(2, 4, 2, 1).setWrap(true);
@@ -219,7 +251,7 @@ function boardDefaultGuideBody_() {
     '■ ご依頼内容',
     '━━━━━━━━━━━━━━━━━━━━',
     '　ご依頼内容　：{{依頼内容}}',
-    '　ご依頼点数　：{{点数}}点',
+    '　ご依頼点数　：{{予定点数}}点',
     '　単　　　価　：{{単価}}／点',
     '　受付開始日　：{{受付開始日}}',
     '　納期の目安　：{{納期予定}}',
@@ -298,6 +330,42 @@ function boardImportResponses() {
   SpreadsheetApp.getUi().alert(count > 0 ? count + ' 件の新しい回答を取り込みました。' : '新しい回答はありませんでした。');
 }
 
+function boardRebuild() {
+  const ui = SpreadsheetApp.getUi();
+  const answer = ui.alert('顧客・案件を作り直す',
+    '「案件ボード」と「顧客」の内容をすべて削除し、フォーム回答から作り直します。\n' +
+    '手入力した受付開始日・納期予定・メモも消えます。よろしいですか？',
+    ui.ButtonSet.YES_NO);
+  if (answer !== ui.Button.YES) return;
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  [BOARD_SHEET_CASES, BOARD_SHEET_CUSTOMERS].forEach(function (name) {
+    const sheet = ss.getSheetByName(name);
+    if (sheet && sheet.getLastRow() > 1) {
+      sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getMaxColumns()).clear();
+    }
+  });
+  const imported = boardImportResponses_(ss);
+  boardLog_('作り直し', imported + ' 件を再取込しました');
+  ui.alert(imported + ' 件を取り込み直しました。');
+}
+
+/** 見出し名 → 列番号（1始まり）。表記ゆれに備えて候補を順に探す。 */
+function boardResolveSourceColumns_(sheet) {
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+  const map = {};
+  Object.keys(BOARD_SOURCE_FIELDS).forEach(function (key) {
+    const candidates = BOARD_SOURCE_FIELDS[key];
+    for (let i = 0; i < candidates.length; i++) {
+      const index = headers.indexOf(candidates[i]);
+      if (index >= 0) { map[key] = index; return; }
+    }
+    map[key] = -1;
+  });
+  return map;
+}
+
 function boardImportResponses_(ss) {
   const source = ss.getSheetByName(BOARD_SOURCE_SHEET);
   if (!source || source.getLastRow() < 2) return 0;
@@ -306,14 +374,19 @@ function boardImportResponses_(ss) {
   const customers = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
   if (!cases || !customers) return 0;
 
+  const col = boardResolveSourceColumns_(source);
+  if (col.email < 0) {
+    throw new Error('Responses シートに「メールアドレス」の列が見つかりません。見出し行をご確認ください。');
+  }
+
   const imported = {};
   if (cases.getLastRow() > 1) {
-    cases.getRange(2, 18, cases.getLastRow() - 1, 1).getValues().forEach(function (row) {
+    cases.getRange(2, BOARD_COL.sourceRow, cases.getLastRow() - 1, 1).getValues().forEach(function (row) {
       if (row[0]) imported[String(row[0])] = true;
     });
   }
 
-  const rows = source.getRange(2, 1, source.getLastRow() - 1, 15).getValues();
+  const rows = source.getRange(2, 1, source.getLastRow() - 1, source.getLastColumn()).getValues();
   let added = 0;
 
   for (let i = 0; i < rows.length; i++) {
@@ -321,27 +394,37 @@ function boardImportResponses_(ss) {
     if (imported[String(sourceRow)]) continue;
 
     const r = rows[i];
-    const email = String(r[3] || '').trim();
-    if (!email) continue;
+    const pick = function (key) { return col[key] >= 0 ? r[col[key]] : ''; };
+    const email = String(pick('email') || '').trim();
+    if (!boardIsEmail_(email)) continue;
+
+    const company = String(pick('company') || '').trim();
+    const name = String(pick('name') || '').trim();
+    const detail = String(pick('detail') || '').trim();
 
     const customerId = boardUpsertCustomer_(customers, {
-      company: String(r[1] || '').trim(),
-      name: String(r[2] || '').trim(),
+      company: company,
+      name: name,
       email: email,
-      tel: String(r[4] || '').trim(),
-      detail: String(r[7] || '').trim(),
-      monthly: r[5],
-      unitPrice: r[10],
-      date: r[0]
+      tel: String(pick('tel') || '').trim(),
+      detail: detail,
+      monthly: pick('monthly'),
+      unitPrice: pick('unitPrice'),
+      date: pick('date')
     });
 
     const caseRow = cases.getLastRow() + 1;
-    const caseId = 'A' + boardPad_(caseRow - 1, 3);
-    cases.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).setValues([[
-      caseId, '問合せ', String(r[1] || '').trim() || String(r[2] || '').trim(), '', '', '', '',
-      customerId, String(r[7] || '').trim(), r[10], '', '', '',
-      '', '', r[0], '', sourceRow
-    ]]);
+    const values = new Array(BOARD_CASE_HEADERS.length).fill('');
+    values[BOARD_COL.caseId - 1] = 'A' + boardPad_(caseRow - 1, 3);
+    values[BOARD_COL.status - 1] = '問合せ';
+    values[BOARD_COL.customer - 1] = company || name;
+    values[BOARD_COL.customerId - 1] = customerId;
+    values[BOARD_COL.detail - 1] = detail;
+    values[BOARD_COL.unitPrice - 1] = pick('unitPrice');
+    values[BOARD_COL.lastContact - 1] = pick('date');
+    values[BOARD_COL.sourceRow - 1] = sourceRow;
+
+    cases.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).setValues([values]);
     boardSetTodoFormula_(cases, caseRow);
     added++;
   }
@@ -375,26 +458,42 @@ function boardUpsertCustomer_(sheet, data) {
 }
 
 function boardSetTodoFormula_(sheet, row) {
-  const b = '$B' + row;
-  const e = '$E' + row;
-  const f = '$F' + row;
-  const o = '$O' + row;
-  const elapsed = '" ("&TEXT(TODAY()-' + o + ',"0")&"日経過)"';
-  const formula = '=IF($A' + row + '="","",IFS(' +
+  const cell = function (col) { return '$' + boardColLetter_(col) + row; };
+  const b = cell(BOARD_COL.status);
+  const e = cell(BOARD_COL.startDate);
+  const f = cell(BOARD_COL.dueDate);
+  const g = cell(BOARD_COL.guideDraftAt);
+  const elapsed = '" ("&TEXT(TODAY()-' + g + ',"0")&"日経過)"';
+  const formula = '=IF(' + cell(BOARD_COL.caseId) + '="","",IFS(' +
     b + '="問合せ","返信案を確認して返信",' +
     b + '="返信済","お客様の返信待ち",' +
     b + '="依頼確定",IF(OR(' + e + '="",' + f + '=""),"日付を入れて案内メール","案内メールを送る"),' +
-    b + '="手続き待ち","署名・支払い待ち"&IF(' + o + '="","",' + elapsed + '),' +
+    b + '="手続き待ち","署名・支払い待ち"&IF(' + g + '="","",' + elapsed + '),' +
     b + '="発送待ち","追跡番号の連絡待ち",' +
-    b + '="作業中","作業"&IF(' + f + '="","","納期 "&TEXT(' + f + ',"m/d")),' +
+    b + '="作業中","作業"&IF(' + f + '="","","（納期 "&TEXT(' + f + ',"m/d")&"）"),' +
     'TRUE,""))';
-  sheet.getRange(row, 7).setFormula(formula);
+  sheet.getRange(row, BOARD_COL.todo).setFormula(formula);
+}
+
+function boardColLetter_(col) {
+  let s = '';
+  let n = col;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
 }
 
 function boardPad_(num, size) {
   let s = String(num);
   while (s.length < size) s = '0' + s;
   return s;
+}
+
+function boardIsEmail_(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 }
 
 // ------------------------------------------------------------
@@ -409,13 +508,14 @@ function boardOpenPanel() {
     return;
   }
   const row = sheet.getActiveRange().getRow();
-  if (row < 2 || !sheet.getRange(row, 1).getValue()) {
+  if (row < 2 || !sheet.getRange(row, BOARD_COL.caseId).getValue()) {
     SpreadsheetApp.getUi().alert('案件の行を選んでから実行してください。');
     return;
   }
   PropertiesService.getUserProperties().setProperty('BOARD_ACTIVE_ROW', String(row));
-  const html = HtmlService.createTemplateFromFile('Board').evaluate().setTitle('案件の詳細');
-  SpreadsheetApp.getUi().showSidebar(html);
+  SpreadsheetApp.getUi().showSidebar(
+    HtmlService.createTemplateFromFile('Board').evaluate().setTitle('案件の詳細')
+  );
 }
 
 function boardGetActiveCase() {
@@ -424,20 +524,21 @@ function boardGetActiveCase() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const v = sheet.getRange(row, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
+  const customer = boardFindCustomer_(ss, v[BOARD_COL.customerId - 1]);
   return {
     row: row,
-    caseId: v[0],
-    status: v[1],
-    customer: v[2],
-    qty: v[3],
-    startDate: boardToInputDate_(v[4]),
-    dueDate: boardToInputDate_(v[5]),
-    todo: v[6],
-    customerId: v[7],
-    detail: v[8],
-    unitPrice: v[9],
-    invoiceUrl: v[10],
-    email: boardFindCustomerEmail_(ss, v[7])
+    caseId: v[BOARD_COL.caseId - 1],
+    status: v[BOARD_COL.status - 1],
+    customer: v[BOARD_COL.customer - 1],
+    qty: v[BOARD_COL.qty - 1],
+    startDate: boardToInputDate_(v[BOARD_COL.startDate - 1]),
+    dueDate: boardToInputDate_(v[BOARD_COL.dueDate - 1]),
+    todo: v[BOARD_COL.todo - 1],
+    customerId: v[BOARD_COL.customerId - 1],
+    detail: v[BOARD_COL.detail - 1],
+    unitPrice: v[BOARD_COL.unitPrice - 1],
+    email: customer ? customer.email : '',
+    emailValid: customer ? boardIsEmail_(customer.email) : false
   };
 }
 
@@ -445,11 +546,9 @@ function boardSaveCase(data) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const row = Number(data.row);
-  sheet.getRange(row, 4).setValue(data.qty === '' ? '' : Number(data.qty));
-  sheet.getRange(row, 5).setValue(boardFromInputDate_(data.startDate));
-  sheet.getRange(row, 6).setValue(boardFromInputDate_(data.dueDate));
-  sheet.getRange(row, 11).setValue(data.invoiceUrl || '');
-  if (data.status) sheet.getRange(row, 2).setValue(data.status);
+  sheet.getRange(row, BOARD_COL.qty).setValue(data.qty === '' ? '' : Number(data.qty));
+  sheet.getRange(row, BOARD_COL.startDate).setValue(boardFromInputDate_(data.startDate));
+  sheet.getRange(row, BOARD_COL.dueDate).setValue(boardFromInputDate_(data.dueDate));
   boardSetTodoFormula_(sheet, row);
   boardLog_('保存', data.caseId + ' を更新しました');
   return boardGetActiveCase();
@@ -463,23 +562,33 @@ function boardCreateGuideDraft(data) {
   boardSaveCase(data);
 
   const v = sheet.getRange(row, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
-  if (!v[4] || !v[5]) throw new Error('受付開始日と納期予定を両方入力してください。');
+  if (!v[BOARD_COL.startDate - 1] || !v[BOARD_COL.dueDate - 1]) {
+    throw new Error('受付開始日と納期予定を両方入力してください。');
+  }
 
-  const customer = boardFindCustomer_(ss, v[7]);
-  if (!customer || !customer.email) throw new Error('顧客のメールアドレスが見つかりません。「顧客」タブをご確認ください。');
+  const customerId = v[BOARD_COL.customerId - 1];
+  const customer = boardFindCustomer_(ss, customerId);
+  if (!customer) {
+    throw new Error('顧客 ' + customerId + ' が「顧客」タブに見つかりません。');
+  }
+  if (!boardIsEmail_(customer.email)) {
+    throw new Error('顧客 ' + customerId + ' のメールアドレスが正しくありません。\n現在の値：「' +
+      (customer.email || '空欄') + '」\n「顧客」タブのD列を修正してください。');
+  }
 
   const tpl = boardFindTemplate_(ss, 'T2');
   if (!tpl) throw new Error('テンプレ T2 が見つかりません。「テンプレ」タブをご確認ください。');
 
   const settings = boardGetSettings_(ss);
+  const qty = v[BOARD_COL.qty - 1];
   const vars = {
     '会社名': customer.company,
     '担当者名': customer.name,
-    '依頼内容': v[8],
-    '点数': v[3],
-    '単価': v[9],
-    '受付開始日': boardFormatDate_(v[4]),
-    '納期予定': boardFormatDate_(v[5]),
+    '依頼内容': v[BOARD_COL.detail - 1],
+    '予定点数': qty,
+    '単価': v[BOARD_COL.unitPrice - 1],
+    '受付開始日': boardFormatDate_(v[BOARD_COL.startDate - 1]),
+    '納期予定': boardFormatDate_(v[BOARD_COL.dueDate - 1]),
     '営業所コード': settings['営業所コード'],
     '営業所名': settings['営業所名'],
     '発送先郵便番号': settings['発送先郵便番号'],
@@ -488,25 +597,28 @@ function boardCreateGuideDraft(data) {
     '品名': settings['品名']
   };
 
+  let bodySource = String(tpl.body || '');
+  if (qty === '' || qty === null || qty === undefined) {
+    bodySource = boardDropLinesWith_(bodySource, '{{予定点数}}');
+  }
+
   const subject = boardFill_(tpl.subject, vars);
-  const body = boardFill_(tpl.body, vars);
+  const body = boardFill_(bodySource, vars);
   const options = { name: 'ササゲパス' };
   const alias = settings['送信元エイリアス'];
   if (alias && GmailApp.getAliases().indexOf(alias) >= 0) options.from = alias;
 
   GmailApp.createDraft(customer.email, subject, body, options);
 
-  sheet.getRange(row, 15).setValue(new Date());
-  if (!sheet.getRange(row, 12).getValue()) sheet.getRange(row, 12).setValue(new Date());
-  sheet.getRange(row, 2).setValue('手続き待ち');
+  sheet.getRange(row, BOARD_COL.guideDraftAt).setValue(new Date());
+  if (!sheet.getRange(row, BOARD_COL.invoiceSent).getValue()) {
+    sheet.getRange(row, BOARD_COL.invoiceSent).setValue(new Date());
+  }
+  sheet.getRange(row, BOARD_COL.status).setValue('手続き待ち');
   boardSetTodoFormula_(sheet, row);
-  boardLog_('下書き作成', v[0] + ' の案内メール下書きを作成しました');
+  boardLog_('下書き作成', v[BOARD_COL.caseId - 1] + ' の案内メール下書きを作成しました');
 
   return { message: 'Gmailの下書きを作成しました。内容を確認して送信してください。', to: customer.email };
-}
-
-function boardGmailSearchUrl(email) {
-  return 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(email);
 }
 
 // ------------------------------------------------------------
@@ -515,19 +627,19 @@ function boardGmailSearchUrl(email) {
 
 function boardFindCustomer_(ss, customerId) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
-  if (!sheet || sheet.getLastRow() < 2) return null;
+  if (!sheet || sheet.getLastRow() < 2 || !customerId) return null;
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CUSTOMER_HEADERS.length).getValues();
   for (let i = 0; i < rows.length; i++) {
-    if (String(rows[i][0]) === String(customerId)) {
-      return { company: rows[i][1], name: rows[i][2], email: String(rows[i][3] || '').trim(), tel: rows[i][4] };
+    if (String(rows[i][0]).trim() === String(customerId).trim()) {
+      return {
+        company: rows[i][1],
+        name: rows[i][2],
+        email: String(rows[i][3] || '').trim(),
+        tel: rows[i][4]
+      };
     }
   }
   return null;
-}
-
-function boardFindCustomerEmail_(ss, customerId) {
-  const c = boardFindCustomer_(ss, customerId);
-  return c ? c.email : '';
 }
 
 function boardFindTemplate_(ss, id) {
@@ -557,6 +669,12 @@ function boardFill_(text, vars) {
     out = out.split('{{' + key + '}}').join(value);
   });
   return out;
+}
+
+function boardDropLinesWith_(text, needle) {
+  return String(text || '').split('\n').filter(function (line) {
+    return line.indexOf(needle) < 0;
+  }).join('\n');
 }
 
 function boardFormatDate_(value) {

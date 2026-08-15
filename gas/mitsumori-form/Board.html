@@ -43,11 +43,8 @@
   <label>納期予定 <span style="color:#e5484d">*</span></label>
   <input type="date" id="dueDate">
 
-  <label>点数</label>
-  <input type="number" id="qty" min="0">
-
-  <label>Square 請求書URL</label>
-  <input type="text" id="invoiceUrl" placeholder="https://squareup.com/...">
+  <label>予定点数（任意）</label>
+  <input type="number" id="qty" min="0" placeholder="空欄ならメールに記載しません">
 
   <button class="btn-main" id="btnDraft" disabled>案内メールの下書きを作る</button>
   <div class="hint" id="hint">受付開始日と納期予定を入力すると押せるようになります。</div>
@@ -74,8 +71,7 @@
       caseId: current.caseId,
       qty: document.getElementById('qty').value,
       startDate: document.getElementById('startDate').value,
-      dueDate: document.getElementById('dueDate').value,
-      invoiceUrl: document.getElementById('invoiceUrl').value
+      dueDate: document.getElementById('dueDate').value
     };
   }
 
@@ -94,12 +90,13 @@
     document.getElementById('caseId').textContent = data.caseId;
     document.getElementById('status').textContent = data.status;
     document.getElementById('customer').textContent = data.customer || '(顧客名なし)';
-    document.getElementById('email').textContent = data.email || '(メールアドレス未登録)';
+    var emailEl = document.getElementById('email');
+    emailEl.textContent = data.email || '(メールアドレス未登録)';
+    emailEl.style.color = data.emailValid ? '' : '#e5484d';
     document.getElementById('detail').textContent = data.detail || '';
     document.getElementById('startDate').value = data.startDate || '';
     document.getElementById('dueDate').value = data.dueDate || '';
     document.getElementById('qty').value = data.qty || '';
-    document.getElementById('invoiceUrl').value = data.invoiceUrl || '';
     refreshButton();
   }
 
