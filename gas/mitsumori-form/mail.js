@@ -18,7 +18,11 @@ const MAIL_EXAMPLE_COUNT = 3;
 const MAIL_STATUS_PENDING = '未確認';
 const MAIL_STATUS_EDITING = '修正中';
 const MAIL_STATUS_SAVED = '下書き保存済';
+const MAIL_STATUS_SENT = '送信済';
 const MAIL_STATUS_SKIP = '対応不要';
+
+/** 確認画面に出し続ける状態。実際に送信するまでは一覧から消さない。 */
+const MAIL_OPEN_STATUSES = [MAIL_STATUS_PENDING, MAIL_STATUS_EDITING, MAIL_STATUS_SAVED];
 
 // ------------------------------------------------------------
 // メニューから呼ぶ操作
@@ -181,13 +185,14 @@ function mailNotify_(ss, settings, customer, thread, reply) {
 
 function mailGetPendingList() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  mailRefreshSentStatus_(ss);
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   if (!sheet || sheet.getLastRow() < 2) return [];
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
   const out = [];
   for (let i = rows.length - 1; i >= 0; i--) {
     const status = String(rows[i][BOARD_MAIL_COL.status - 1] || '').trim();
-    if (status !== MAIL_STATUS_PENDING && status !== MAIL_STATUS_EDITING) continue;
+    if (MAIL_OPEN_STATUSES.indexOf(status) < 0) continue;
     out.push({
       row: i + 2,
       date: boardFormatDate_(rows[i][BOARD_MAIL_COL.date - 1]),
@@ -196,10 +201,55 @@ function mailGetPendingList() {
       summary: rows[i][BOARD_MAIL_COL.summary - 1],
       text: rows[i][BOARD_MAIL_COL.finalText - 1] || rows[i][BOARD_MAIL_COL.aiFirst - 1],
       instructions: rows[i][BOARD_MAIL_COL.instructions - 1],
+      threadId: rows[i][BOARD_MAIL_COL.threadId - 1],
       status: status
     });
   }
   return out;
+}
+
+/**
+ * 「下書き保存済」の行について、実際に返信が送られたかを Gmail 側で確認する。
+ * スレッドの最新メールが自分から送られていれば送信済とみなす。
+ * 下書きを消しただけの場合は状態を変えないため、一覧から消えない。
+ */
+function mailRefreshSentStatus_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!sheet || sheet.getLastRow() < 2) return;
+
+  const ours = mailOwnAddresses_(ss);
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
+
+  rows.forEach(function (row, i) {
+    if (String(row[BOARD_MAIL_COL.status - 1] || '').trim() !== MAIL_STATUS_SAVED) return;
+    const threadId = String(row[BOARD_MAIL_COL.threadId - 1] || '');
+    if (!threadId) return;
+    try {
+      const thread = GmailApp.getThreadById(threadId);
+      if (!thread) return;
+      const messages = thread.getMessages();
+      const last = messages[messages.length - 1];
+      const from = String(last.getFrom() || '').toLowerCase();
+      const sentByUs = ours.some(function (address) { return address && from.indexOf(address) >= 0; });
+      if (sentByUs) {
+        sheet.getRange(i + 2, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SENT);
+      }
+    } catch (err) {
+      boardLog_('②状態確認', threadId + ': ' + err.message);
+    }
+  });
+}
+
+function mailOwnAddresses_(ss) {
+  const settings = boardGetSettings_(ss);
+  const list = [String(settings['送信元エイリアス'] || '').trim().toLowerCase()];
+  try {
+    list.push(String(Session.getActiveUser().getEmail() || '').trim().toLowerCase());
+  } catch (err) {
+    // 取得できない環境では無視する
+  }
+  GmailApp.getAliases().forEach(function (alias) { list.push(String(alias).toLowerCase()); });
+  return list.filter(function (a) { return a; });
 }
 
 /** 画面で編集した本文をシートに保存する（下書きにはしない）。 */
@@ -278,7 +328,10 @@ function mailApproveToDraft(row, text) {
   });
 
   boardLog_('②下書き保存', values[BOARD_MAIL_COL.subject - 1] + ' の下書きを保存しました');
-  return { message: 'Gmailの下書きに保存しました。内容を確認して送信してください。' };
+  return {
+    message: 'Gmailの下書きに保存しました。内容を確認して送信してください。\n' +
+      '実際に送信するまでこの一覧には残ります（下書きを消してもやり直せます）。'
+  };
 }
 
 function mailDismiss(row) {

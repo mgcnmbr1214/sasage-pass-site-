@@ -91,6 +91,7 @@
       '<textarea id="editor"></textarea>' +
       '<div class="btns">' +
       '<button class="b-main" id="btnApprove">この内容で下書きに保存</button>' +
+      '<button class="b-sub" id="btnOpenThread">Gmailで開く</button>' +
       '<button class="b-sub" id="btnSave">編集内容だけ保存</button>' +
       '<button class="b-sub" id="btnSkip">対応不要</button>' +
       '</div></div>' +
@@ -131,6 +132,10 @@
       google.script.run.withSuccessHandler(function (r) { show('ok', r.message); busy(false); reload(false); })
         .withFailureHandler(function (e) { show('err', e.message); busy(false); })
         .mailApproveToDraft(current.row, el('editor').value);
+    });
+
+    el('btnOpenThread').addEventListener('click', function () {
+      window.open('https://mail.google.com/mail/u/0/#all/' + current.threadId, '_blank');
     });
 
     el('btnSkip').addEventListener('click', function () {
