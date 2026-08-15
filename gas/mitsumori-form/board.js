@@ -181,13 +181,15 @@ function boardSetup() {
   boardOrderSheets_(ss);
   boardHideSourceSheets_(ss);
 
+  const repaired = boardMigrateMails_(ss);
   const imported = boardImportResponses_(ss);
   boardLog_('セットアップ', '初期セットアップを実行しました（取込 ' + imported + ' 件）');
 
   SpreadsheetApp.getUi().alert(
     'セットアップが完了しました。\n\n' +
-    'フォーム回答の取り込み：' + imported + ' 件\n\n' +
-    '「案件ボード」タブをご確認ください。'
+    'フォーム回答の取り込み：' + imported + ' 件' +
+    (repaired > 0 ? '\nメール履歴の列ずれを修復：' + repaired + ' 件' : '') +
+    '\n\n「案件ボード」タブをご確認ください。'
   );
 }
 
@@ -237,6 +239,51 @@ function boardInsertColumnAfter_(sheet, headers, after, name) {
   boardLog_('移行', name + ' 列を追加しました');
   return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
     .map(function (h) { return String(h || '').trim(); });
+}
+
+/**
+ * 旧形式（9列）のメール履歴を現在の12列レイアウトへ並べ直す。
+ *
+ * 旧: 日時 / 顧客ID / 差出人 / 件名 / 種別 / 要約 / AI返信案 / 状態 / GmailスレッドID
+ * 新: 日時 / 顧客ID / 差出人 / 件名 / 要約 / AI初回案 / 修正指示ログ / 最終文面 /
+ *     状態 / GmailスレッドID / 下書き保存日時 / 対応種別
+ *
+ * 旧形式の行は「状態」の位置にスレッドIDが入り、「GmailスレッドID」が空になるため、
+ * その形を手がかりに判定する。
+ */
+function boardMigrateMails_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const width = Math.max(sheet.getLastColumn(), BOARD_MAIL_HEADERS.length);
+  const range = sheet.getRange(2, 1, sheet.getLastRow() - 1, width);
+  const rows = range.getValues();
+  let fixed = 0;
+
+  const next = rows.map(function (row) {
+    const atStatus = String(row[8] || '').trim();
+    const atThread = String(row[9] || '').trim();
+    if (atThread || !/^[0-9a-f]{10,24}$/i.test(atStatus)) return row;
+
+    const moved = new Array(width).fill('');
+    moved[0] = row[0];
+    moved[1] = row[1];
+    moved[2] = row[2];
+    moved[3] = row[3];
+    moved[4] = row[5];          // 要約
+    moved[5] = row[6];          // AI初回案
+    moved[7] = row[6];          // 最終文面（作り直すまでは同じ内容）
+    moved[8] = MAIL_STATUS_PENDING;
+    moved[9] = atStatus;        // GmailスレッドID
+    fixed++;
+    return moved;
+  });
+
+  if (fixed > 0) {
+    range.setValues(next);
+    boardLog_('移行', 'メール履歴 ' + fixed + ' 件を新しい列構成に並べ直しました');
+  }
+  return fixed;
 }
 
 /** 顧客タブに Square顧客ID 列が無ければ追加する。 */
