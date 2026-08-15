@@ -92,7 +92,7 @@
   }
 
   function busy(state) {
-    ['btnAi', 'btnSave', 'btnApprove', 'btnSkip'].forEach(function (id) {
+    ['btnAi', 'btnRegen', 'btnSave', 'btnApprove', 'btnSkip'].forEach(function (id) {
       var b = el(id);
       if (b) b.disabled = state;
     });
@@ -136,7 +136,8 @@
       '</div></div>' +
       '<div class="card"><label>AIに修正を依頼する</label>' +
       '<textarea id="instruction" placeholder="例：もう少し短く。補償の話は書かないで、納期の目安だけ伝えて。"></textarea>' +
-      '<div class="btns"><button class="b-ai" id="btnAi">この指示で書き直す</button></div>' +
+      '<div class="btns"><button class="b-ai" id="btnAi">この指示で書き直す</button>' +
+      '<button class="b-sub" id="btnRegen">最初から作り直す</button></div>' +
       '<div class="msg" id="msg"></div></div>';
 
     el('summary').textContent = current.summary || '(本文なし)';
@@ -178,6 +179,19 @@
         reload(true);
       }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
         .mailReviseText(current.row, el('editor').value, instruction);
+    });
+
+    el('btnRegen').addEventListener('click', function () {
+      if (!confirm('AIに最初から作り直させます。現在の本文は失われます。よろしいですか？')) return;
+      busy(true);
+      show('ok', 'AIが作り直しています...');
+      google.script.run.withSuccessHandler(function (r) {
+        el('editor').value = r.text;
+        show('ok', r.message);
+        busy(false);
+        reload(true);
+      }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
+        .mailRegenerate(current.row);
     });
 
     el('btnSave').addEventListener('click', function () {

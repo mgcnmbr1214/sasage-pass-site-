@@ -292,6 +292,47 @@ function mailSaveText(row, text) {
   return { message: '保存しました。' };
 }
 
+/**
+ * 返信案をゼロから作り直す。
+ * 下書きを消してやり直したいときや、対応種別を変えたあとに使う。
+ * これまでの修正指示は引き継いで生成する。
+ */
+function mailRegenerate(row) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const apiKey = mailGetApiKey_();
+  if (!apiKey) throw new Error('Anthropic APIキーが未設定です。');
+
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  const r = Number(row);
+  const values = sheet.getRange(r, 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
+
+  const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
+  if (!threadId) throw new Error('元のメールスレッドが見つかりません。');
+  const thread = GmailApp.getThreadById(threadId);
+  if (!thread) throw new Error('元のメールスレッドが見つかりません。');
+
+  const customerId = values[BOARD_MAIL_COL.customerId - 1];
+  const found = boardFindCustomer_(ss, customerId);
+  const customer = found || { company: '', name: '', email: values[BOARD_MAIL_COL.from - 1] };
+
+  const reply = mailGenerateReply_(apiKey, {
+    knowledge: mailLoadKnowledge_(ss),
+    examples: mailLoadExamples_(ss),
+    caseInfo: mailFindCaseSummary_(ss, customerId),
+    customer: customer,
+    thread: mailBuildThreadText_(thread.getMessages()),
+    instructions: String(values[BOARD_MAIL_COL.instructions - 1] || '')
+  });
+
+  sheet.getRange(r, BOARD_MAIL_COL.aiFirst).setValue(reply);
+  sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(reply);
+  sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_PENDING);
+  sheet.getRange(r, BOARD_MAIL_COL.savedAt).setValue('');
+  boardLog_('②再生成', values[BOARD_MAIL_COL.subject - 1] + ' の返信案を作り直しました');
+
+  return { text: reply, message: '返信案を作り直しました。' };
+}
+
 /** AIに修正を依頼する。指示は履歴として蓄積する。 */
 function mailReviseText(row, text, instruction) {
   const trimmed = String(instruction || '').trim();
@@ -483,6 +524,7 @@ function mailGenerateReply_(apiKey, ctx) {
     '【メールのやりとり（古い順）】',
     ctx.thread,
     '',
+    ctx.instructions ? '【担当者が過去に出した修正指示。今回も反映すること】\n' + ctx.instructions + '\n' : '',
     '以上を踏まえ、最新のお客様のメールに対する返信本文だけを出力してください。'
   ].join('\n');
 
