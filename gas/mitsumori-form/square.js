@@ -222,8 +222,6 @@ function squareDescribeOrder_(order) {
 // 請求書の作成と送信
 // ------------------------------------------------------------
 
-const SQUARE_CONTRACTS_URL = 'https://squareup.com/dashboard/contracts';
-
 /** 手続き画面を開く。案件ボードで行を選んでから実行する。 */
 function squareOpenFlow() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -262,46 +260,15 @@ function squareGetFlowState() {
     customerName: (customer && (customer.company || customer.name)) || values[BOARD_COL.customer - 1],
     customerEmail: customer ? customer.email : '',
     squareCustomerId: customer ? customer.squareId : '',
-    contractAt: boardFormatDate_(values[BOARD_COL.contractAt - 1]),
     invoiceId: invoiceId,
     invoiceStatus: invoice ? invoice.status : '',
     invoiceUrl: invoiceId ? squareDashboardUrl_(invoiceId) : '',
-    contractsUrl: SQUARE_CONTRACTS_URL,
-    contractSteps: String(settings['契約書作成の手順'] || ''),
     invoiceSteps: String(settings['請求書送信の手順'] || ''),
     sentAt: boardFormatDate_(values[BOARD_COL.invoiceSent - 1])
   };
 }
 
-/** 手順1: Square に顧客を作成（または既存を紐付け）する。 */
-function squareEnsureCustomerForCase(caseRow) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-  const values = sheet.getRange(Number(caseRow), 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
-  const customer = boardFindCustomer_(ss, values[BOARD_COL.customerId - 1]);
-  if (!customer || !boardIsEmail_(customer.email)) {
-    throw new Error('顧客のメールアドレスが登録されていません。「顧客」タブをご確認ください。');
-  }
-  if (customer.squareId) {
-    return { squareCustomerId: customer.squareId, message: 'すでにSquareに登録されています。' };
-  }
-
-  const squareCustomerId = squareFindOrCreateCustomer_(customer);
-  ss.getSheetByName(BOARD_SHEET_CUSTOMERS)
-    .getRange(customer.row, BOARD_CUSTOMER_COL.squareId).setValue(squareCustomerId);
-  boardLog_('Square', customer.email + ' をSquareの顧客として登録しました');
-  return { squareCustomerId: squareCustomerId, message: 'Squareに顧客を作成しました。' };
-}
-
-/** 手順2: 契約書を作成したことを記録する（作成自体はSquare画面での手作業）。 */
-function squareMarkContractCreated(caseRow) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_CASES);
-  sheet.getRange(Number(caseRow), BOARD_COL.contractAt).setValue(new Date());
-  boardLog_('Square', '契約書の作成を記録しました');
-  return { message: '契約書の作成を記録しました。' };
-}
-
-/** 手順4: 実際に送信されたかを Square 側の状態で確認し、記録する。 */
+/** 手順2: 実際に送信されたかを Square 側の状態で確認し、記録する。 */
 function squareConfirmSent(caseRow) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
@@ -353,7 +320,11 @@ function squareCreateDraftForCase(caseRow) {
   const location = squareListLocations_()[0];
   if (!location) throw new Error('Squareの店舗情報を取得できませんでした。');
 
-  const customerId = squareFindOrCreateCustomer_(customer);
+  const customerId = customer.squareId || squareFindOrCreateCustomer_(customer);
+  if (!customer.squareId) {
+    ss.getSheetByName(BOARD_SHEET_CUSTOMERS)
+      .getRange(customer.row, BOARD_CUSTOMER_COL.squareId).setValue(customerId);
+  }
   const order = squareCreateFeeOrder_(location.id, customerId);
   const template = boardFindTemplate_(ss, 'S1');
   const today = new Date();

@@ -37,14 +37,14 @@ const BOARD_STATUS_RENAMES = { '手続き待ち': BOARD_STATUS_SIGNING };
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
   '案件ID', 'ステータス', 'お客様', '予定点数', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
-  '顧客ID', '依頼内容', '単価', '請求書送付日', 'Square請求書ID', '契約書作成日', '署名・支払確認日',
+  '顧客ID', '依頼内容', '単価', '請求書送付日', 'Square請求書ID', '署名・支払確認日',
   '追跡番号', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
 const BOARD_COL = {
   caseId: 1, status: 2, customer: 3, qty: 4, startDate: 5, dueFrom: 6, dueTo: 7, todo: 8,
-  customerId: 9, detail: 10, unitPrice: 11, invoiceSent: 12, invoiceId: 13, contractAt: 14,
-  signedAt: 15, tracking: 16, guideDraftAt: 17, lastContact: 18, memo: 19, sourceRow: 20
+  customerId: 9, detail: 10, unitPrice: 11, invoiceSent: 12, invoiceId: 13,
+  signedAt: 14, tracking: 15, guideDraftAt: 16, lastContact: 17, memo: 18, sourceRow: 19
 };
 
 const BOARD_CUSTOMER_HEADERS = [
@@ -128,6 +128,7 @@ function boardSetup() {
   boardSetupSheet_(ss, BOARD_SHEET_LOGS, BOARD_LOG_HEADERS, [150, 100, 500]);
 
   boardApplyCaseFormatting_(ss.getSheetByName(BOARD_SHEET_CASES));
+  boardMigrateSettings_(ss.getSheetByName(BOARD_SHEET_SETTINGS));
   boardSeedSettings_(ss.getSheetByName(BOARD_SHEET_SETTINGS));
   boardSeedTemplates_(ss.getSheetByName(BOARD_SHEET_TEMPLATES));
   boardSeedKnowledge_(ss.getSheetByName(BOARD_SHEET_KNOWLEDGE));
@@ -170,7 +171,13 @@ function boardMigrateCases_(ss) {
   }
 
   headers = boardInsertColumnAfter_(sheet, headers, '請求書送付日', 'Square請求書ID');
-  boardInsertColumnAfter_(sheet, headers, 'Square請求書ID', '契約書作成日');
+
+  // 契約書は請求書の作成時にその場で添付するため、事前作成の記録は不要になった
+  const contract = headers.indexOf('契約書作成日');
+  if (contract >= 0) {
+    sheet.deleteColumn(contract + 1);
+    boardLog_('移行', '契約書作成日 列を削除しました');
+  }
 
   boardRenameStatuses_(sheet);
 }
@@ -305,29 +312,34 @@ const BOARD_DEFAULT_SETTINGS = [
   ['署名待ちリマインド日数', 5, '支払い情報の登録・契約書署名が確認できないまま経過した日数'],
   ['発送待ちリマインド日数', 7, '追跡番号の連絡がないまま経過した日数'],
   ['返信案の自動チェック', 'オン', 'オフにすると定期チェックで返信案を作らない'],
-  ['契約書作成の手順', boardDefaultContractSteps_(), 'Square手続き画面に表示される手順。実際の操作に合わせて自由に書き換えてください'],
-  ['請求書送信の手順', boardDefaultInvoiceSteps_(), '同上']
+  ['請求書送信の手順', boardDefaultInvoiceSteps_(), 'Square手続き画面に表示される手順。実際の操作に合わせて自由に書き換えてください']
 ];
-
-function boardDefaultContractSteps_() {
-  return [
-    '1. 下の［Squareの契約書画面を開く］を押します。',
-    '2. 「契約書を作成」から、テンプレート「サービス利用規約」を選びます。',
-    '3. 受取先に、上に表示されているお客様を選びます。',
-    '4. 内容を確認して保存します（この時点ではお客様に送りません）。',
-    '5. この画面に戻って［契約書を作成しました］を押します。'
-  ].join('\n');
-}
 
 function boardDefaultInvoiceSteps_() {
   return [
     '1. 下の［Squareで請求書を開く］を押します。',
     '2. 「編集」を開き、「添付ファイルとカスタムフィールド」を表示します。',
-    '3. 「Square 契約書」を追加し、「既存の契約書」から受取先名が一致する',
-    '　 「サービス利用規約」を選びます。',
+    '3. 「Square 契約書」→「新規の契約書」→「サービス利用規約」を選んで保存します。',
     '4. 内容を確認して請求書を送信します。',
     '5. この画面に戻って［送信しました］を押します。'
   ].join('\n');
+}
+
+/** 旧手順が既定値のまま残っている場合だけ、新しい手順に差し替える。 */
+function boardMigrateSettings_(sheet) {
+  if (sheet.getLastRow() < 2) return;
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const key = String(rows[i][0] || '').trim();
+    const value = String(rows[i][1] || '');
+    if (key === '契約書作成の手順') {
+      sheet.deleteRow(i + 2);
+      boardLog_('移行', '設定「契約書作成の手順」を削除しました');
+    } else if (key === '請求書送信の手順' && value.indexOf('既存の契約書') >= 0) {
+      sheet.getRange(i + 2, 2).setValue(boardDefaultInvoiceSteps_());
+      boardLog_('移行', '設定「請求書送信の手順」を更新しました');
+    }
+  }
 }
 
 /** 既存の値は上書きせず、未登録・空欄の項目だけを補う。 */

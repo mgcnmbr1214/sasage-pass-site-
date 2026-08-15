@@ -58,56 +58,40 @@
 
   function render(data) {
     s = data;
-    var c1 = !!s.squareCustomerId;
-    var c2 = !!s.contractAt;
-    var c3 = !!s.invoiceId;
-    var c4 = !!s.sentAt || (s.invoiceStatus && s.invoiceStatus !== 'DRAFT');
+    var c1 = !!s.invoiceId;
+    var c2 = !!s.sentAt || (s.invoiceStatus && s.invoiceStatus !== 'DRAFT');
 
     var html =
       '<div class="head"><b>' + esc(s.caseId) + '　' + esc(s.customerName) + '</b>' +
       '<div>' + esc(s.customerEmail) + '　／　現在のステータス: ' + esc(s.status) + '</div></div>';
 
-    html += stepBox(1, 'Squareに顧客を作成する', '自動', c1, !c1,
-      '<button class="b-main" id="b1">顧客を作成する</button>' +
-      '<div class="note">契約書の受取先として必要です。すでにSquareに同じメールアドレスの顧客がいれば、それを使います。</div>',
-      c1 ? '登録済み（' + s.squareCustomerId + '）' : '');
+    html += stepBox(1, '請求書の下書きを作成する', '自動', c1, !c1,
+      '<button class="b-main" id="b1">請求書を作成する</button>' +
+      '<div class="note">登録手数料 220円（税込）。金額・文面・支払期限は過去の請求書と同じ設定で作られます。' +
+      'Squareの顧客も同時に作成されます。この時点ではお客様に届きません。</div>',
+      c1 ? '作成済み（状態: ' + s.invoiceStatus + '）' +
+        (s.squareCustomerId ? ' ／ Square顧客 ' + s.squareCustomerId : '') : '');
 
-    html += stepBox(2, '契約書を作成する', '手動', c2, c1 && !c2,
-      '<div class="steps-text">' + esc(s.contractSteps) + '</div>' +
-      '<button class="b-sub" id="b2open">Squareの契約書画面を開く</button>' +
-      '<button class="b-main" id="b2done">契約書を作成しました</button>',
-      c2 ? '作成済み（' + s.contractAt + '）' : '');
-
-    html += stepBox(3, '請求書の下書きを作成する', '自動', c3, c2 && !c3,
-      '<button class="b-main" id="b3">請求書を作成する</button>' +
-      '<div class="note">登録手数料 220円（税込）。金額・文面・支払期限は過去の請求書と同じ設定で作られます。この時点ではお客様に届きません。</div>',
-      c3 ? '作成済み（状態: ' + s.invoiceStatus + '）' : '');
-
-    html += stepBox(4, '契約書を添付して送信する', '手動', c4, c3 && !c4,
+    html += stepBox(2, '契約書を添付して送信する', '手動', c2, c1 && !c2,
       '<div class="steps-text">' + esc(s.invoiceSteps) + '</div>' +
-      '<button class="b-sub" id="b4open">Squareで請求書を開く</button>' +
-      '<button class="b-main" id="b4done">送信しました</button>',
-      c4 ? '送信済み（' + (s.sentAt || s.invoiceStatus) + '）' : '');
+      '<button class="b-sub" id="b2open">Squareで請求書を開く</button>' +
+      '<button class="b-main" id="b2done">送信しました</button>',
+      c2 ? '送信済み（' + (s.sentAt || s.invoiceStatus) + '）' : '');
 
     el('root').innerHTML = html;
 
     el('b1').disabled = c1;
+    el('b2open').disabled = !c1;
     el('b2done').disabled = !c1 || c2;
-    el('b3').disabled = !c2 || c3;
-    el('b4open').disabled = !c3;
-    el('b4done').disabled = !c3 || c4;
 
-    el('b1').addEventListener('click', function () { run('squareEnsureCustomerForCase'); });
-    el('b2open').addEventListener('click', function () { window.open(s.contractsUrl, '_blank'); });
-    el('b2done').addEventListener('click', function () { run('squareMarkContractCreated'); });
-    el('b3').addEventListener('click', function () { run('squareCreateDraftForCase'); });
-    el('b4open').addEventListener('click', function () { window.open(s.invoiceUrl, '_blank'); });
-    el('b4done').addEventListener('click', function () { run('squareConfirmSent'); });
+    el('b1').addEventListener('click', function () { run('squareCreateDraftForCase'); });
+    el('b2open').addEventListener('click', function () { window.open(s.invoiceUrl, '_blank'); });
+    el('b2done').addEventListener('click', function () { run('squareConfirmSent'); });
   }
 
   function run(fn) {
     show('ok', '処理しています...');
-    ['b1', 'b2done', 'b3', 'b4done'].forEach(function (id) { if (el(id)) el(id).disabled = true; });
+    ['b1', 'b2done'].forEach(function (id) { if (el(id)) el(id).disabled = true; });
     google.script.run.withSuccessHandler(function (r) {
       show('ok', r.message);
       reload();
