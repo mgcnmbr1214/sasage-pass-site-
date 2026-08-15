@@ -37,21 +37,23 @@ const BOARD_STATUS_RENAMES = { '手続き待ち': BOARD_STATUS_SIGNING };
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
   '案件ID', 'ステータス', 'お客様', '予定点数', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
-  '顧客ID', '依頼内容', '単価', '請求書送付日', 'Square請求書ID', '署名・支払確認日',
+  '顧客ID', '依頼内容', '単価', '請求書送付日', 'Square請求書ID', '契約書作成日', '署名・支払確認日',
   '追跡番号', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
 const BOARD_COL = {
   caseId: 1, status: 2, customer: 3, qty: 4, startDate: 5, dueFrom: 6, dueTo: 7, todo: 8,
-  customerId: 9, detail: 10, unitPrice: 11, invoiceSent: 12, invoiceId: 13, signedAt: 14,
-  tracking: 15, guideDraftAt: 16, lastContact: 17, memo: 18, sourceRow: 19
+  customerId: 9, detail: 10, unitPrice: 11, invoiceSent: 12, invoiceId: 13, contractAt: 14,
+  signedAt: 15, tracking: 16, guideDraftAt: 17, lastContact: 18, memo: 19, sourceRow: 20
 };
 
 const BOARD_CUSTOMER_HEADERS = [
   '顧客ID', '会社名・屋号', '担当者名', 'メールアドレス', '電話番号',
   '返送先 郵便番号', '返送先 住所', '返送先 宛名',
-  '依頼内容', '月間予定数', '単価', '初回問い合わせ日', '最終更新日', 'メモ'
+  '依頼内容', '月間予定数', '単価', '初回問い合わせ日', '最終更新日', 'メモ', 'Square顧客ID'
 ];
+
+const BOARD_CUSTOMER_COL = { squareId: 15 };
 
 const BOARD_MAIL_HEADERS = [
   '日時', '顧客ID', '差出人', '件名', '要約',
@@ -97,7 +99,8 @@ function onOpen() {
       .addItem('APIキーを登録する', 'mailSetApiKey')
       .addItem('自動チェックを開始する', 'mailStartAutoCheck')
       .addItem('自動チェックを停止する', 'mailStopAutoCheck'))
-    .addSubMenu(SpreadsheetApp.getUi().createMenu('Square連携')
+    .addItem('Squareの手続きを進める', 'squareOpenFlow')
+    .addSubMenu(SpreadsheetApp.getUi().createMenu('Square連携の設定')
       .addItem('Squareトークンを登録する', 'squareSetToken')
       .addItem('過去の請求書の設定を読み取る', 'squareInspectTemplate'))
     .addSeparator()
@@ -113,6 +116,7 @@ function boardSetup() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   boardMigrateCases_(ss);
+  boardMigrateCustomers_(ss);
 
   boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS, [90, 210, 150, 70, 95, 95, 95, 220]);
   boardSetupSheet_(ss, BOARD_SHEET_CUSTOMERS, BOARD_CUSTOMER_HEADERS, [80, 170, 120, 220, 130]);
@@ -165,16 +169,34 @@ function boardMigrateCases_(ss) {
     boardLog_('移行', '納期予定を（自）（至）の2列に分割しました');
   }
 
-  if (headers.indexOf('Square請求書ID') < 0) {
-    const sent = headers.indexOf('請求書送付日');
-    if (sent >= 0) {
-      sheet.insertColumnAfter(sent + 1);
-      sheet.getRange(1, sent + 2).setValue('Square請求書ID');
-      boardLog_('移行', 'Square請求書ID 列を追加しました');
-    }
-  }
+  headers = boardInsertColumnAfter_(sheet, headers, '請求書送付日', 'Square請求書ID');
+  boardInsertColumnAfter_(sheet, headers, 'Square請求書ID', '契約書作成日');
 
   boardRenameStatuses_(sheet);
+}
+
+/** after 列の直後に name 列が無ければ挿入する。挿入後の見出し配列を返す。 */
+function boardInsertColumnAfter_(sheet, headers, after, name) {
+  if (headers.indexOf(name) >= 0) return headers;
+  const index = headers.indexOf(after);
+  if (index < 0) return headers;
+  sheet.insertColumnAfter(index + 1);
+  sheet.getRange(1, index + 2).setValue(name);
+  boardLog_('移行', name + ' 列を追加しました');
+  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+}
+
+/** 顧客タブに Square顧客ID 列が無ければ追加する。 */
+function boardMigrateCustomers_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  if (!sheet || sheet.getLastColumn() < 5) return;
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+  if (headers.indexOf('Square顧客ID') < 0) {
+    sheet.getRange(1, BOARD_CUSTOMER_COL.squareId).setValue('Square顧客ID');
+    boardLog_('移行', '顧客タブに Square顧客ID 列を追加しました');
+  }
 }
 
 /** 旧ステータス名を新名称へ置き換える。入力規則より先に実行する。 */
@@ -282,8 +304,31 @@ const BOARD_DEFAULT_SETTINGS = [
   ['品名', '衣類', ''],
   ['署名待ちリマインド日数', 5, '支払い情報の登録・契約書署名が確認できないまま経過した日数'],
   ['発送待ちリマインド日数', 7, '追跡番号の連絡がないまま経過した日数'],
-  ['返信案の自動チェック', 'オン', 'オフにすると定期チェックで返信案を作らない']
+  ['返信案の自動チェック', 'オン', 'オフにすると定期チェックで返信案を作らない'],
+  ['契約書作成の手順', boardDefaultContractSteps_(), 'Square手続き画面に表示される手順。実際の操作に合わせて自由に書き換えてください'],
+  ['請求書送信の手順', boardDefaultInvoiceSteps_(), '同上']
 ];
+
+function boardDefaultContractSteps_() {
+  return [
+    '1. 下の［Squareの契約書画面を開く］を押します。',
+    '2. 「契約書を作成」から、テンプレート「サービス利用規約」を選びます。',
+    '3. 受取先に、上に表示されているお客様を選びます。',
+    '4. 内容を確認して保存します（この時点ではお客様に送りません）。',
+    '5. この画面に戻って［契約書を作成しました］を押します。'
+  ].join('\n');
+}
+
+function boardDefaultInvoiceSteps_() {
+  return [
+    '1. 下の［Squareで請求書を開く］を押します。',
+    '2. 「編集」を開き、「添付ファイルとカスタムフィールド」を表示します。',
+    '3. 「Square 契約書」を追加し、「既存の契約書」から受取先名が一致する',
+    '　 「サービス利用規約」を選びます。',
+    '4. 内容を確認して請求書を送信します。',
+    '5. この画面に戻って［送信しました］を押します。'
+  ].join('\n');
+}
 
 /** 既存の値は上書きせず、未登録・空欄の項目だけを補う。 */
 function boardSeedSettings_(sheet) {
@@ -741,10 +786,12 @@ function boardFindCustomer_(ss, customerId) {
   for (let i = 0; i < rows.length; i++) {
     if (String(rows[i][0]).trim() === String(customerId).trim()) {
       return {
+        row: i + 2,
         company: rows[i][1],
         name: rows[i][2],
         email: String(rows[i][3] || '').trim(),
-        tel: rows[i][4]
+        tel: rows[i][4],
+        squareId: String(rows[i][BOARD_CUSTOMER_COL.squareId - 1] || '').trim()
       };
     }
   }

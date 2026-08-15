@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<style>
+  body { font-family: 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif; font-size: 13px; color: #1E293B; margin: 0; padding: 16px; background: #F4F7FF; }
+  .head { background: #fff; border: 1px solid #DDE4F8; border-radius: 10px; padding: 11px 14px; margin-bottom: 14px; }
+  .head b { font-size: 14px; }
+  .head div { color: #5A6A8A; font-size: 12px; margin-top: 3px; }
+  .step { background: #fff; border: 1px solid #DDE4F8; border-radius: 10px; padding: 13px 15px; margin-bottom: 11px; }
+  .step.done { background: #F3FAF5; border-color: #b8e6c8; }
+  .step.todo { border-color: #FF6B35; border-width: 2px; }
+  .step-head { display: flex; align-items: center; gap: 9px; margin-bottom: 7px; }
+  .num { width: 22px; height: 22px; border-radius: 50%; background: #DDE4F8; color: #5A6A8A; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .step.done .num { background: #2c9e5e; color: #fff; }
+  .step.todo .num { background: #FF6B35; color: #fff; }
+  .title { font-weight: 700; font-size: 13.5px; }
+  .by { font-size: 11px; color: #8A97B8; margin-left: auto; }
+  .steps-text { font-size: 12.5px; color: #5A6A8A; line-height: 1.9; white-space: pre-wrap; background: #F8FAFF; border-radius: 8px; padding: 9px 12px; margin: 7px 0; }
+  .state { font-size: 12px; color: #2c9e5e; margin-top: 5px; }
+  button { border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; font-family: inherit; cursor: pointer; margin: 6px 6px 0 0; }
+  .b-main { background: #FF6B35; color: #fff; }
+  .b-sub { background: #fff; color: #3B6EF8; border: 1px solid #DDE4F8; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 12.5px; line-height: 1.7; display: none; white-space: pre-wrap; }
+  .msg-ok { background: #e6f6ec; color: #2c9e5e; }
+  .msg-err { background: #fdeceb; color: #e5484d; }
+  .note { font-size: 11.5px; color: #8A97B8; margin-top: 5px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<div id="root">読み込み中...</div>
+<div class="msg" id="msg"></div>
+
+<script>
+  var s = null;
+
+  function el(id) { return document.getElementById(id); }
+
+  function show(kind, text) {
+    var m = el('msg');
+    m.className = 'msg msg-' + kind;
+    m.textContent = text;
+    m.style.display = 'block';
+  }
+
+  function esc(t) {
+    return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  }
+
+  function stepBox(num, title, by, done, todo, inner, state) {
+    return '<div class="step ' + (done ? 'done' : (todo ? 'todo' : '')) + '">' +
+      '<div class="step-head"><div class="num">' + (done ? '✓' : num) + '</div>' +
+      '<div class="title">' + title + '</div><div class="by">' + by + '</div></div>' +
+      (state ? '<div class="state">' + esc(state) + '</div>' : '') + inner + '</div>';
+  }
+
+  function render(data) {
+    s = data;
+    var c1 = !!s.squareCustomerId;
+    var c2 = !!s.contractAt;
+    var c3 = !!s.invoiceId;
+    var c4 = !!s.sentAt || (s.invoiceStatus && s.invoiceStatus !== 'DRAFT');
+
+    var html =
+      '<div class="head"><b>' + esc(s.caseId) + '　' + esc(s.customerName) + '</b>' +
+      '<div>' + esc(s.customerEmail) + '　／　現在のステータス: ' + esc(s.status) + '</div></div>';
+
+    html += stepBox(1, 'Squareに顧客を作成する', '自動', c1, !c1,
+      '<button class="b-main" id="b1">顧客を作成する</button>' +
+      '<div class="note">契約書の受取先として必要です。すでにSquareに同じメールアドレスの顧客がいれば、それを使います。</div>',
+      c1 ? '登録済み（' + s.squareCustomerId + '）' : '');
+
+    html += stepBox(2, '契約書を作成する', '手動', c2, c1 && !c2,
+      '<div class="steps-text">' + esc(s.contractSteps) + '</div>' +
+      '<button class="b-sub" id="b2open">Squareの契約書画面を開く</button>' +
+      '<button class="b-main" id="b2done">契約書を作成しました</button>',
+      c2 ? '作成済み（' + s.contractAt + '）' : '');
+
+    html += stepBox(3, '請求書の下書きを作成する', '自動', c3, c2 && !c3,
+      '<button class="b-main" id="b3">請求書を作成する</button>' +
+      '<div class="note">登録手数料 220円（税込）。金額・文面・支払期限は過去の請求書と同じ設定で作られます。この時点ではお客様に届きません。</div>',
+      c3 ? '作成済み（状態: ' + s.invoiceStatus + '）' : '');
+
+    html += stepBox(4, '契約書を添付して送信する', '手動', c4, c3 && !c4,
+      '<div class="steps-text">' + esc(s.invoiceSteps) + '</div>' +
+      '<button class="b-sub" id="b4open">Squareで請求書を開く</button>' +
+      '<button class="b-main" id="b4done">送信しました</button>',
+      c4 ? '送信済み（' + (s.sentAt || s.invoiceStatus) + '）' : '');
+
+    el('root').innerHTML = html;
+
+    el('b1').disabled = c1;
+    el('b2done').disabled = !c1 || c2;
+    el('b3').disabled = !c2 || c3;
+    el('b4open').disabled = !c3;
+    el('b4done').disabled = !c3 || c4;
+
+    el('b1').addEventListener('click', function () { run('squareEnsureCustomerForCase'); });
+    el('b2open').addEventListener('click', function () { window.open(s.contractsUrl, '_blank'); });
+    el('b2done').addEventListener('click', function () { run('squareMarkContractCreated'); });
+    el('b3').addEventListener('click', function () { run('squareCreateDraftForCase'); });
+    el('b4open').addEventListener('click', function () { window.open(s.invoiceUrl, '_blank'); });
+    el('b4done').addEventListener('click', function () { run('squareConfirmSent'); });
+  }
+
+  function run(fn) {
+    show('ok', '処理しています...');
+    ['b1', 'b2done', 'b3', 'b4done'].forEach(function (id) { if (el(id)) el(id).disabled = true; });
+    google.script.run.withSuccessHandler(function (r) {
+      show('ok', r.message);
+      reload();
+    }).withFailureHandler(function (e) {
+      show('err', e.message);
+      reload();
+    })[fn](s.row);
+  }
+
+  function reload() {
+    google.script.run.withSuccessHandler(render)
+      .withFailureHandler(function (e) { el('root').textContent = e.message; })
+      .squareGetFlowState();
+  }
+
+  reload();
+</script>
+</body>
+</html>

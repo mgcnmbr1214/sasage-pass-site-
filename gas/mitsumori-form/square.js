@@ -222,9 +222,109 @@ function squareDescribeOrder_(order) {
 // 請求書の作成と送信
 // ------------------------------------------------------------
 
+const SQUARE_CONTRACTS_URL = 'https://squareup.com/dashboard/contracts';
+
+/** 手続き画面を開く。案件ボードで行を選んでから実行する。 */
+function squareOpenFlow() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getActiveSheet();
+  if (sheet.getName() !== BOARD_SHEET_CASES) {
+    SpreadsheetApp.getUi().alert('「案件ボード」タブで、対象の案件の行を選んでから実行してください。');
+    return;
+  }
+  const row = sheet.getActiveRange().getRow();
+  if (row < 2 || !sheet.getRange(row, BOARD_COL.caseId).getValue()) {
+    SpreadsheetApp.getUi().alert('案件の行を選んでから実行してください。');
+    return;
+  }
+  PropertiesService.getUserProperties().setProperty('BOARD_ACTIVE_ROW', String(row));
+  const html = HtmlService.createTemplateFromFile('SquareFlow').evaluate().setWidth(780).setHeight(660);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Square 手続きの案内');
+}
+
+/** 手続き画面に出す現在の状態。4段階のどこまで進んでいるかを返す。 */
+function squareGetFlowState() {
+  const row = Number(PropertiesService.getUserProperties().getProperty('BOARD_ACTIVE_ROW') || 0);
+  if (!row) throw new Error('案件が選択されていません。');
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  const values = sheet.getRange(row, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
+  const customer = boardFindCustomer_(ss, values[BOARD_COL.customerId - 1]);
+  const settings = boardGetSettings_(ss);
+  const invoiceId = String(values[BOARD_COL.invoiceId - 1] || '').trim();
+  const invoice = invoiceId ? squareGetInvoice_(invoiceId) : null;
+
+  return {
+    row: row,
+    caseId: values[BOARD_COL.caseId - 1],
+    status: values[BOARD_COL.status - 1],
+    customerName: (customer && (customer.company || customer.name)) || values[BOARD_COL.customer - 1],
+    customerEmail: customer ? customer.email : '',
+    squareCustomerId: customer ? customer.squareId : '',
+    contractAt: boardFormatDate_(values[BOARD_COL.contractAt - 1]),
+    invoiceId: invoiceId,
+    invoiceStatus: invoice ? invoice.status : '',
+    invoiceUrl: invoiceId ? squareDashboardUrl_(invoiceId) : '',
+    contractsUrl: SQUARE_CONTRACTS_URL,
+    contractSteps: String(settings['契約書作成の手順'] || ''),
+    invoiceSteps: String(settings['請求書送信の手順'] || ''),
+    sentAt: boardFormatDate_(values[BOARD_COL.invoiceSent - 1])
+  };
+}
+
+/** 手順1: Square に顧客を作成（または既存を紐付け）する。 */
+function squareEnsureCustomerForCase(caseRow) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  const values = sheet.getRange(Number(caseRow), 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
+  const customer = boardFindCustomer_(ss, values[BOARD_COL.customerId - 1]);
+  if (!customer || !boardIsEmail_(customer.email)) {
+    throw new Error('顧客のメールアドレスが登録されていません。「顧客」タブをご確認ください。');
+  }
+  if (customer.squareId) {
+    return { squareCustomerId: customer.squareId, message: 'すでにSquareに登録されています。' };
+  }
+
+  const squareCustomerId = squareFindOrCreateCustomer_(customer);
+  ss.getSheetByName(BOARD_SHEET_CUSTOMERS)
+    .getRange(customer.row, BOARD_CUSTOMER_COL.squareId).setValue(squareCustomerId);
+  boardLog_('Square', customer.email + ' をSquareの顧客として登録しました');
+  return { squareCustomerId: squareCustomerId, message: 'Squareに顧客を作成しました。' };
+}
+
+/** 手順2: 契約書を作成したことを記録する（作成自体はSquare画面での手作業）。 */
+function squareMarkContractCreated(caseRow) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_CASES);
+  sheet.getRange(Number(caseRow), BOARD_COL.contractAt).setValue(new Date());
+  boardLog_('Square', '契約書の作成を記録しました');
+  return { message: '契約書の作成を記録しました。' };
+}
+
+/** 手順4: 実際に送信されたかを Square 側の状態で確認し、記録する。 */
+function squareConfirmSent(caseRow) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  const row = Number(caseRow);
+  const invoiceId = String(sheet.getRange(row, BOARD_COL.invoiceId).getValue() || '').trim();
+  if (!invoiceId) throw new Error('先に請求書を作成してください。');
+
+  const invoice = squareGetInvoice_(invoiceId);
+  if (!invoice) throw new Error('請求書の状態を取得できませんでした。');
+  if (invoice.status === 'DRAFT') {
+    throw new Error('この請求書はまだ下書きのままです。\nSquareの画面で送信を完了してから、もう一度押してください。');
+  }
+
+  sheet.getRange(row, BOARD_COL.invoiceSent).setValue(new Date());
+  sheet.getRange(row, BOARD_COL.status).setValue(BOARD_STATUS_SIGNING);
+  boardSetTodoFormula_(sheet, row);
+  boardLog_('Square', invoiceId + ' の送信を確認しました（状態: ' + invoice.status + '）');
+  return { message: '送信を確認しました。ステータスを「' + BOARD_STATUS_SIGNING + '」に更新しました。' };
+}
+
 /**
  * 案件に対する登録手数料の請求書を「下書き」として作成する。
- * この時点ではお客様には届かない。内容を確認してから squarePublishForCase で送信する。
+ * この時点ではお客様には届かない。契約書を添付したうえで Square 画面から送信する。
  */
 function squareCreateDraftForCase(caseRow) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
