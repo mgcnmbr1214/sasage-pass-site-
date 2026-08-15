@@ -236,8 +236,8 @@ function squareOpenFlow() {
     return;
   }
   PropertiesService.getUserProperties().setProperty('BOARD_ACTIVE_ROW', String(row));
-  const html = HtmlService.createTemplateFromFile('SquareFlow').evaluate().setWidth(780).setHeight(660);
-  SpreadsheetApp.getUi().showModalDialog(html, 'Square 手続きの案内');
+  const html = HtmlService.createTemplateFromFile('SquareFlow').evaluate().setWidth(780).setHeight(620);
+  SpreadsheetApp.getUi().showModalDialog(html, '初回登録の請求書を送る');
 }
 
 /** 手続き画面に出す現在の状態。4段階のどこまで進んでいるかを返す。 */

@@ -57,13 +57,58 @@ const BOARD_CUSTOMER_COL = { squareId: 15 };
 
 const BOARD_MAIL_HEADERS = [
   '日時', '顧客ID', '差出人', '件名', '要約',
-  'AI初回案', '修正指示ログ', '最終文面', '状態', 'GmailスレッドID', '下書き保存日時'
+  'AI初回案', '修正指示ログ', '最終文面', '状態', 'GmailスレッドID', '下書き保存日時', '対応種別'
 ];
 
 const BOARD_MAIL_COL = {
   date: 1, customerId: 2, from: 3, subject: 4, summary: 5,
-  aiFirst: 6, instructions: 7, finalText: 8, status: 9, threadId: 10, savedAt: 11
+  aiFirst: 6, instructions: 7, finalText: 8, status: 9, threadId: 10, savedAt: 11, responseType: 12
 };
+
+/**
+ * 対応の種類。どの状況での回答かによって、案件ステータスの変化と
+ * メール以外に必要な処理が変わる。
+ */
+const BOARD_RESPONSE_TYPES = [
+  { id: 'REPLY', name: '通常返信（AIの回答）', template: '', status: '返信済', tasks: [] },
+  { id: 'T1', name: 'T1 見積もり回答', template: 'T1', status: '返信済', tasks: [] },
+  {
+    id: 'T2', name: 'T2 案内メール（依頼確定）', template: 'T2', status: BOARD_STATUS_SIGNING,
+    tasks: [
+      '受付開始日と納期予定を入力する（未入力だと日付が空欄のまま送られます）',
+      'メニュー「初回登録の請求書を送る」から、220円の請求書を作成・送信する'
+    ]
+  },
+  {
+    id: 'T4', name: 'T4 手続き完了の連絡', template: 'T4', status: '発送待ち',
+    tasks: [
+      'Squareで支払いと契約書への署名が完了しているか確認する',
+      '案件ボードの「署名・支払確認日」を入力する'
+    ]
+  },
+  { id: 'T5', name: 'T5 リマインド（手続き未完了）', template: 'T5', status: '', tasks: [] },
+  { id: 'T6', name: 'T6 リマインド（追跡番号未着）', template: 'T6', status: '', tasks: [] },
+  {
+    id: 'T7', name: 'T7 お預かり完了の連絡', template: 'T7', status: '作業中',
+    tasks: ['到着した商品の点数を確認し、案件ボードの「予定点数」を実数に更新する']
+  }
+];
+
+function boardFindResponseTypeByName_(name) {
+  const key = String(name || '').trim();
+  if (!key) return null;
+  for (let i = 0; i < BOARD_RESPONSE_TYPES.length; i++) {
+    if (BOARD_RESPONSE_TYPES[i].name === key) return BOARD_RESPONSE_TYPES[i];
+  }
+  return null;
+}
+
+function boardFindResponseType_(id) {
+  for (let i = 0; i < BOARD_RESPONSE_TYPES.length; i++) {
+    if (BOARD_RESPONSE_TYPES[i].id === id) return BOARD_RESPONSE_TYPES[i];
+  }
+  return null;
+}
 
 const BOARD_SHEET_EXAMPLES = '返信実例';
 const BOARD_EXAMPLE_HEADERS = ['日時', '顧客', '件名', 'AI初回案', '修正指示', '最終文面', '抽出した方針'];
@@ -93,13 +138,13 @@ function onOpen() {
     .addItem('フォーム回答を取り込む', 'boardImportResponses')
     .addItem('顧客・案件を作り直す', 'boardRebuild')
     .addSeparator()
-    .addItem('返信案を確認する', 'mailOpenReviewPanel')
+    .addItem('対応を選ぶ', 'mailOpenReviewPanel')
     .addItem('返信案を今すぐ作る', 'mailCheckNow')
     .addSubMenu(SpreadsheetApp.getUi().createMenu('メール返信支援の設定')
       .addItem('APIキーを登録する', 'mailSetApiKey')
       .addItem('自動チェックを開始する', 'mailStartAutoCheck')
       .addItem('自動チェックを停止する', 'mailStopAutoCheck'))
-    .addItem('Squareの手続きを進める', 'squareOpenFlow')
+    .addItem('初回登録の請求書を送る', 'squareOpenFlow')
     .addSubMenu(SpreadsheetApp.getUi().createMenu('Square連携の設定')
       .addItem('Squareトークンを登録する', 'squareSetToken')
       .addItem('過去の請求書の設定を読み取る', 'squareInspectTemplate'))
@@ -380,8 +425,12 @@ function boardSeedTemplates_(sheet) {
     });
   }
   const seeds = [
+    ['T1', '見積もり回答', '【ササゲパス】お見積もりのご案内', boardDefaultQuoteBody_(), 'フォーム回答への初回返信'],
     ['T2', '案内メール（依頼確定時）', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定（自）が未入力なら下書きを作成しない。予定点数・初回注記は空なら該当行が自動で消える'],
     ['T4', '手続き完了のご連絡', '【ササゲパス】お手続きを確認いたしました', boardDefaultDoneBody_(), '署名・カード登録の確認後に送る'],
+    ['T5', 'リマインド（手続き未完了）', '【ササゲパス】お手続きのご確認', boardDefaultRemindPaymentBody_(), '請求書を送ってから一定日数が経っても署名・支払いが確認できないとき'],
+    ['T6', 'リマインド（追跡番号未着）', '【ササゲパス】ご発送状況のご確認', boardDefaultRemindShippingBody_(), '発送の連絡も荷物の到着もないとき'],
+    ['T7', 'お預かり完了のご連絡', '【ササゲパス】商品をお預かりいたしました', boardDefaultReceivedBody_(), '商品が到着したとき'],
     ['S1', 'Square請求書（登録手数料220円）', SQUARE_INVOICE_TITLE, squareInvoiceDescription_(), '過去の請求書と同一の文面。Squareの請求書メッセージ欄に入る']
   ];
   seeds.forEach(function (seed) {
@@ -452,6 +501,90 @@ function boardDefaultGuideBody_() {
     '',
     'ご不明な点がございましたら、本メールへのご返信にてお気軽にご連絡ください。',
     '引き続きどうぞよろしくお願い申し上げます。'
+  ].join('\n');
+}
+
+function boardDefaultQuoteBody_() {
+  return [
+    '{{会社名}}',
+    '{{担当者名}} 様',
+    '',
+    'このたびは概算見積もりフォームよりお問い合わせいただき、誠にありがとうございます。',
+    'いただいた内容をもとに、以下のとおりご案内いたします。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ お見積もり内容',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '{{依頼内容}}',
+    '　概算単価　{{単価}}／点',
+    '',
+    '※数量割引は月間50点以上のご依頼が対象です。',
+    '　月間の点数が50点に満たない場合は、割引前の単価でのご案内となります。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ ご利用条件',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '・初回契約料・基本料金はいただいておりません。ご依頼のない月に費用は発生しません。',
+    '・テストのご依頼は10点から承っております。',
+    '・返送料は弊社負担です（弊社への発送時の送料はお客様負担となります）。',
+    '・納期の目安：ご発送から返送まで1〜2週間程度',
+    '　※点数や状況により前後いたします。ご依頼確定後にあらためてご案内いたします。',
+    '',
+    'ご不明な点やご希望条件のご相談がございましたら、お気軽にご返信ください。',
+    'ご依頼をご希望の場合は、その旨ご連絡いただけましたら、発送先・発送方法をご案内いたします。',
+    '',
+    '引き続きどうぞよろしくお願い申し上げます。'
+  ].join('\n');
+}
+
+function boardDefaultRemindPaymentBody_() {
+  return [
+    '{{会社名}}',
+    '{{担当者名}} 様',
+    '',
+    'お世話になっております。ササゲパス運営事務局です。',
+    '',
+    '先日お送りしたご請求書について、',
+    '決済情報のご登録と契約書へのご署名がまだ確認できておりません。',
+    '',
+    'お手続きが完了しませんと作業を開始できないため、',
+    '恐れ入りますがご確認をお願いいたします。',
+    'すでにお手続き済みの場合や、ご不明な点、',
+    'ご都合が変わった場合などございましたら、本メールへのご返信にてお知らせください。',
+    '',
+    'どうぞよろしくお願い申し上げます。'
+  ].join('\n');
+}
+
+function boardDefaultRemindShippingBody_() {
+  return [
+    '{{会社名}}',
+    '{{担当者名}} 様',
+    '',
+    'お世話になっております。ササゲパス運営事務局です。',
+    '',
+    'ご発送のご準備はいかがでしょうか。',
+    'すでにご発送済みの場合は、本メールへのご返信にて、',
+    '送り状のお問い合わせ番号またはお控えの写真をお送りください。',
+    '',
+    'まだの場合もお急ぎいただく必要はございませんので、',
+    'ご都合のよいタイミングでご発送ください。',
+    '',
+    'どうぞよろしくお願い申し上げます。'
+  ].join('\n');
+}
+
+function boardDefaultReceivedBody_() {
+  return [
+    '{{会社名}}',
+    '{{担当者名}} 様',
+    '',
+    'お世話になっております。ササゲパス運営事務局です。',
+    '',
+    '本日、商品を{{予定点数}}点お預かりいたしました。',
+    '{{納期予定}}を目安に作業を進め、完了次第あらためてご連絡いたします。',
+    '',
+    'どうぞよろしくお願い申し上げます。'
   ].join('\n');
 }
 
@@ -713,6 +846,70 @@ function boardSaveCase(data) {
   boardSetTodoFormula_(sheet, row);
   boardLog_('保存', data.caseId + ' を更新しました');
   return boardGetActiveCase();
+}
+
+/**
+ * 案件の情報でテンプレートの変数を埋めた件名と本文を返す。
+ * 値が空の変数を含む行は、行ごと削除する（点数や初回注記が空欄のまま送られないようにするため）。
+ */
+function boardBuildTemplateText_(ss, caseRow, templateId) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  const v = sheet.getRange(Number(caseRow), 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
+  const customerId = v[BOARD_COL.customerId - 1];
+  const customer = boardFindCustomer_(ss, customerId);
+  if (!customer) throw new Error('顧客 ' + customerId + ' が「顧客」タブに見つかりません。');
+
+  const tpl = boardFindTemplate_(ss, templateId);
+  if (!tpl) throw new Error('テンプレ ' + templateId + ' が見つかりません。「テンプレ」タブをご確認ください。');
+
+  const settings = boardGetSettings_(ss);
+  const qty = v[BOARD_COL.qty - 1];
+  const vars = {
+    '会社名': customer.company,
+    '担当者名': customer.name,
+    '依頼内容': v[BOARD_COL.detail - 1],
+    '予定点数': qty,
+    '単価': v[BOARD_COL.unitPrice - 1],
+    '受付開始日': boardFormatDate_(v[BOARD_COL.startDate - 1]),
+    '納期予定': boardFormatDateRange_(v[BOARD_COL.dueFrom - 1], v[BOARD_COL.dueTo - 1]),
+    '初回注記': boardIsFirstCase_(ss, customerId, v[BOARD_COL.caseId - 1])
+      ? '　※初回のみ、ストア情報登録のため、通常より大幅に納期をいただいております。' : '',
+    '営業所コード': settings['営業所コード'],
+    '営業所名': settings['営業所名'],
+    '発送先郵便番号': settings['発送先郵便番号'],
+    '発送先宛名': settings['発送先宛名'],
+    '発送先TEL': settings['発送先TEL'],
+    '品名': settings['品名']
+  };
+
+  let body = String(tpl.body || '');
+  ['予定点数', '初回注記'].forEach(function (key) {
+    if (vars[key] === '' || vars[key] === null || vars[key] === undefined) {
+      body = boardDropLinesWith_(body, '{{' + key + '}}');
+    }
+  });
+
+  return {
+    subject: boardFill_(tpl.subject, vars),
+    body: boardFill_(body, vars),
+    customer: customer,
+    values: v
+  };
+}
+
+/** 顧客IDに紐づく最新の案件の行番号。完了・失注は除く。 */
+function boardFindLatestCaseRow_(ss, customerId) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 2 || !customerId) return 0;
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  let found = 0;
+  rows.forEach(function (row, i) {
+    if (String(row[BOARD_COL.customerId - 1]).trim() !== String(customerId).trim()) return;
+    const status = String(row[BOARD_COL.status - 1] || '').trim();
+    if (status === '返送済' || status === '見送り') return;
+    found = i + 2;
+  });
+  return found;
 }
 
 function boardCreateGuideDraft(data) {

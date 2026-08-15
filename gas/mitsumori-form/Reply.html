@@ -32,6 +32,12 @@
   .msg-err { background: #fdeceb; color: #e5484d; }
   .empty { padding: 40px 20px; text-align: center; color: #8A97B8; }
   .log { font-size: 11.5px; color: #8A97B8; white-space: pre-wrap; line-height: 1.6; margin-top: 6px; }
+  select { width: 100%; box-sizing: border-box; border: 1px solid #DDE4F8; border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit; background: #fff; }
+  .tasks-note { font-size: 12.5px; color: #5A6A8A; margin-top: 9px; }
+  .tasks { background: #FFF6F1; border: 1px solid #FFD9C7; border-radius: 8px; padding: 9px 12px; margin-top: 9px; }
+  .tasks-title { font-size: 12px; font-weight: 700; color: #C24A18; margin-bottom: 4px; }
+  .tasks ul { margin: 0; padding-left: 18px; }
+  .tasks li { font-size: 12.5px; color: #5A6A8A; line-height: 1.8; }
 </style>
 </head>
 <body>
@@ -43,9 +49,39 @@
 
 <script>
   var items = [];
+  var types = [];
   var current = null;
 
   function el(id) { return document.getElementById(id); }
+
+  function findType(id) {
+    var hit = null;
+    types.forEach(function (t) { if (t.id === id) hit = t; });
+    return hit;
+  }
+
+  function confirmReplace(type) {
+    if (!type || !type.template && type.id === 'REPLY') {
+      return confirm('本文をAIの返信案に戻します。編集内容は失われます。よろしいですか？');
+    }
+    return confirm('本文を「' + type.name + '」の定型文に差し替えます。編集内容は失われます。よろしいですか？');
+  }
+
+  function renderTasks(type) {
+    var box = el('tasks');
+    if (!type) { box.innerHTML = ''; return; }
+    var html = '';
+    if (type.status) {
+      html += '<div class="tasks-note">下書きに保存すると、案件のステータスが' +
+        '<b>「' + type.status + '」</b>に変わります。</div>';
+    }
+    if (type.tasks && type.tasks.length > 0) {
+      html += '<div class="tasks"><div class="tasks-title">この対応と同時に必要な処理</div><ul>';
+      type.tasks.forEach(function (t) { html += '<li>' + t.replace(/</g, '&lt;') + '</li>'; });
+      html += '</ul></div>';
+    }
+    box.innerHTML = html;
+  }
 
   function show(kind, text) {
     var m = el('msg');
@@ -87,6 +123,9 @@
     el('main').innerHTML =
       '<div class="card"><h3>お客様のメール</h3><div class="quote" id="summary"></div>' +
       '<div class="log" id="log"></div></div>' +
+      '<div class="card"><label>どの状況での対応か</label>' +
+      '<select id="rtype"></select>' +
+      '<div id="tasks"></div></div>' +
       '<div class="card"><label>返信案（そのまま編集できます）</label>' +
       '<textarea id="editor"></textarea>' +
       '<div class="btns">' +
@@ -103,6 +142,28 @@
     el('summary').textContent = current.summary || '(本文なし)';
     el('editor').value = current.text || '';
     el('log').textContent = current.instructions ? '過去の修正指示:\n' + current.instructions : '';
+
+    var sel = el('rtype');
+    types.forEach(function (t) {
+      var o = document.createElement('option');
+      o.value = t.id;
+      o.textContent = t.name;
+      if (t.name === current.responseType) o.selected = true;
+      sel.appendChild(o);
+    });
+    renderTasks(findType(sel.value));
+
+    sel.addEventListener('change', function () {
+      var type = findType(sel.value);
+      renderTasks(type);
+      if (!confirmReplace(type)) return;
+      show('ok', '文面を差し替えています...');
+      google.script.run.withSuccessHandler(function (r) {
+        el('editor').value = r.text;
+        show('ok', '文面を差し替えました。内容をご確認ください。');
+      }).withFailureHandler(function (e) { show('err', e.message); })
+        .mailApplyResponseType(current.row, sel.value);
+    });
 
     el('btnAi').addEventListener('click', function () {
       var instruction = el('instruction').value.trim();
@@ -129,8 +190,15 @@
     el('btnApprove').addEventListener('click', function () {
       busy(true);
       show('ok', '下書きに保存しています...');
-      google.script.run.withSuccessHandler(function (r) { show('ok', r.message); busy(false); reload(false); })
-        .withFailureHandler(function (e) { show('err', e.message); busy(false); })
+      google.script.run.withSuccessHandler(function (r) {
+        var text = r.message;
+        if (r.tasks && r.tasks.length > 0) {
+          text += '\n\n【このあと必要な処理】\n・' + r.tasks.join('\n・');
+        }
+        show('ok', text);
+        busy(false);
+        reload(false);
+      }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
         .mailApproveToDraft(current.row, el('editor').value);
     });
 
@@ -164,7 +232,12 @@
     }).mailGetPendingList();
   }
 
-  reload(false);
+  google.script.run.withSuccessHandler(function (data) {
+    types = data;
+    reload(false);
+  }).withFailureHandler(function (e) {
+    el('list').innerHTML = '<div class="empty">' + e.message + '</div>';
+  }).mailGetResponseTypes();
 </script>
 </body>
 </html>

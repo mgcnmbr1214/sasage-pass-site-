@@ -30,9 +30,9 @@ const MAIL_OPEN_STATUSES = [MAIL_STATUS_PENDING, MAIL_STATUS_EDITING, MAIL_STATU
 
 function mailOpenReviewPanel() {
   const html = HtmlService.createTemplateFromFile('Reply').evaluate()
-    .setWidth(900)
-    .setHeight(680);
-  SpreadsheetApp.getUi().showModalDialog(html, '返信案の確認');
+    .setWidth(920)
+    .setHeight(700);
+  SpreadsheetApp.getUi().showModalDialog(html, '対応を選ぶ');
 }
 
 function mailCheckNow() {
@@ -202,6 +202,7 @@ function mailGetPendingList() {
       text: rows[i][BOARD_MAIL_COL.finalText - 1] || rows[i][BOARD_MAIL_COL.aiFirst - 1],
       instructions: rows[i][BOARD_MAIL_COL.instructions - 1],
       threadId: rows[i][BOARD_MAIL_COL.threadId - 1],
+      responseType: rows[i][BOARD_MAIL_COL.responseType - 1],
       status: status
     });
   }
@@ -250,6 +251,37 @@ function mailOwnAddresses_(ss) {
   }
   GmailApp.getAliases().forEach(function (alias) { list.push(String(alias).toLowerCase()); });
   return list.filter(function (a) { return a; });
+}
+
+/** 対応種別の一覧を画面に渡す。 */
+function mailGetResponseTypes() {
+  return BOARD_RESPONSE_TYPES.map(function (t) {
+    return { id: t.id, name: t.name, status: t.status, tasks: t.tasks };
+  });
+}
+
+/**
+ * 対応種別を選んだときの本文を返す。
+ * 通常返信ならAIの案、テンプレート指定なら案件情報を差し込んだ文面。
+ */
+function mailApplyResponseType(row, typeId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const type = boardFindResponseType_(typeId);
+  if (!type) throw new Error('対応種別が不明です。');
+
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  const values = sheet.getRange(Number(row), 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
+  sheet.getRange(Number(row), BOARD_MAIL_COL.responseType).setValue(type.name);
+
+  if (!type.template) {
+    return { text: values[BOARD_MAIL_COL.aiFirst - 1] || '', tasks: type.tasks, status: type.status };
+  }
+
+  const caseRow = boardFindLatestCaseRow_(ss, values[BOARD_MAIL_COL.customerId - 1]);
+  if (!caseRow) throw new Error('このお客様の案件が案件ボードに見つかりません。');
+
+  const built = boardBuildTemplateText_(ss, caseRow, type.template);
+  return { text: built.body, tasks: type.tasks, status: type.status };
 }
 
 /** 画面で編集した本文をシートに保存する（下書きにはしない）。 */
@@ -327,10 +359,24 @@ function mailApproveToDraft(row, text) {
     finalText: text
   });
 
+  const type = boardFindResponseTypeByName_(values[BOARD_MAIL_COL.responseType - 1]);
+  let statusNote = '';
+  if (type && type.status) {
+    const caseRow = boardFindLatestCaseRow_(ss, values[BOARD_MAIL_COL.customerId - 1]);
+    if (caseRow) {
+      const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+      cases.getRange(caseRow, BOARD_COL.status).setValue(type.status);
+      cases.getRange(caseRow, BOARD_COL.lastContact).setValue(new Date());
+      boardSetTodoFormula_(cases, caseRow);
+      statusNote = '\n案件のステータスを「' + type.status + '」に更新しました。';
+    }
+  }
+
   boardLog_('②下書き保存', values[BOARD_MAIL_COL.subject - 1] + ' の下書きを保存しました');
   return {
     message: 'Gmailの下書きに保存しました。内容を確認して送信してください。\n' +
-      '実際に送信するまでこの一覧には残ります（下書きを消してもやり直せます）。'
+      '実際に送信するまでこの一覧には残ります（下書きを消してもやり直せます）。' + statusNote,
+    tasks: type ? type.tasks : []
   };
 }
 
