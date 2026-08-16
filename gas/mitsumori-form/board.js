@@ -512,6 +512,7 @@ function boardSetupTemplates_(ss) {
   sheet.setColumnWidth(1, 90);
 
   boardSeedTemplates_(sheet);
+  boardMigrateTemplateNotes_(sheet);
 
   const last = sheet.getLastColumn();
   if (last > 1) {
@@ -540,6 +541,51 @@ function boardMigrateTemplates_(sheet) {
   });
   sheet.getRange(1, 1, values.length, rows.length + 1).setValues(values);
   boardLog_('移行', 'テンプレを縦横入れ替えた構成に変換しました（' + rows.length + '件）');
+}
+
+const BOARD_NOTE_ESTIMATE = '　※上記受付開始日に到着した際のおおよその目安です。';
+const BOARD_NOTE_FIRST = '{{初回注記}}';
+const BOARD_NOTE_OLD = '※納期は商品到着後の状況により前後する場合がございます';
+
+/**
+ * すでに作成済みのテンプレートに、納期に関する注意書きを差し込む。
+ * 既存の本文を尊重し、注意書きが無い場合だけ納期行の直後に追加する。
+ */
+function boardMigrateTemplateNotes_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return;
+
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
+  let updated = 0;
+
+  for (let c = 1; c < ids.length; c++) {
+    const id = String(ids[c] || '').trim();
+    if (id !== 'T2' && id !== 'T4') continue;
+
+    const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
+    const body = String(cell.getValue() || '');
+    if (!body || body.indexOf('{{納期予定}}') < 0) continue;
+    if (body.indexOf(BOARD_NOTE_ESTIMATE.trim()) >= 0) continue;
+
+    const lines = body.split('\n');
+    let index = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].indexOf('{{納期予定}}') >= 0) { index = i; break; }
+    }
+    if (index < 0) continue;
+
+    const notes = [BOARD_NOTE_ESTIMATE];
+    if (body.indexOf(BOARD_NOTE_FIRST) < 0) notes.push(BOARD_NOTE_FIRST);
+
+    const following = lines[index + 1] || '';
+    const replaceCount = following.indexOf(BOARD_NOTE_OLD) >= 0 ? 1 : 0;
+    lines.splice.apply(lines, [index + 1, replaceCount].concat(notes));
+
+    cell.setValue(lines.join('\n'));
+    updated++;
+  }
+
+  if (updated > 0) boardLog_('移行', 'テンプレ ' + updated + ' 件に納期の注意書きを追加しました');
 }
 
 function boardSeedTemplates_(sheet) {
