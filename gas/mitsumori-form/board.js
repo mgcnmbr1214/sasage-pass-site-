@@ -544,7 +544,7 @@ function boardMigrateTemplates_(sheet) {
 }
 
 const BOARD_NOTE_ESTIMATE = '　※上記受付開始日に到着した際のおおよその目安です。';
-const BOARD_NOTE_FIRST = '{{初回注記}}';
+const BOARD_NOTE_FIRST = '　※初回のみ、ストア情報登録のため、通常より大幅に納期をいただいております。';
 const BOARD_NOTE_OLD = '※納期は商品到着後の状況により前後する場合がございます';
 
 /**
@@ -565,17 +565,24 @@ function boardMigrateTemplateNotes_(sheet) {
     const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
     const body = String(cell.getValue() || '');
     if (!body || body.indexOf('{{納期予定}}') < 0) continue;
-    if (body.indexOf(BOARD_NOTE_ESTIMATE.trim()) >= 0) continue;
+    // 旧仕様の差し込み変数は、そのまま本文として読める文章に置き換える
+    let lines = body.replace('{{初回注記}}', BOARD_NOTE_FIRST).split('\n');
+    const hasEstimate = lines.some(function (l) { return l.indexOf(BOARD_NOTE_ESTIMATE.trim()) >= 0; });
+    const hasFirst = lines.some(function (l) { return l.indexOf(BOARD_NOTE_FIRST.trim()) >= 0; });
+    if (hasEstimate && hasFirst) {
+      if (lines.join('\n') !== body) { cell.setValue(lines.join('\n')); updated++; }
+      continue;
+    }
 
-    const lines = body.split('\n');
     let index = -1;
     for (let i = 0; i < lines.length; i++) {
       if (lines[i].indexOf('{{納期予定}}') >= 0) { index = i; break; }
     }
     if (index < 0) continue;
 
-    const notes = [BOARD_NOTE_ESTIMATE];
-    if (body.indexOf(BOARD_NOTE_FIRST) < 0) notes.push(BOARD_NOTE_FIRST);
+    const notes = [];
+    if (!hasEstimate) notes.push(BOARD_NOTE_ESTIMATE);
+    if (!hasFirst) notes.push(BOARD_NOTE_FIRST);
 
     const following = lines[index + 1] || '';
     const replaceCount = following.indexOf(BOARD_NOTE_OLD) >= 0 ? 1 : 0;
@@ -599,7 +606,7 @@ function boardSeedTemplates_(sheet) {
 
   const seeds = [
     ['T1', '見積もり回答', '【ササゲパス】お見積もりのご案内', boardDefaultQuoteBody_(), 'フォーム回答への初回返信'],
-    ['T2', '案内メール（依頼確定時）', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定（自）が未入力なら下書きを作成しない。予定点数・初回注記は空なら該当行が自動で消える'],
+    ['T2', '案内メール（依頼確定時）', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定（自）が未入力なら下書きを作成しない。予定点数が空なら該当行が自動で消える'],
     ['T4', '手続き完了のご連絡', '【ササゲパス】お手続きを確認いたしました', boardDefaultDoneBody_(), '署名・カード登録の確認後に送る'],
     ['T5', 'リマインド（手続き未完了）', '【ササゲパス】お手続きのご確認', boardDefaultRemindPaymentBody_(), '請求書を送ってから一定日数が経っても署名・支払いが確認できないとき'],
     ['T6', 'リマインド（追跡番号未着）', '【ササゲパス】ご発送状況のご確認', boardDefaultRemindShippingBody_(), '発送の連絡も荷物の到着もないとき'],
@@ -633,7 +640,7 @@ function boardDefaultGuideBody_() {
     '　受付開始日　：{{受付開始日}}',
     '　納期の目安　：{{納期予定}}',
     '　※上記受付開始日に到着した際のおおよその目安です。',
-    '{{初回注記}}',
+    '　※初回のみ、ストア情報登録のため、通常より大幅に納期をいただいております。',
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     '■ ご発送前のお手続き（お支払い方法のご登録）',
@@ -779,7 +786,7 @@ function boardDefaultDoneBody_() {
     '　受付開始日　：{{受付開始日}}',
     '　納期の目安　：{{納期予定}}',
     '　※上記受付開始日に到着した際のおおよその目安です。',
-    '{{初回注記}}',
+    '　※初回のみ、ストア情報登録のため、通常より大幅に納期をいただいております。',
     '',
     'どうぞよろしくお願い申し上げます。'
   ].join('\n');
@@ -1024,7 +1031,7 @@ function boardSaveCase(data) {
 
 /**
  * 案件の情報でテンプレートの変数を埋めた件名と本文を返す。
- * 値が空の変数を含む行は、行ごと削除する（点数や初回注記が空欄のまま送られないようにするため）。
+ * 予定点数が空欄のときは、その行ごと削除する（点数が空のまま送られないようにするため）。
  */
 function boardBuildTemplateText_(ss, caseRow, templateId) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
@@ -1046,8 +1053,6 @@ function boardBuildTemplateText_(ss, caseRow, templateId) {
     '単価': v[BOARD_COL.unitPrice - 1],
     '受付開始日': boardFormatDate_(v[BOARD_COL.startDate - 1]),
     '納期予定': boardFormatDateRange_(v[BOARD_COL.dueFrom - 1], v[BOARD_COL.dueTo - 1]),
-    '初回注記': boardIsFirstCase_(ss, customerId, v[BOARD_COL.caseId - 1])
-      ? '　※初回のみ、ストア情報登録のため、通常より大幅に納期をいただいております。' : '',
     '営業所コード': settings['営業所コード'],
     '営業所名': settings['営業所名'],
     '発送先郵便番号': settings['発送先郵便番号'],
@@ -1057,11 +1062,9 @@ function boardBuildTemplateText_(ss, caseRow, templateId) {
   };
 
   let body = String(tpl.body || '');
-  ['予定点数', '初回注記'].forEach(function (key) {
-    if (vars[key] === '' || vars[key] === null || vars[key] === undefined) {
-      body = boardDropLinesWith_(body, '{{' + key + '}}');
-    }
-  });
+  if (qty === '' || qty === null || qty === undefined) {
+    body = boardDropLinesWith_(body, '{{予定点数}}');
+  }
 
   return {
     subject: boardFill_(tpl.subject, vars),
@@ -1108,39 +1111,10 @@ function boardCreateGuideDraft(data) {
       (customer.email || '空欄') + '」\n「顧客」タブのD列を修正してください。');
   }
 
-  const tpl = boardFindTemplate_(ss, 'T2');
-  if (!tpl) throw new Error('テンプレ T2 が見つかりません。「テンプレ」タブをご確認ください。');
-
+  const built = boardBuildTemplateText_(ss, row, 'T2');
+  const subject = built.subject;
+  const body = built.body;
   const settings = boardGetSettings_(ss);
-  const qty = v[BOARD_COL.qty - 1];
-  const vars = {
-    '会社名': customer.company,
-    '担当者名': customer.name,
-    '依頼内容': v[BOARD_COL.detail - 1],
-    '予定点数': qty,
-    '単価': v[BOARD_COL.unitPrice - 1],
-    '受付開始日': boardFormatDate_(v[BOARD_COL.startDate - 1]),
-    '納期予定': boardFormatDateRange_(v[BOARD_COL.dueFrom - 1], v[BOARD_COL.dueTo - 1]),
-    '初回注記': boardIsFirstCase_(ss, customerId, v[BOARD_COL.caseId - 1])
-      ? '　※初回のみ、ストア情報登録のため、通常より大幅に納期をいただいております。' : '',
-    '営業所コード': settings['営業所コード'],
-    '営業所名': settings['営業所名'],
-    '発送先郵便番号': settings['発送先郵便番号'],
-    '発送先宛名': settings['発送先宛名'],
-    '発送先TEL': settings['発送先TEL'],
-    '品名': settings['品名']
-  };
-
-  let bodySource = String(tpl.body || '');
-  if (qty === '' || qty === null || qty === undefined) {
-    bodySource = boardDropLinesWith_(bodySource, '{{予定点数}}');
-  }
-  if (!vars['初回注記']) {
-    bodySource = boardDropLinesWith_(bodySource, '{{初回注記}}');
-  }
-
-  const subject = boardFill_(tpl.subject, vars);
-  const body = boardFill_(bodySource, vars);
   const options = { name: 'ササゲパス' };
   const alias = settings['送信元エイリアス'];
   if (alias && GmailApp.getAliases().indexOf(alias) >= 0) options.from = alias;
@@ -1225,19 +1199,6 @@ function boardFormatDateRange_(from, to) {
   if (!from) return '';
   if (!to) return boardFormatDate_(from);
   return boardFormatDate_(from) + ' 〜 ' + boardFormatDate_(to);
-}
-
-/** その顧客にとって最初の案件かどうか（自分より前の案件が無ければ初回）。 */
-function boardIsFirstCase_(ss, customerId, caseId) {
-  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-  if (!sheet || sheet.getLastRow() < 2 || !customerId) return true;
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
-  for (let i = 0; i < rows.length; i++) {
-    if (String(rows[i][BOARD_COL.customerId - 1]).trim() !== String(customerId).trim()) continue;
-    if (String(rows[i][BOARD_COL.caseId - 1]).trim() === String(caseId).trim()) return true;
-    if (rows[i][BOARD_COL.guideDraftAt - 1]) return false;
-  }
-  return true;
 }
 
 function boardFormatDate_(value) {
