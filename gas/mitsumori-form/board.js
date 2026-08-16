@@ -49,11 +49,33 @@ const BOARD_COL = {
 
 const BOARD_CUSTOMER_HEADERS = [
   '顧客ID', '会社名・屋号', '担当者名', 'メールアドレス', '電話番号',
-  '返送先 郵便番号', '返送先 住所', '返送先 宛名',
+  'ストア名', '代表者名義', '請求先 郵便番号', '請求先 住所',
+  '返送先 郵便番号', '返送先 住所', '返送先 宛名', '返送先 電話番号',
   '依頼内容', '月間予定数', '単価', '初回問い合わせ日', '最終更新日', 'メモ', 'Square顧客ID'
 ];
 
-const BOARD_CUSTOMER_COL = { squareId: 15 };
+const BOARD_CUSTOMER_COL = {
+  id: 1, company: 2, name: 3, email: 4, tel: 5,
+  storeName: 6, representative: 7, billZip: 8, billAddress: 9,
+  returnZip: 10, returnAddress: 11, returnName: 12, returnTel: 13,
+  detail: 14, monthly: 15, unitPrice: 16, firstAt: 17, updatedAt: 18, memo: 19, squareId: 20
+};
+
+/**
+ * 見積もり回答（T1）でお伺いする項目と、顧客タブの列の対応。
+ * お客様の返信からこの見出しを探して自動で書き込む。
+ */
+const BOARD_CUSTOMER_INTAKE = [
+  { label: 'ストア名', col: 'storeName' },
+  { label: '会社名', col: 'company' },
+  { label: '代表者名義', col: 'representative' },
+  { label: '請求先郵便番号', col: 'billZip' },
+  { label: '請求先住所', col: 'billAddress' },
+  { label: '返送先郵便番号', col: 'returnZip' },
+  { label: '返送先住所', col: 'returnAddress' },
+  { label: '返送先電話番号', col: 'returnTel' },
+  { label: '宛名', col: 'returnName' }
+];
 
 const BOARD_MAIL_HEADERS = [
   '日時', '顧客ID', '差出人', '件名', '要約',
@@ -321,13 +343,31 @@ function boardMigrateMails_(ss) {
 /** 顧客タブに Square顧客ID 列が無ければ追加する。 */
 function boardMigrateCustomers_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
-  if (!sheet || sheet.getLastColumn() < 5) return;
+  if (!sheet || sheet.getLastColumn() < 2) return;
+
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
     .map(function (h) { return String(h || '').trim(); });
-  if (headers.indexOf('Square顧客ID') < 0) {
-    sheet.getRange(1, BOARD_CUSTOMER_COL.squareId).setValue('Square顧客ID');
-    boardLog_('移行', '顧客タブに Square顧客ID 列を追加しました');
+  if (headers.join('\t') === BOARD_CUSTOMER_HEADERS.join('\t')) return;
+
+  // 見出し名を手がかりに、列が増えても順番が変わっても値を引き継ぐ
+  const index = {};
+  headers.forEach(function (h, i) { if (h) index[h] = i; });
+
+  const rows = sheet.getLastRow() > 1
+    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues()
+    : [];
+  const moved = rows.map(function (row) {
+    return BOARD_CUSTOMER_HEADERS.map(function (h) {
+      return index[h] === undefined ? '' : row[index[h]];
+    });
+  });
+
+  sheet.clear();
+  sheet.getRange(1, 1, 1, BOARD_CUSTOMER_HEADERS.length).setValues([BOARD_CUSTOMER_HEADERS]);
+  if (moved.length > 0) {
+    sheet.getRange(2, 1, moved.length, BOARD_CUSTOMER_HEADERS.length).setValues(moved);
   }
+  boardLog_('移行', '顧客タブを新しい列構成に並べ直しました（' + moved.length + '件）');
 }
 
 /** 旧ステータス名を新名称へ置き換える。入力規則より先に実行する。 */
@@ -513,6 +553,7 @@ function boardSetupTemplates_(ss) {
 
   boardSeedTemplates_(sheet);
   boardMigrateTemplateNotes_(sheet);
+  boardMigrateQuoteTemplate_(sheet);
 
   const last = sheet.getLastColumn();
   if (last > 1) {
@@ -593,6 +634,45 @@ function boardMigrateTemplateNotes_(sheet) {
   }
 
   if (updated > 0) boardLog_('移行', 'テンプレ ' + updated + ' 件に納期の注意書きを追加しました');
+}
+
+/**
+ * 既存の見積もり回答（T1）に、テスト点数の訂正と、伺いたい情報の枠を反映する。
+ * 手を入れた箇所は残し、足りないものだけを補う。
+ */
+function boardMigrateQuoteTemplate_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return;
+
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
+  for (let c = 1; c < ids.length; c++) {
+    if (String(ids[c] || '').trim() !== 'T1') continue;
+
+    const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
+    let body = String(cell.getValue() || '');
+    if (!body) return;
+    const before = body;
+
+    body = body.replace('・テストのご依頼は10点から承っております。', boardQuoteTestLine_());
+    if (body.indexOf('■ ご依頼にあたって伺いたい情報') < 0) {
+      body = body.replace(
+        'ご不明な点やご希望条件のご相談がございましたら',
+        boardQuoteIntakeBlock_() + '\n\nご不明な点やご希望条件のご相談がございましたら'
+      );
+      if (body.indexOf('■ ご依頼にあたって伺いたい情報') < 0) {
+        body = body + '\n\n' + boardQuoteIntakeBlock_();
+      }
+    }
+    body = body.replace(
+      'ご依頼をご希望の場合は、その旨ご連絡いただけましたら、発送先・発送方法をご案内いたします。\n', ''
+    );
+
+    if (body !== before) {
+      cell.setValue(body);
+      boardLog_('移行', '見積もり回答テンプレを更新しました');
+    }
+    return;
+  }
 }
 
 function boardSeedTemplates_(sheet) {
@@ -706,15 +786,46 @@ function boardDefaultQuoteBody_() {
     '■ ご利用条件',
     '━━━━━━━━━━━━━━━━━━━━',
     '・初回契約料・基本料金はいただいておりません。ご依頼のない月に費用は発生しません。',
-    '・テストのご依頼は10点から承っております。',
+    boardQuoteTestLine_(),
     '・返送料は弊社負担です（弊社への発送時の送料はお客様負担となります）。',
     '・納期の目安：ご発送から返送まで1〜2週間程度',
     '　※点数や状況により前後いたします。ご依頼確定後にあらためてご案内いたします。',
     '',
-    'ご不明な点やご希望条件のご相談がございましたら、お気軽にご返信ください。',
-    'ご依頼をご希望の場合は、その旨ご連絡いただけましたら、発送先・発送方法をご案内いたします。',
+    boardQuoteIntakeBlock_(),
     '',
+    'ご不明な点やご希望条件のご相談がございましたら、お気軽にご返信ください。',
     '引き続きどうぞよろしくお願い申し上げます。'
+  ].join('\n');
+}
+
+function boardQuoteTestLine_() {
+  return '・テストのご依頼は、撮影のみの場合は10点以上、出品を含む場合は50点以上から承っております。';
+}
+
+/** ご依頼にあたって必ず伺う項目。返信からこの見出しを探して顧客タブへ取り込む。 */
+function boardQuoteIntakeBlock_() {
+  return [
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ ご依頼にあたって伺いたい情報',
+    '━━━━━━━━━━━━━━━━━━━━',
+    'ご依頼をご希望の場合、ご請求と商品の返送に必要となりますので、',
+    '下記をこのメールへのご返信にてお知らせください。',
+    '恐れ入りますが、下の枠内をコピーして、各項目の後ろにご記入ください。',
+    '',
+    '──────────────────',
+    '・ストア名（予定でも可）：',
+    '・会社名（個人事業主の方は個人名義）：',
+    '・代表者名義：',
+    '・請求先郵便番号：',
+    '・請求先住所（都道府県から建物名まで正確に）：',
+    '',
+    '・返送先郵便番号：',
+    '・返送先住所（都道府県から建物名まで正確に）：',
+    '・返送先電話番号：',
+    '・宛名：',
+    '──────────────────',
+    '',
+    '※請求先と返送先が同じ場合は、返送先の欄に「請求先と同じ」とご記入いただければ結構です。'
   ].join('\n');
 }
 
@@ -905,27 +1016,88 @@ function boardImportResponses_(ss) {
 }
 
 function boardUpsertCustomer_(sheet, data) {
-  const last = sheet.getLastRow();
-  if (last > 1) {
-    const emails = sheet.getRange(2, 4, last - 1, 1).getValues();
-    for (let i = 0; i < emails.length; i++) {
-      if (String(emails[i][0]).trim().toLowerCase() === data.email.toLowerCase()) {
-        const row = i + 2;
-        sheet.getRange(row, 13).setValue(new Date());
-        if (data.detail) sheet.getRange(row, 9).setValue(data.detail);
-        return sheet.getRange(row, 1).getValue();
-      }
-    }
+  const existing = boardFindCustomerRowByEmail_(sheet, data.email);
+  if (existing) {
+    sheet.getRange(existing, BOARD_CUSTOMER_COL.updatedAt).setValue(new Date());
+    if (data.detail) sheet.getRange(existing, BOARD_CUSTOMER_COL.detail).setValue(data.detail);
+    return sheet.getRange(existing, BOARD_CUSTOMER_COL.id).getValue();
   }
 
-  const row = last + 1;
+  const row = sheet.getLastRow() + 1;
   const customerId = 'C' + boardPad_(row - 1, 3);
-  sheet.getRange(row, 1, 1, BOARD_CUSTOMER_HEADERS.length).setValues([[
-    customerId, data.company, data.name, data.email, data.tel,
-    '', '', '',
-    data.detail, data.monthly, data.unitPrice, data.date, new Date(), ''
-  ]]);
+  const values = new Array(BOARD_CUSTOMER_HEADERS.length).fill('');
+  values[BOARD_CUSTOMER_COL.id - 1] = customerId;
+  values[BOARD_CUSTOMER_COL.company - 1] = data.company;
+  values[BOARD_CUSTOMER_COL.name - 1] = data.name;
+  values[BOARD_CUSTOMER_COL.email - 1] = data.email;
+  values[BOARD_CUSTOMER_COL.tel - 1] = data.tel;
+  values[BOARD_CUSTOMER_COL.detail - 1] = data.detail;
+  values[BOARD_CUSTOMER_COL.monthly - 1] = data.monthly;
+  values[BOARD_CUSTOMER_COL.unitPrice - 1] = data.unitPrice;
+  values[BOARD_CUSTOMER_COL.firstAt - 1] = data.date;
+  values[BOARD_CUSTOMER_COL.updatedAt - 1] = new Date();
+
+  sheet.getRange(row, 1, 1, BOARD_CUSTOMER_HEADERS.length).setValues([values]);
   return customerId;
+}
+
+/**
+ * お客様の返信本文から、T1でお伺いした項目を抜き出す。
+ * 「・ストア名（予定でも可）：〇〇」のように、見出しと値が同じ行にある形を想定する。
+ * 引用された空欄のテンプレートは値が無いため、自然に無視される。
+ */
+function boardExtractCustomerIntake_(text) {
+  const found = {};
+  String(text || '').split('\n').forEach(function (raw) {
+    const line = raw.replace(/^[\s>＞・･]+/, '').trim();
+    const match = line.match(/^([^：:]+)[：:]\s*(.*)$/);
+    if (!match) return;
+
+    const label = match[1].replace(/[（(].*?[)）]/g, '').replace(/\s/g, '').trim();
+    const value = match[2].trim();
+    if (!value) return;
+
+    BOARD_CUSTOMER_INTAKE.forEach(function (item) {
+      if (item.label === label) found[item.col] = value;
+    });
+  });
+  return found;
+}
+
+/** 抜き出した内容を顧客タブへ書き込む。値が入っている項目だけを更新する。 */
+function boardApplyCustomerIntake_(ss, email, values) {
+  const keys = Object.keys(values);
+  if (keys.length === 0) return 0;
+
+  const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  const row = sheet ? boardFindCustomerRowByEmail_(sheet, email) : 0;
+  if (!row) return 0;
+
+  const changed = [];
+  keys.forEach(function (key) {
+    const col = BOARD_CUSTOMER_COL[key];
+    if (!col) return;
+    const cell = sheet.getRange(row, col);
+    if (String(cell.getValue() || '').trim() === values[key]) return;
+    cell.setValue(values[key]);
+    changed.push(BOARD_CUSTOMER_HEADERS[col - 1]);
+  });
+
+  if (changed.length > 0) {
+    sheet.getRange(row, BOARD_CUSTOMER_COL.updatedAt).setValue(new Date());
+    boardLog_('顧客情報', email + ' の ' + changed.join('・') + ' を更新しました');
+  }
+  return changed.length;
+}
+
+function boardFindCustomerRowByEmail_(sheet, email) {
+  const last = sheet.getLastRow();
+  if (last < 2 || !email) return 0;
+  const emails = sheet.getRange(2, BOARD_CUSTOMER_COL.email, last - 1, 1).getValues();
+  for (let i = 0; i < emails.length; i++) {
+    if (String(emails[i][0]).trim().toLowerCase() === String(email).trim().toLowerCase()) return i + 2;
+  }
+  return 0;
 }
 
 function boardSetTodoFormula_(sheet, row) {
@@ -1141,13 +1313,13 @@ function boardFindCustomer_(ss, customerId) {
   if (!sheet || sheet.getLastRow() < 2 || !customerId) return null;
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CUSTOMER_HEADERS.length).getValues();
   for (let i = 0; i < rows.length; i++) {
-    if (String(rows[i][0]).trim() === String(customerId).trim()) {
+    if (String(rows[i][BOARD_CUSTOMER_COL.id - 1]).trim() === String(customerId).trim()) {
       return {
         row: i + 2,
-        company: rows[i][1],
-        name: rows[i][2],
-        email: String(rows[i][3] || '').trim(),
-        tel: rows[i][4],
+        company: rows[i][BOARD_CUSTOMER_COL.company - 1],
+        name: rows[i][BOARD_CUSTOMER_COL.name - 1],
+        email: String(rows[i][BOARD_CUSTOMER_COL.email - 1] || '').trim(),
+        tel: rows[i][BOARD_CUSTOMER_COL.tel - 1],
         squareId: String(rows[i][BOARD_CUSTOMER_COL.squareId - 1] || '').trim()
       };
     }

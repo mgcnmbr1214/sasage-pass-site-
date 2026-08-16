@@ -120,6 +120,14 @@ function mailScan_() {
       const last = messages[messages.length - 1];
       if (last.getFrom().indexOf(customer.email) < 0) continue;
 
+      // 見積もり回答への返信であれば、請求先・返送先を顧客タブへ取り込む
+      try {
+        boardApplyCustomerIntake_(ss, customer.email,
+          boardExtractCustomerIntake_(last.getPlainBody()));
+      } catch (err) {
+        boardLog_('②エラー', '顧客情報の取込に失敗: ' + err.message);
+      }
+
       try {
         const reply = mailGenerateReply_(apiKey, {
           knowledge: knowledge,
