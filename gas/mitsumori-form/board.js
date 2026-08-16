@@ -129,7 +129,21 @@ function boardFindResponseType_(id) {
 
 const BOARD_SHEET_EXAMPLES = '返信実例';
 const BOARD_EXAMPLE_HEADERS = ['日時', '顧客', '件名', 'AI初回案', '修正指示', '最終文面', '抽出した方針'];
-const BOARD_TEMPLATE_HEADERS = ['ID', '名称', '件名', '本文', '備考'];
+/**
+ * テンプレシートは縦横を入れ替えた構成。
+ * 1列目が項目名、2列目以降が1通ずつのメールになり、横に並べて見比べられる。
+ *
+ *        A      B         C         D …
+ *   1  項目    T1        T2        T4
+ *   2  名称    見積…      案内…      手続…
+ *   3  件名    【ササ…    【ササ…    【ササ…
+ *   4  本文    （高さ500px固定）
+ *   5  備考
+ */
+const BOARD_TEMPLATE_ROWS = ['項目', '名称', '件名', '本文', '備考'];
+const BOARD_TEMPLATE_ROW = { id: 1, name: 2, subject: 3, body: 4, note: 5 };
+const BOARD_TEMPLATE_BODY_HEIGHT = 500;
+const BOARD_TEMPLATE_COL_WIDTH = 360;
 const BOARD_KNOWLEDGE_HEADERS = ['分類', '内容', '更新日'];
 const BOARD_SETTINGS_HEADERS = ['項目', '値', '説明'];
 const BOARD_LOG_HEADERS = ['日時', '種別', '内容'];
@@ -186,7 +200,7 @@ function boardSetup() {
   boardSetupSheet_(ss, BOARD_SHEET_CUSTOMERS, BOARD_CUSTOMER_HEADERS, [80, 170, 120, 220, 130]);
   boardSetupSheet_(ss, BOARD_SHEET_MAILS, BOARD_MAIL_HEADERS, [140, 80, 200, 240, 240, 300, 260, 300, 110, 200, 140]);
   boardSetupSheet_(ss, BOARD_SHEET_EXAMPLES, BOARD_EXAMPLE_HEADERS, [140, 150, 240, 300, 260, 300, 320]);
-  boardSetupSheet_(ss, BOARD_SHEET_TEMPLATES, BOARD_TEMPLATE_HEADERS, [50, 200, 260, 460, 200]);
+  boardSetupTemplates_(ss);
   boardSetupSheet_(ss, BOARD_SHEET_KNOWLEDGE, BOARD_KNOWLEDGE_HEADERS, [140, 560, 100]);
   boardSetupSheet_(ss, BOARD_SHEET_SETTINGS, BOARD_SETTINGS_HEADERS, [220, 300, 340]);
   boardSetupSheet_(ss, BOARD_SHEET_LOGS, BOARD_LOG_HEADERS, [150, 100, 500]);
@@ -194,7 +208,6 @@ function boardSetup() {
   boardApplyCaseFormatting_(ss.getSheetByName(BOARD_SHEET_CASES));
   boardMigrateSettings_(ss.getSheetByName(BOARD_SHEET_SETTINGS));
   boardSeedSettings_(ss.getSheetByName(BOARD_SHEET_SETTINGS));
-  boardSeedTemplates_(ss.getSheetByName(BOARD_SHEET_TEMPLATES));
   boardSeedKnowledge_(ss.getSheetByName(BOARD_SHEET_KNOWLEDGE));
 
   boardOrderSheets_(ss);
@@ -483,13 +496,61 @@ function boardSeedKnowledge_(sheet) {
   ]);
 }
 
+function boardSetupTemplates_(ss) {
+  let sheet = ss.getSheetByName(BOARD_SHEET_TEMPLATES);
+  if (!sheet) sheet = ss.insertSheet(BOARD_SHEET_TEMPLATES);
+
+  boardMigrateTemplates_(sheet);
+
+  sheet.getRange(1, 1, BOARD_TEMPLATE_ROWS.length, 1)
+    .setValues(BOARD_TEMPLATE_ROWS.map(function (label) { return [label]; }))
+    .setFontWeight('bold')
+    .setBackground('#F1EFE8')
+    .setVerticalAlignment('top');
+  sheet.setFrozenRows(1);
+  sheet.setFrozenColumns(1);
+  sheet.setColumnWidth(1, 90);
+
+  boardSeedTemplates_(sheet);
+
+  const last = sheet.getLastColumn();
+  if (last > 1) {
+    for (let c = 2; c <= last; c++) sheet.setColumnWidth(c, BOARD_TEMPLATE_COL_WIDTH);
+    sheet.getRange(1, 2, BOARD_TEMPLATE_ROWS.length, last - 1)
+      .setWrap(true)
+      .setVerticalAlignment('top');
+    sheet.getRange(1, 2, 1, last - 1).setFontWeight('bold');
+  }
+  sheet.setRowHeight(BOARD_TEMPLATE_ROW.body, BOARD_TEMPLATE_BODY_HEIGHT);
+  return sheet;
+}
+
+/** 旧レイアウト（1行＝1テンプレート）を、縦横入れ替えた構成へ変換する。 */
+function boardMigrateTemplates_(sheet) {
+  if (String(sheet.getRange(1, 1).getValue() || '').trim() !== 'ID') return;
+
+  const rows = sheet.getLastRow() > 1
+    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).getValues()
+      .filter(function (row) { return String(row[0] || '').trim(); })
+    : [];
+
+  sheet.clear();
+  const values = BOARD_TEMPLATE_ROWS.map(function (label, index) {
+    return [label].concat(rows.map(function (row) { return row[index]; }));
+  });
+  sheet.getRange(1, 1, values.length, rows.length + 1).setValues(values);
+  boardLog_('移行', 'テンプレを縦横入れ替えた構成に変換しました（' + rows.length + '件）');
+}
+
 function boardSeedTemplates_(sheet) {
+  const last = sheet.getLastColumn();
   const existing = {};
-  if (sheet.getLastRow() > 1) {
-    sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().forEach(function (row) {
-      if (row[0]) existing[String(row[0]).trim()] = true;
+  if (last > 1) {
+    sheet.getRange(BOARD_TEMPLATE_ROW.id, 2, 1, last - 1).getValues()[0].forEach(function (id) {
+      if (id) existing[String(id).trim()] = true;
     });
   }
+
   const seeds = [
     ['T1', '見積もり回答', '【ササゲパス】お見積もりのご案内', boardDefaultQuoteBody_(), 'フォーム回答への初回返信'],
     ['T2', '案内メール（依頼確定時）', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定（自）が未入力なら下書きを作成しない。予定点数・初回注記は空なら該当行が自動で消える'],
@@ -499,12 +560,13 @@ function boardSeedTemplates_(sheet) {
     ['T7', 'お預かり完了のご連絡', '【ササゲパス】商品をお預かりいたしました', boardDefaultReceivedBody_(), '商品が到着したとき'],
     ['S1', 'Square請求書（登録手数料220円）', SQUARE_INVOICE_TITLE, squareInvoiceDescription_(), '過去の請求書と同一の文面。Squareの請求書メッセージ欄に入る']
   ];
+  let col = Math.max(sheet.getLastColumn(), 1);
   seeds.forEach(function (seed) {
-    if (!existing[seed[0]]) sheet.appendRow(seed);
+    if (existing[seed[0]]) return;
+    col++;
+    sheet.getRange(1, col, BOARD_TEMPLATE_ROWS.length, 1)
+      .setValues(seed.map(function (value) { return [value]; }));
   });
-  const rows = Math.max(sheet.getLastRow() - 1, 1);
-  sheet.getRange(2, 4, rows, 1).setWrap(true).setVerticalAlignment('top');
-  sheet.setRowHeights(2, rows, 300);
 }
 
 function boardDefaultGuideBody_() {
@@ -1075,10 +1137,15 @@ function boardFindCustomer_(ss, customerId) {
 
 function boardFindTemplate_(ss, id) {
   const sheet = ss.getSheetByName(BOARD_SHEET_TEMPLATES);
-  if (!sheet || sheet.getLastRow() < 2) return null;
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_TEMPLATE_HEADERS.length).getValues();
-  for (let i = 0; i < rows.length; i++) {
-    if (String(rows[i][0]).trim() === id) return { subject: String(rows[i][2]), body: String(rows[i][3]) };
+  if (!sheet || sheet.getLastColumn() < 2) return null;
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, sheet.getLastColumn()).getValues()[0];
+  for (let c = 1; c < ids.length; c++) {
+    if (String(ids[c] || '').trim() !== id) continue;
+    const column = sheet.getRange(1, c + 1, BOARD_TEMPLATE_ROWS.length, 1).getValues();
+    return {
+      subject: String(column[BOARD_TEMPLATE_ROW.subject - 1][0] || ''),
+      body: String(column[BOARD_TEMPLATE_ROW.body - 1][0] || '')
+    };
   }
   return null;
 }
