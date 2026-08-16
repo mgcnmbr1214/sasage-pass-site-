@@ -61,6 +61,7 @@
   var types = [];
   var current = null;
   var ctx = null;
+  var lastApplied = null;
 
   function el(id) { return document.getElementById(id); }
 
@@ -122,6 +123,9 @@
     });
     if (type.fields.length > 0) {
       html += '<div class="btns"><button class="b-sub" id="btnFields">入力内容を保存する</button></div>';
+      if (type.template) {
+        html += '<div class="hint">保存すると、入力した内容が下の返信案の本文にも反映されます。</div>';
+      }
     }
 
     if (type.invoice) {
@@ -141,8 +145,11 @@
       el('btnFields').addEventListener('click', function () {
         var data = {};
         type.fields.forEach(function (f) { data[f.key] = el('fx_' + f.key).value; });
-        google.script.run.withSuccessHandler(function (r) { show('ok', r.message); loadContext(type); })
-          .withFailureHandler(function (e) { show('err', e.message); })
+        google.script.run.withSuccessHandler(function (r) {
+          if (type.template) { refreshBody(type, r.message); return; }
+          show('ok', r.message);
+          loadContext(type);
+        }).withFailureHandler(function (e) { show('err', e.message); })
           .mailSaveCaseFields(ctx.caseRow, data);
       });
       type.fields.forEach(function (f) {
@@ -172,6 +179,23 @@
     }
 
     updateApprove();
+  }
+
+  /** 入力した日付や点数を、返信案の本文に反映し直す。 */
+  function refreshBody(type, note) {
+    var edited = lastApplied !== null && el('editor').value !== lastApplied;
+    if (edited && !confirm('入力内容を文面に反映します。編集された内容は失われます。よろしいですか？')) {
+      show('ok', note + '\n文面には反映していません。');
+      loadContext(type);
+      return;
+    }
+    google.script.run.withSuccessHandler(function (r) {
+      el('editor').value = r.text;
+      lastApplied = r.text;
+      show('ok', note + '\n入力内容を文面に反映しました。');
+      loadContext(type);
+    }).withFailureHandler(function (e) { show('err', e.message); loadContext(type); })
+      .mailApplyResponseType(current.row, type.id);
   }
 
   function updateApprove() {
@@ -264,6 +288,7 @@
     }).mailGetCustomerMessage(current.row);
 
     el('editor').value = current.text || '';
+    lastApplied = current.text || '';
     el('log').textContent = current.instructions ? '過去の修正指示:\n' + current.instructions : '';
 
     var sel = el('rtype');
@@ -285,6 +310,7 @@
       show('ok', '文面を差し替えています...');
       google.script.run.withSuccessHandler(function (r) {
         el('editor').value = r.text;
+        lastApplied = r.text;
         show('ok', '文面を差し替えました。内容をご確認ください。');
       }).withFailureHandler(function (e) { show('err', e.message); })
         .mailApplyResponseType(current.row, sel.value);
