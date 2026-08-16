@@ -64,6 +64,19 @@
 
   function el(id) { return document.getElementById(id); }
 
+  function esc(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  window.addEventListener('error', function (e) {
+    var m = el('msg');
+    if (!m) return;
+    m.className = 'msg msg-err';
+    m.textContent = '画面エラー: ' + e.message;
+    m.style.display = 'block';
+  });
+
   function findType(id) {
     var hit = null;
     types.forEach(function (t) { if (t.id === id) hit = t; });
