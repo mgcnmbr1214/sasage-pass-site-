@@ -187,10 +187,8 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('ササゲパス')
     .addItem('対応を選ぶ', 'mailOpenReviewPanel')
-    .addItem('新着メールを今すぐ確認する', 'mailCheckNow')
-    .addItem('新着メール確認の状態を見る', 'mailShowStatus')
-    .addSeparator()
-    .addItem('フォーム回答を取り込む', 'boardImportResponses')
+    .addItem('新着を今すぐ確認する', 'mailCheckNow')
+    .addItem('新着確認の状態を見る', 'mailShowStatus')
     .addSeparator()
     .addSubMenu(ui.createMenu('別途対応メニュー')
       .addItem('受付開始日・納期・点数だけを入力する', 'boardOpenPanel')
@@ -205,6 +203,7 @@ function onOpen() {
       .addItem('Squareトークンを登録する', 'squareSetToken')
       .addItem('過去の請求書の設定を読み取る', 'squareInspectTemplate')
       .addSeparator()
+      .addItem('フォーム回答だけを取り込む', 'boardImportResponses')
       .addItem('顧客・案件を作り直す', 'boardRebuild'))
     .addToUi();
 }

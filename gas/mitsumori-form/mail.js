@@ -35,15 +35,33 @@ function mailOpenReviewPanel() {
   SpreadsheetApp.getUi().showModalDialog(html, '対応を選ぶ');
 }
 
+/**
+ * 手動での新着確認。フォーム回答の取り込みとメールの確認をまとめて行う。
+ * 画面の前にいる操作なので、通知メールは送らずダイアログで結果を返す。
+ */
 function mailCheckNow() {
-  const result = mailScan_();
   const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  let imported = 0;
+  try {
+    imported = boardImportResponses_(ss);
+  } catch (err) {
+    ui.alert('フォーム回答の取り込みに失敗しました。\n\n' + err.message);
+  }
+
+  const result = mailScan_({ notify: false });
+  const lines = [
+    'フォームの新しい回答　：' + imported + ' 件',
+    'メールの新しい返信案　：' + result.drafted + ' 件'
+  ];
+
   if (result.drafted > 0) {
-    ui.alert(result.drafted + ' 件の新着メールを取り込み、返信案を作成しました。\n続けて「対応を選ぶ」画面を開きます。');
+    ui.alert(lines.join('\n') + '\n\n続けて「対応を選ぶ」画面を開きます。');
     mailOpenReviewPanel();
     return;
   }
-  ui.alert('新しく届いたメールはありませんでした。' + (result.note ? '\n\n' + result.note : ''));
+  ui.alert(lines.join('\n') + (result.note ? '\n\n' + result.note : ''));
 }
 
 /** 新着確認まわりが今どう動いているかを一覧で表示する。 */
@@ -66,7 +84,7 @@ function mailShowStatus() {
 
   const switchOn = String(settings['返信案の自動チェック'] || 'オン').trim() !== 'オフ';
   const lines = [
-    '■ 自動確認',
+    '■ 自動確認（フォーム回答の取り込みとメールの確認）',
     '　定期実行　：' + (triggers.length > 0 ? MAIL_TRIGGER_MINUTES + '分ごと（動作中）' : 'なし（停止中）'),
     '　設定の切替：' + (switchOn ? 'オン' : 'オフ（動作中でも返信案を作りません）'),
     '',
@@ -130,16 +148,24 @@ function mailStopAutoCheck_() {
 }
 
 function mailScanFromTrigger() {
-  const settings = boardGetSettings_(SpreadsheetApp.getActiveSpreadsheet());
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const settings = boardGetSettings_(ss);
   if (String(settings['返信案の自動チェック'] || 'オン').trim() === 'オフ') return;
-  mailScan_();
+
+  try {
+    boardImportResponses_(ss);
+  } catch (err) {
+    boardLog_('②エラー', 'フォーム回答の取り込みに失敗: ' + err.message);
+  }
+  mailScan_({ notify: true });
 }
 
 // ------------------------------------------------------------
 // 新着検知と返信案の生成
 // ------------------------------------------------------------
 
-function mailScan_() {
+function mailScan_(options) {
+  const notify = !options || options.notify !== false;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const apiKey = mailGetApiKey_();
   if (!apiKey) {
@@ -205,7 +231,7 @@ function mailScan_() {
         });
 
         thread.addLabel(label);
-        mailNotify_(ss, settings, customer, thread, reply);
+        if (notify) mailNotify_(ss, settings, customer, thread, reply);
         drafted++;
       } catch (err) {
         boardLog_('②エラー', customer.email + ': ' + err.message);
