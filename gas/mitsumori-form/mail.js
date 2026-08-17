@@ -46,6 +46,62 @@ function mailCheckNow() {
   ui.alert('新しく届いたメールはありませんでした。' + (result.note ? '\n\n' + result.note : ''));
 }
 
+/** 新着確認まわりが今どう動いているかを一覧で表示する。 */
+function mailShowStatus() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const settings = boardGetSettings_(ss);
+  const triggers = ScriptApp.getProjectTriggers().filter(function (t) {
+    return t.getHandlerFunction() === 'mailScanFromTrigger';
+  });
+
+  const customers = mailLoadCustomers_(ss);
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  let pending = 0;
+  if (sheet && sheet.getLastRow() > 1) {
+    sheet.getRange(2, BOARD_MAIL_COL.status, sheet.getLastRow() - 1, 1).getValues()
+      .forEach(function (row) {
+        if (MAIL_OPEN_STATUSES.indexOf(String(row[0] || '').trim()) >= 0) pending++;
+      });
+  }
+
+  const switchOn = String(settings['返信案の自動チェック'] || 'オン').trim() !== 'オフ';
+  const lines = [
+    '■ 自動確認',
+    '　定期実行　：' + (triggers.length > 0 ? MAIL_TRIGGER_MINUTES + '分ごと（動作中）' : 'なし（停止中）'),
+    '　設定の切替：' + (switchOn ? 'オン' : 'オフ（動作中でも返信案を作りません）'),
+    '',
+    '■ 通知',
+    '　通知先　　：' + (settings['通知先メールアドレス'] || '（未設定。通知は送られません）'),
+    '　下書き差出人：' + (settings['送信元エイリアス'] || '（未設定）'),
+    '',
+    '■ 検知の対象',
+    '　顧客タブの登録アドレス：' + customers.length + ' 件',
+    '　さかのぼる期間　　　　：' + MAIL_LOOKBACK_DAYS + '日',
+    '　1回に作る返信案の上限　：' + MAIL_MAX_THREADS_PER_RUN + ' 件',
+    '',
+    '■ 現在の状況',
+    '　APIキー　　　：' + (mailGetApiKey_() ? '登録済み' : '未登録（返信案を作れません）'),
+    '　確認待ちの返信案：' + pending + ' 件',
+    '　最後の実行　　：' + (mailLastRunLog_(ss) || '記録なし')
+  ];
+
+  SpreadsheetApp.getUi().alert('新着メール確認の状態', lines.join('\n'), SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+function mailLastRunLog_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_LOGS);
+  if (!sheet || sheet.getLastRow() < 2) return '';
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues();
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i][1] || '').indexOf('②') !== 0) continue;
+    const when = rows[i][0] instanceof Date
+      ? Utilities.formatDate(rows[i][0], Session.getScriptTimeZone(), 'M/d HH:mm')
+      : String(rows[i][0]);
+    return when + '　' + rows[i][2];
+  }
+  return '';
+}
+
 function mailStartAutoCheck() {
   mailStopAutoCheck_();
   ScriptApp.newTrigger('mailScanFromTrigger').timeBased().everyMinutes(MAIL_TRIGGER_MINUTES).create();

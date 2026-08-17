@@ -188,6 +188,7 @@ function onOpen() {
   ui.createMenu('ササゲパス')
     .addItem('対応を選ぶ', 'mailOpenReviewPanel')
     .addItem('新着メールを今すぐ確認する', 'mailCheckNow')
+    .addItem('新着メール確認の状態を見る', 'mailShowStatus')
     .addSeparator()
     .addItem('フォーム回答を取り込む', 'boardImportResponses')
     .addSeparator()
