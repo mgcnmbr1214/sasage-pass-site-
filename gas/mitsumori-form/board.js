@@ -188,12 +188,12 @@ function onOpen() {
   ui.createMenu('ササゲパス')
     .addItem('対応を選ぶ', 'mailOpenReviewPanel')
     .addItem('新着を今すぐ確認する', 'mailCheckNow')
-    .addItem('新着確認の状態を見る', 'mailShowStatus')
     .addSeparator()
     .addSubMenu(ui.createMenu('別途対応メニュー')
       .addItem('受付開始日・納期・点数だけを入力する', 'boardOpenPanel')
       .addItem('初回登録の請求書だけを作成・送信する', 'squareOpenFlow'))
     .addSubMenu(ui.createMenu('設定')
+      .addItem('動作状況を確認する', 'mailShowStatus')
       .addItem('初期セットアップ', 'boardSetup')
       .addSeparator()
       .addItem('Anthropic APIキーを登録する', 'mailSetApiKey')
@@ -424,7 +424,7 @@ function boardApplyCaseFormatting_(sheet) {
   });
 
   const todoRange = sheet.getRange(2, BOARD_COL.todo, maxRows, 1);
-  ['日付を入れて', '経過'].forEach(function (word) {
+  ['確認して返信', '日付を入れて', '経過'].forEach(function (word) {
     rules.push(SpreadsheetApp.newConditionalFormatRule()
       .whenTextContains(word)
       .setFontColor('#A32D2D')
