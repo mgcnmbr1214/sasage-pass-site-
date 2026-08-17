@@ -447,28 +447,85 @@ function mailSaveCaseFields(caseRow, data) {
   return { message: '案件の内容を保存しました。' };
 }
 
-/**
- * 対応種別を選んだときの本文を返す。
- * 通常返信ならAIの案、テンプレート指定なら案件情報を差し込んだ文面。
- */
+/** 対応種別を記録するだけ。文面は「この対応で返信案を作る」で生成する。 */
 function mailApplyResponseType(row, typeId) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const type = boardFindResponseType_(typeId);
-  if (!type) throw new Error('対応種別が不明です。');
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  sheet.getRange(Number(row), BOARD_MAIL_COL.responseType).setValue(type ? type.name : '');
+  return { status: type ? type.status : '' };
+}
+
+/**
+ * 対応種別のテンプレートを土台に、お客様の問い合わせ内容へ合わせた返信案をAIが作る。
+ * テンプレートが無い「通常の返信」では、方針と実例だけを頼りに書く。
+ */
+function mailComposeWithType(row, typeId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const apiKey = mailGetApiKey_();
+  if (!apiKey) throw new Error('Anthropic APIキーが未設定です。');
+
+  const type = boardFindResponseType_(typeId);
+  if (!type) throw new Error('対応種別を選んでください。');
 
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
-  const values = sheet.getRange(Number(row), 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
-  sheet.getRange(Number(row), BOARD_MAIL_COL.responseType).setValue(type.name);
+  const r = Number(row);
+  const values = sheet.getRange(r, 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
+  const customerId = values[BOARD_MAIL_COL.customerId - 1];
 
-  if (!type.template) {
-    return { text: values[BOARD_MAIL_COL.aiFirst - 1] || '', status: type.status };
+  let template = '';
+  if (type.template) {
+    const caseRow = boardFindLatestCaseRow_(ss, customerId);
+    if (!caseRow) throw new Error('このお客様の案件が案件ボードに見つかりません。');
+    template = boardBuildTemplateText_(ss, caseRow, type.template).body;
   }
 
-  const caseRow = boardFindLatestCaseRow_(ss, values[BOARD_MAIL_COL.customerId - 1]);
-  if (!caseRow) throw new Error('このお客様の案件が案件ボードに見つかりません。');
+  const found = boardFindCustomer_(ss, customerId);
+  const customer = found || { company: '', name: '', email: values[BOARD_MAIL_COL.from - 1] };
 
-  const built = boardBuildTemplateText_(ss, caseRow, type.template);
-  return { text: built.body, status: type.status };
+  const reply = mailGenerateReply_(apiKey, {
+    knowledge: mailLoadKnowledge_(ss),
+    examples: mailLoadExamples_(ss),
+    caseInfo: mailFindCaseSummary_(ss, customerId),
+    customer: customer,
+    thread: mailContextText_(values),
+    template: template,
+    instructions: String(values[BOARD_MAIL_COL.instructions - 1] || '')
+  });
+
+  sheet.getRange(r, BOARD_MAIL_COL.responseType).setValue(type.name);
+  if (!String(values[BOARD_MAIL_COL.aiFirst - 1] || '').trim()) {
+    sheet.getRange(r, BOARD_MAIL_COL.aiFirst).setValue(reply);
+  }
+  sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(reply);
+  sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_EDITING);
+  boardLog_('②返信案', values[BOARD_MAIL_COL.subject - 1] + '：' + type.name + ' の返信案を作成しました');
+
+  return { text: reply, message: '返信案を作成しました。内容をご確認ください。' };
+}
+
+/** 新規メールの件名。対応種別のテンプレートに件名があればそれを使う。 */
+function mailSubjectFor_(ss, values) {
+  const type = boardFindResponseTypeByName_(values[BOARD_MAIL_COL.responseType - 1]);
+  if (type && type.template) {
+    const tpl = boardFindTemplate_(ss, type.template);
+    if (tpl && tpl.subject) return tpl.subject;
+  }
+  return '【ササゲパス】お問い合わせいただきありがとうございます';
+}
+
+/** 返信案の materialとなる文章。メールのスレッド、無ければフォーム回答の内容。 */
+function mailContextText_(values) {
+  const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
+  if (threadId) {
+    try {
+      const thread = GmailApp.getThreadById(threadId);
+      if (thread) return mailBuildThreadText_(thread.getMessages());
+    } catch (err) {
+      boardLog_('②エラー', 'スレッドの取得に失敗: ' + err.message);
+    }
+  }
+  return String(values[BOARD_MAIL_COL.summary - 1] || '');
 }
 
 /** 画面で編集した本文をシートに保存する（下書きにはしない）。 */
@@ -493,21 +550,24 @@ function mailRegenerate(row) {
   const r = Number(row);
   const values = sheet.getRange(r, 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
 
-  const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
-  if (!threadId) throw new Error('元のメールスレッドが見つかりません。');
-  const thread = GmailApp.getThreadById(threadId);
-  if (!thread) throw new Error('元のメールスレッドが見つかりません。');
-
   const customerId = values[BOARD_MAIL_COL.customerId - 1];
   const found = boardFindCustomer_(ss, customerId);
   const customer = found || { company: '', name: '', email: values[BOARD_MAIL_COL.from - 1] };
+
+  let template = '';
+  const type = boardFindResponseTypeByName_(values[BOARD_MAIL_COL.responseType - 1]);
+  if (type && type.template) {
+    const caseRow = boardFindLatestCaseRow_(ss, customerId);
+    if (caseRow) template = boardBuildTemplateText_(ss, caseRow, type.template).body;
+  }
 
   const reply = mailGenerateReply_(apiKey, {
     knowledge: mailLoadKnowledge_(ss),
     examples: mailLoadExamples_(ss),
     caseInfo: mailFindCaseSummary_(ss, customerId),
     customer: customer,
-    thread: mailBuildThreadText_(thread.getMessages()),
+    thread: mailContextText_(values),
+    template: template,
     instructions: String(values[BOARD_MAIL_COL.instructions - 1] || '')
   });
 
@@ -563,17 +623,26 @@ function mailApproveToDraft(row, text) {
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   const r = Number(row);
   const values = sheet.getRange(r, 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
-  const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
-  if (!threadId) throw new Error('元のメールスレッドが見つかりません。');
-
-  const thread = GmailApp.getThreadById(threadId);
-  if (!thread) throw new Error('元のメールスレッドが見つかりません。');
+  if (!String(text || '').trim()) throw new Error('本文が空です。先に返信案を作成してください。');
 
   const settings = boardGetSettings_(ss);
   const options = { name: 'ササゲパス' };
   const alias = settings['送信元エイリアス'];
   if (alias && GmailApp.getAliases().indexOf(alias) >= 0) options.from = alias;
-  thread.createDraftReply(text, options);
+
+  const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
+  if (threadId) {
+    const thread = GmailApp.getThreadById(threadId);
+    if (!thread) throw new Error('元のメールスレッドが見つかりません。');
+    thread.createDraftReply(text, options);
+  } else {
+    // フォーム回答が起点の場合は返信先のスレッドが無いため、新規メールとして作る
+    const customer = boardFindCustomer_(ss, values[BOARD_MAIL_COL.customerId - 1]);
+    const to = customer && boardIsEmail_(customer.email)
+      ? customer.email : String(values[BOARD_MAIL_COL.from - 1] || '').trim();
+    if (!boardIsEmail_(to)) throw new Error('送信先のメールアドレスが分かりません。「顧客」タブをご確認ください。');
+    GmailApp.createDraft(to, mailSubjectFor_(ss, values), text, options);
+  }
 
   sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(text);
   sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SAVED);
@@ -693,7 +762,18 @@ function mailGenerateReply_(apiKey, ctx) {
     '- 冒頭は宛名から始める。',
     '',
     '【過去に採用された返信の例】文体と距離感の参考にすること。内容は流用しない。',
-    ctx.examples || '（まだ例がありません）'
+    ctx.examples || '（まだ例がありません）',
+    '',
+    ctx.template ? [
+      '【今回の土台となる定型文】',
+      'この定型文を土台にしてください。',
+      '- 料金・納期・住所・手続きなどの記載は、一字一句そのまま残すこと。',
+      '- お客様が触れていない項目でも、定型文にある案内は削らないこと。',
+      '- お客様の質問や要望に対しては、定型文の前後に必要な文を足して答えること。',
+      '- 定型文に書かれていない事実は足さないこと。',
+      '',
+      ctx.template
+    ].join('\n') : ''
   ].join('\n');
 
   const user = [
@@ -707,7 +787,7 @@ function mailGenerateReply_(apiKey, ctx) {
     '会社名: ' + (ctx.customer.company || '（未登録）'),
     '担当者名: ' + (ctx.customer.name || '（未登録）'),
     '',
-    '【メールのやりとり（古い順）】',
+    '【お客様からの内容（メールのやりとり、またはフォーム回答）】',
     ctx.thread,
     '',
     ctx.instructions ? '【担当者が過去に出した修正指示。今回も反映すること】\n' + ctx.instructions + '\n' : '',

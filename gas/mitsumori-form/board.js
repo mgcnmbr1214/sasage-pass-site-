@@ -1008,11 +1008,42 @@ function boardImportResponses_(ss) {
 
     cases.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).setValues([values]);
     boardSetTodoFormula_(cases, caseRow);
+
+    // フォームに回答があった時点で「対応を選ぶ」の一覧にも載せる。
+    // お客様からメールが届くまで待っていると、初回の返信が漏れるため。
+    mailAppendHistory_(ss, {
+      customerId: customerId,
+      from: email,
+      subject: 'フォームからのお問い合わせ',
+      summary: boardFormatInquiry_(pick, detail),
+      aiFirst: '',
+      finalText: '',
+      status: '未確認',
+      threadId: ''
+    });
     added++;
   }
 
   if (added > 0) boardLog_('取込', added + ' 件の回答を取り込みました');
   return added;
+}
+
+/** フォーム回答の内容を、確認画面に出すための文章にまとめる。 */
+function boardFormatInquiry_(pick, detail) {
+  const inquiry = String(pick('inquiry') || '').trim();
+  const monthly = String(pick('monthly') || '').trim();
+  const unitPrice = String(pick('unitPrice') || '').trim();
+  return [
+    '見積もりフォームに回答がありました。',
+    '',
+    '【お問い合わせ内容・ご要望】',
+    inquiry || '（記入なし）',
+    '',
+    '【選択された内容】',
+    detail || '（なし）',
+    monthly ? '月間予定数: ' + monthly : '',
+    unitPrice ? '概算単価: ' + unitPrice : ''
+  ].filter(function (line, i) { return line !== '' || i < 8; }).join('\n');
 }
 
 function boardUpsertCustomer_(sheet, data) {

@@ -84,11 +84,16 @@
     return hit;
   }
 
-  function confirmReplace(type) {
-    if (!type || !type.template && type.id === 'REPLY') {
-      return confirm('本文をAIの返信案に戻します。編集内容は失われます。よろしいですか？');
-    }
-    return confirm('本文を「' + type.name + '」の定型文に差し替えます。編集内容は失われます。よろしいですか？');
+  function refreshTypeView() {
+    var type = findType(el('rtype').value);
+    renderTasks(type);
+    loadContext(type);
+    el('btnCompose').disabled = !type;
+    el('composeHint').textContent = type
+      ? (type.template
+        ? '定型文を土台に、お客様の内容へ合わせた返信案をAIが作ります。'
+        : 'お客様の内容と回答方針をもとに、AIが返信案を作ります。')
+      : '対応の種類を選ぶと、返信案を作れるようになります。';
   }
 
   function renderTasks(type) {
@@ -146,7 +151,7 @@
         var data = {};
         type.fields.forEach(function (f) { data[f.key] = el('fx_' + f.key).value; });
         google.script.run.withSuccessHandler(function (r) {
-          if (type.template) { refreshBody(type, r.message); return; }
+          if (type.template && el('editor').value.trim()) { refreshBody(type, r.message); return; }
           show('ok', r.message);
           loadContext(type);
         }).withFailureHandler(function (e) { show('err', e.message); })
@@ -195,7 +200,7 @@
       show('ok', note + '\n入力内容を文面に反映しました。');
       loadContext(type);
     }).withFailureHandler(function (e) { show('err', e.message); loadContext(type); })
-      .mailApplyResponseType(current.row, type.id);
+      .mailComposeWithType(current.row, type.id);
   }
 
   function updateApprove() {
@@ -267,6 +272,8 @@
       '<div class="log" id="log"></div></div>' +
       '<div class="card"><label>どの状況での対応か</label>' +
       '<select id="rtype"></select>' +
+      '<div class="btns"><button class="b-ai" id="btnCompose">この対応で返信案を作る</button></div>' +
+      '<div class="hint" id="composeHint"></div>' +
       '<div id="tasks"></div><div id="extras"></div></div>' +
       '<div class="card"><label>返信案（そのまま編集できます）</label>' +
       '<textarea id="editor"></textarea>' +
@@ -292,6 +299,10 @@
     el('log').textContent = current.instructions ? '過去の修正指示:\n' + current.instructions : '';
 
     var sel = el('rtype');
+    var blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = '（未選択）';
+    sel.appendChild(blank);
     types.forEach(function (t) {
       var o = document.createElement('option');
       o.value = t.id;
@@ -299,21 +310,27 @@
       if (t.name === current.responseType) o.selected = true;
       sel.appendChild(o);
     });
-    renderTasks(findType(sel.value));
-    loadContext(findType(sel.value));
+    refreshTypeView();
 
     sel.addEventListener('change', function () {
+      refreshTypeView();
+      google.script.run.mailApplyResponseType(current.row, sel.value);
+    });
+
+    el('btnCompose').addEventListener('click', function () {
       var type = findType(sel.value);
-      renderTasks(type);
-      loadContext(type);
-      if (!confirmReplace(type)) return;
-      show('ok', '文面を差し替えています...');
+      if (!type) { show('err', '先に対応の種類を選んでください。'); return; }
+      if (el('editor').value.trim() && !confirm('AIが返信案を作り直します。現在の本文は失われます。よろしいですか？')) return;
+      busy(true);
+      show('ok', 'AIが返信案を作成しています...');
       google.script.run.withSuccessHandler(function (r) {
         el('editor').value = r.text;
         lastApplied = r.text;
-        show('ok', '文面を差し替えました。内容をご確認ください。');
-      }).withFailureHandler(function (e) { show('err', e.message); })
-        .mailApplyResponseType(current.row, sel.value);
+        show('ok', r.message);
+        busy(false);
+        loadContext(type);
+      }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
+        .mailComposeWithType(current.row, sel.value);
     });
 
     el('btnAi').addEventListener('click', function () {
