@@ -296,20 +296,28 @@ function squareCheckCompletions() {
     const customer = boardFindCustomer_(ss, row[BOARD_COL.customerId - 1]);
     if (!customer || !boardIsEmail_(customer.email)) return;
 
+    const caseId = row[BOARD_COL.caseId - 1];
     const invoiceId = squareResolveInvoiceId_(ss, i + 2, row, customer);
     if (!invoiceId) {
-      boardLog_('Square', row[BOARD_COL.caseId - 1] + '：この顧客の請求書が見つからないため確認できません');
+      boardLog_('Square', caseId + '：Squareに請求書が見つからないため確認できません（' + customer.email + '）');
       return;
     }
-    if (!squareIsInvoicePaid_(invoiceId)) return;
 
+    const invoice = squareGetInvoice_(invoiceId);
+    const paid = invoice && (invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID');
     const signedAt = squareFindSignedDate_(customer.email);
-    if (!signedAt) return;
+
+    if (!paid || !signedAt) {
+      boardLog_('Square', caseId + '：支払い ' +
+        (invoice ? invoice.status : '取得できず') + ' ／ 署名 ' +
+        (signedAt ? '確認済み' : '未確認') + ' のため、まだ完了としません');
+      return;
+    }
 
     sheet.getRange(i + 2, BOARD_COL.signedAt).setValue(signedAt);
     boardSetTodoFormula_(sheet, i + 2);
-    boardLog_('Square', row[BOARD_COL.caseId - 1] + ' の支払いと署名を確認しました');
-    squareNotifyCompletion_(settings, row[BOARD_COL.caseId - 1], customer, ss.getUrl());
+    boardLog_('Square', caseId + ' の支払いと署名を確認しました');
+    squareNotifyCompletion_(settings, caseId, customer, ss.getUrl());
     done++;
   });
 
