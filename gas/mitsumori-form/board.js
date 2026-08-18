@@ -1024,7 +1024,64 @@ function boardImportResponses_(ss) {
     added++;
   }
 
+  added += boardBackfillInquiryMails_(ss, source, col);
   if (added > 0) boardLog_('取込', added + ' 件の回答を取り込みました');
+  return added;
+}
+
+/**
+ * 「問合せ」のまま対応リストに載っていない案件を拾い直す。
+ * フォーム回答を対応リストへ載せる前に取り込んだ案件が、
+ * 一覧に出てこないままになるのを防ぐ。
+ */
+function boardBackfillInquiryMails_(ss, source, col) {
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  const mails = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!cases || !mails || cases.getLastRow() < 2) return 0;
+
+  const listed = {};
+  if (mails.getLastRow() > 1) {
+    mails.getRange(2, 1, mails.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues()
+      .forEach(function (row) {
+        const id = String(row[BOARD_MAIL_COL.customerId - 1] || '').trim();
+        if (id) listed[id] = true;
+      });
+  }
+
+  const rows = cases.getRange(2, 1, cases.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  let added = 0;
+
+  rows.forEach(function (row) {
+    if (String(row[BOARD_COL.status - 1] || '').trim() !== '問合せ') return;
+    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
+    if (!customerId || listed[customerId]) return;
+
+    const customer = boardFindCustomer_(ss, customerId);
+    if (!customer || !boardIsEmail_(customer.email)) return;
+
+    const sourceRow = Number(row[BOARD_COL.sourceRow - 1] || 0);
+    let summary = '見積もりフォームに回答がありました。';
+    if (sourceRow >= 2 && sourceRow <= source.getLastRow()) {
+      const values = source.getRange(sourceRow, 1, 1, source.getLastColumn()).getValues()[0];
+      const pick = function (key) { return col[key] >= 0 ? values[col[key]] : ''; };
+      summary = boardFormatInquiry_(pick, String(pick('detail') || '').trim());
+    }
+
+    mailAppendHistory_(ss, {
+      customerId: customerId,
+      from: customer.email,
+      subject: 'フォームからのお問い合わせ',
+      summary: summary,
+      aiFirst: '',
+      finalText: '',
+      status: '未確認',
+      threadId: ''
+    });
+    listed[customerId] = true;
+    added++;
+  });
+
+  if (added > 0) boardLog_('取込', '未対応の案件 ' + added + ' 件を対応リストに追加しました');
   return added;
 }
 
