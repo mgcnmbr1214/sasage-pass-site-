@@ -12,6 +12,8 @@
   --text: #1E293B;
   --text-mid: #5A6A8A;
   --text-light: #8A97B8;
+  --green: #28C840;
+  --red: #FF5F57;
   --radius: 12px;
   --shadow: 0 4px 20px rgba(0,0,0,0.07);
   --shadow-strong: 0 8px 32px rgba(0,0,0,0.12);
@@ -1448,6 +1450,19 @@ a { text-decoration: none; color: inherit; }
   color: var(--text-light);
   margin-top: 16px;
 }
+
+.hp-field { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+.form-status-msg { margin-top: 18px; padding: 14px 18px; border-radius: 10px; font-size: 13px; line-height: 1.7; text-align: center; }
+.form-status-error { background: rgba(255,95,87,0.1); border: 1px solid rgba(255,95,87,0.35); color: var(--red); }
+.form-status-error a { color: var(--red); text-decoration: underline; }
+
+.form-status-success { background: var(--white); padding: 44px; border-radius: 20px; box-shadow: var(--shadow-strong); text-align: center; }
+.form-status-success i { font-size: 40px; color: var(--green); margin-bottom: 16px; display: block; }
+.form-status-success p { color: var(--text); font-size: 15px; line-height: 1.8; margin-bottom: 20px; }
+.form-status-reset { background: none; border: none; color: var(--navy); text-decoration: underline; font-size: 13px; cursor: pointer; padding: 4px; }
+
+.btn:disabled, .btn[disabled] { opacity: 0.6; cursor: not-allowed; transform: none !important; }
 
 /* =============================================
    Footer

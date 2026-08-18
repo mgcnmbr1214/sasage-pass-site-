@@ -790,7 +790,7 @@
         <p class="section-desc section-desc-light" data-edit-id="contact-desc" data-edit-label="お問い合わせ：案内文" data-edit-type="richtext">まずはお気軽にご相談ください。<br>内容を確認のうえ、担当者よりご連絡いたします。</p>
       </div>
       <div class="contact-wrap">
-        <form class="contact-form" action="https://formspree.io/f/YOUR_FORM_ID" method="POST">
+        <form class="contact-form" action="mailto:info@sasagepass.com?subject=サイトからのお問い合わせ" method="post" enctype="text/plain">
           <div class="form-group">
             <label for="name">お名前 <span class="required">必須</span></label>
             <input type="text" id="name" name="name" placeholder="山田 太郎" required>
@@ -819,9 +819,19 @@
             <label for="message">お問い合わせ内容 <span class="required">必須</span></label>
             <textarea id="message" name="message" rows="5" placeholder="商品の点数、ご利用の予定、ご質問などをご記入ください。" required></textarea>
           </div>
+          <div class="hp-field" aria-hidden="true">
+            <label for="website">Website</label>
+            <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+          </div>
           <button type="submit" class="btn btn-primary btn-full">送信する <i class="fa-solid fa-paper-plane"></i></button>
-          <p class="form-note" data-edit-id="contact-form-note" data-edit-label="お問い合わせ：フォーム下部注記" data-edit-type="text">送信後、2〜3営業日以内にご返信いたします。</p>
+          <p class="form-status-msg form-status-error" id="contact-form-error" style="display:none;" data-edit-id="contact-form-error" data-edit-label="お問い合わせ：送信エラーメッセージ" data-edit-type="richtext">送信に失敗しました。お手数をおかけしますが、<a href="mailto:info@sasagepass.com">info@sasagepass.com</a> までメールでご連絡いただくか、<a href="https://sites.google.com/view/sasagepass-estimate/%E6%A6%82%E7%AE%97%E8%A6%8B%E7%A9%8D%E3%82%82%E3%82%8A" target="_blank" rel="noopener">見積もりフォーム</a>からご連絡ください。</p>
+          <p class="form-note" data-edit-id="contact-form-note" data-edit-label="お問い合わせ：フォーム下部注記" data-edit-type="text">内容をご確認のうえ「送信する」を押してください（2〜3営業日以内にご返信いたします）。</p>
         </form>
+        <div class="form-status-msg form-status-success" id="contact-form-success" style="display:none;">
+          <i class="fa-solid fa-circle-check"></i>
+          <p data-edit-id="contact-form-success" data-edit-label="お問い合わせ：送信完了メッセージ" data-edit-type="text">お問い合わせありがとうございます。内容を確認のうえ、2〜3営業日以内にご担当者よりご連絡いたします。</p>
+          <button type="button" class="form-status-reset" id="contact-form-reset">別のお問い合わせを送る</button>
+        </div>
       </div>
     </div>
   </section>
@@ -974,6 +984,51 @@
           if (cursorEl) cursorEl.style.height = (size + 2) + 'px';
         }, 150);
       });
+    })();
+  </script>
+
+  <script>
+    (function () {
+      var CONTACT_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwLP8PTrWqD1XIeiFq2IGG57xBrQ53Mt5zT3U5jqpQ9i47PFcQLsq_tFvXm6sDwABFdbA/exec';
+
+      var form = document.querySelector('.contact-form');
+      if (!form) return;
+      var submitBtn = form.querySelector('button[type="submit"]');
+      var submitBtnDefaultHtml = submitBtn ? submitBtn.innerHTML : '';
+      var successEl = document.getElementById('contact-form-success');
+      var errorEl = document.getElementById('contact-form-error');
+      var resetBtn = document.getElementById('contact-form-reset');
+
+      function setLoading(isLoading) {
+        if (!submitBtn) return;
+        submitBtn.disabled = isLoading;
+        submitBtn.innerHTML = isLoading ? '送信中... <i class="fa-solid fa-spinner fa-spin"></i>' : submitBtnDefaultHtml;
+      }
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (errorEl) errorEl.style.display = 'none';
+        setLoading(true);
+
+        fetch(CONTACT_ENDPOINT, { method: 'POST', body: new FormData(form), mode: 'no-cors' })
+          .then(function () {
+            form.style.display = 'none';
+            if (successEl) successEl.style.display = 'block';
+          })
+          .catch(function () {
+            setLoading(false);
+            if (errorEl) errorEl.style.display = 'block';
+          });
+      });
+
+      if (resetBtn) {
+        resetBtn.addEventListener('click', function () {
+          form.reset();
+          if (successEl) successEl.style.display = 'none';
+          form.style.display = '';
+          setLoading(false);
+        });
+      }
     })();
   </script>
 
