@@ -296,7 +296,13 @@ function squareCheckCompletions() {
     const customer = boardFindCustomer_(ss, row[BOARD_COL.customerId - 1]);
     if (!customer || !boardIsEmail_(customer.email)) return;
 
-    if (!squareIsInvoicePaid_(String(row[BOARD_COL.invoiceId - 1] || '').trim())) return;
+    const invoiceId = squareResolveInvoiceId_(ss, i + 2, row, customer);
+    if (!invoiceId) {
+      boardLog_('Square', row[BOARD_COL.caseId - 1] + '：この顧客の請求書が見つからないため確認できません');
+      return;
+    }
+    if (!squareIsInvoicePaid_(invoiceId)) return;
+
     const signedAt = squareFindSignedDate_(customer.email);
     if (!signedAt) return;
 
@@ -308,6 +314,69 @@ function squareCheckCompletions() {
   });
 
   return done;
+}
+
+/**
+ * 案件に紐づく請求書IDを求める。
+ * Squareの画面で直接作った請求書は案件に記録が無いため、
+ * その場合は顧客をたどってSquare側から探し、見つかれば案件へ書き戻す。
+ */
+function squareResolveInvoiceId_(ss, caseRow, row, customer) {
+  const stored = String(row[BOARD_COL.invoiceId - 1] || '').trim();
+  if (stored) return stored;
+
+  const squareCustomerId = customer.squareId || squareFindCustomerId_(customer.email);
+  if (!squareCustomerId) return '';
+  if (!customer.squareId && customer.row) {
+    ss.getSheetByName(BOARD_SHEET_CUSTOMERS)
+      .getRange(customer.row, BOARD_CUSTOMER_COL.squareId).setValue(squareCustomerId);
+  }
+
+  const invoice = squareFindInvoiceForCustomer_(squareCustomerId);
+  if (!invoice) return '';
+
+  ss.getSheetByName(BOARD_SHEET_CASES).getRange(caseRow, BOARD_COL.invoiceId).setValue(invoice.id);
+  boardLog_('Square', row[BOARD_COL.caseId - 1] + ' の請求書 ' + invoice.id + ' を紐づけました');
+  return invoice.id;
+}
+
+/** メールアドレスからSquareの顧客を探す。見つからなくても作成はしない。 */
+function squareFindCustomerId_(email) {
+  try {
+    const found = squareFetch_('POST', '/customers/search', {
+      query: { filter: { email_address: { exact: email } } },
+      limit: 1
+    });
+    return found.customers && found.customers.length > 0 ? found.customers[0].id : '';
+  } catch (err) {
+    boardLog_('Square', '顧客の検索に失敗: ' + err.message);
+    return '';
+  }
+}
+
+/** その顧客宛の、登録手数料の請求書のうち最も新しいもの。 */
+function squareFindInvoiceForCustomer_(squareCustomerId) {
+  try {
+    const locations = squareListLocations_();
+    const data = squareFetch_('POST', '/invoices/search', {
+      query: {
+        filter: {
+          location_ids: locations.map(function (l) { return l.id; }),
+          customer_ids: [squareCustomerId]
+        },
+        sort: { field: 'INVOICE_SORT_DATE', order: 'DESC' }
+      },
+      limit: 20
+    });
+    const invoices = data.invoices || [];
+    const matched = invoices.filter(function (inv) {
+      return String(inv.title || '').indexOf(SQUARE_INVOICE_TITLE) >= 0;
+    });
+    return (matched[0] || invoices[0]) || null;
+  } catch (err) {
+    boardLog_('Square', '請求書の検索に失敗: ' + err.message);
+    return null;
+  }
 }
 
 function squareIsInvoicePaid_(invoiceId) {

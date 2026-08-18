@@ -1112,8 +1112,11 @@ const BOARD_INQUIRY_MAX_CUSTOMERS = 30;
  * 顧客のアドレスをまとめて1回のGmail検索で引き、最後に届いた本文を書き込む。
  */
 function boardRefreshInquiries_(ss) {
+  // メールの検索が失敗しても、フォームの内容だけは必ず埋める
+  let updated = boardFillInquiryFromForm_(ss);
+
   const customers = mailLoadCustomers_(ss).slice(0, BOARD_INQUIRY_MAX_CUSTOMERS);
-  if (customers.length === 0) return 0;
+  if (customers.length === 0) return updated;
 
   const byEmail = {};
   customers.forEach(function (c) { byEmail[c.email.toLowerCase()] = c.customerId; });
@@ -1126,7 +1129,7 @@ function boardRefreshInquiries_(ss) {
     threads = GmailApp.search(query, 0, 50);
   } catch (err) {
     boardLog_('取込', '問い合わせ内容の検索に失敗: ' + err.message);
-    return 0;
+    return updated;
   }
 
   // 顧客ごとに、いちばん新しいメールだけを残す
@@ -1144,7 +1147,6 @@ function boardRefreshInquiries_(ss) {
   });
 
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-  let updated = 0;
   Object.keys(latest).forEach(function (customerId) {
     const row = boardFindLatestCaseRow_(ss, customerId);
     if (!row) return;
@@ -1160,19 +1162,21 @@ function boardRefreshInquiries_(ss) {
     updated++;
   });
 
-  updated += boardFillInquiryFromForm_(ss);
   if (updated > 0) boardLog_('取込', '最新のお問い合わせ内容を ' + updated + ' 件更新しました');
   return updated;
 }
 
-/** メールが1通も無い案件は、フォームの問い合わせ内容で埋める。 */
+/** まだ問い合わせ内容が空の案件を、フォームの回答で埋める。 */
 function boardFillInquiryFromForm_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const source = ss.getSheetByName(BOARD_SOURCE_SHEET);
   if (!sheet || !source || sheet.getLastRow() < 2 || source.getLastRow() < 2) return 0;
 
   const col = boardResolveSourceColumns_(source);
-  if (col.inquiry < 0) return 0;
+  if (col.inquiry < 0) {
+    boardLog_('取込', 'Responses に「お問い合わせ・ご要望」の列が見つかりません');
+    return 0;
+  }
 
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
   let filled = 0;
