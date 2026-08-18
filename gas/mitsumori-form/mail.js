@@ -50,10 +50,18 @@ function mailCheckNow() {
     ui.alert('フォーム回答の取り込みに失敗しました。\n\n' + err.message);
   }
 
+  let completed = 0;
+  try {
+    completed = squareCheckCompletions();
+  } catch (err) {
+    boardLog_('②エラー', '支払い・署名の確認に失敗: ' + err.message);
+  }
+
   const result = mailScan_({ notify: false });
   const lines = [
     'フォームの新しい回答　：' + imported + ' 件',
-    'メールの新しい返信案　：' + result.drafted + ' 件'
+    'メールの新しい返信案　：' + result.drafted + ' 件',
+    '支払い・署名の完了確認：' + completed + ' 件'
   ];
 
   if (result.drafted > 0) {
@@ -156,6 +164,11 @@ function mailScanFromTrigger() {
     boardImportResponses_(ss);
   } catch (err) {
     boardLog_('②エラー', 'フォーム回答の取り込みに失敗: ' + err.message);
+  }
+  try {
+    squareCheckCompletions();
+  } catch (err) {
+    boardLog_('②エラー', '支払い・署名の確認に失敗: ' + err.message);
   }
   mailScan_({ notify: true });
 }

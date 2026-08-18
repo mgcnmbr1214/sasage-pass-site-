@@ -429,7 +429,7 @@ function boardApplyCaseFormatting_(sheet) {
   });
 
   const todoRange = sheet.getRange(2, BOARD_COL.todo, maxRows, 1);
-  ['確認して返信', '日付を入れて', '経過'].forEach(function (word) {
+  ['確認して返信', '日付を入れて', '経過', '手続き完了のご連絡'].forEach(function (word) {
     rules.push(SpreadsheetApp.newConditionalFormatRule()
       .whenTextContains(word)
       .setFontColor('#A32D2D')
@@ -1228,7 +1228,8 @@ function boardSetTodoFormula_(sheet, row) {
     b + '="問合せ","返信案を確認して返信",' +
     b + '="返信済","お客様の返信待ち",' +
     b + '="依頼確定",IF(OR(' + start + '="",' + from + '=""),"日付を入れて案内メール","案内メールを送る"),' +
-    b + '="' + BOARD_STATUS_SIGNING + '","支払い情報の登録・署名待ち"&IF(' + draft + '="","",' + elapsed + '),' +
+    b + '="' + BOARD_STATUS_SIGNING + '",IF(' + cell(BOARD_COL.signedAt) + '<>"","手続き完了のご連絡を送る",' +
+      '"支払い情報の登録・署名待ち"&IF(' + draft + '="","",' + elapsed + ')),' +
     b + '="発送待ち","追跡番号の連絡待ち",' +
     b + '="作業中","作業"&IF(' + from + '="","","（納期 "&TEXT(' + dueEnd + ',"m/d")&"）"),' +
     'TRUE,""))';

@@ -268,6 +268,105 @@ function squareGetFlowState() {
   };
 }
 
+const SQUARE_SIGN_SENDER = 'noreply@messaging.squareup.com';
+const SQUARE_SIGN_KEYWORD = '署名されました';
+const SQUARE_SIGN_LOOKBACK_DAYS = 90;
+
+/**
+ * 「支払い情報登録・契約書署名待ち」の案件について、
+ * 220円の支払いと契約書への署名がそろったかを確認する。
+ *
+ * 支払いは Square の請求書ステータス、署名は Square から届く
+ * 「契約書番号◯◯が◯◯様によって署名されました」のメールで判定する。
+ * 両方そろった案件だけ、署名・支払確認日を記録して連絡を促す。
+ */
+function squareCheckCompletions() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  const settings = boardGetSettings_(ss);
+  let done = 0;
+
+  rows.forEach(function (row, i) {
+    if (String(row[BOARD_COL.status - 1] || '').trim() !== BOARD_STATUS_SIGNING) return;
+    if (row[BOARD_COL.signedAt - 1]) return;
+
+    const customer = boardFindCustomer_(ss, row[BOARD_COL.customerId - 1]);
+    if (!customer || !boardIsEmail_(customer.email)) return;
+
+    if (!squareIsInvoicePaid_(String(row[BOARD_COL.invoiceId - 1] || '').trim())) return;
+    const signedAt = squareFindSignedDate_(customer.email);
+    if (!signedAt) return;
+
+    sheet.getRange(i + 2, BOARD_COL.signedAt).setValue(signedAt);
+    boardSetTodoFormula_(sheet, i + 2);
+    boardLog_('Square', row[BOARD_COL.caseId - 1] + ' の支払いと署名を確認しました');
+    squareNotifyCompletion_(settings, row[BOARD_COL.caseId - 1], customer, ss.getUrl());
+    done++;
+  });
+
+  return done;
+}
+
+function squareIsInvoicePaid_(invoiceId) {
+  if (!invoiceId) return false;
+  const invoice = squareGetInvoice_(invoiceId);
+  if (!invoice) return false;
+  return invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID';
+}
+
+/** 署名完了メールを探す。本文にお客様のメールアドレスが含まれるものを対象とする。 */
+function squareFindSignedDate_(email) {
+  const query = 'from:' + SQUARE_SIGN_SENDER + ' "' + SQUARE_SIGN_KEYWORD + '" "' + email + '"' +
+    ' newer_than:' + SQUARE_SIGN_LOOKBACK_DAYS + 'd';
+  let threads;
+  try {
+    threads = GmailApp.search(query, 0, 5);
+  } catch (err) {
+    boardLog_('Square', '署名メールの検索に失敗: ' + err.message);
+    return null;
+  }
+  if (threads.length === 0) return null;
+
+  let latest = null;
+  threads.forEach(function (thread) {
+    thread.getMessages().forEach(function (message) {
+      if (String(message.getFrom() || '').indexOf(SQUARE_SIGN_SENDER) < 0) return;
+      if (String(message.getSubject() || '').indexOf(SQUARE_SIGN_KEYWORD) < 0) return;
+      if (String(message.getBody() || '').indexOf(email) < 0) return;
+      if (!latest || message.getDate() > latest) latest = message.getDate();
+    });
+  });
+  return latest;
+}
+
+function squareNotifyCompletion_(settings, caseId, customer, sheetUrl) {
+  const to = String(settings['通知先メールアドレス'] || '').trim();
+  if (!to) return;
+  const name = customer.company || customer.name || customer.email;
+  MailApp.sendEmail({
+    to: to,
+    subject: '【要対応】' + name + ' ─ 手続き完了。発送のご案内を送ってください',
+    body: [
+      caseId + '　' + name + ' 様',
+      '',
+      '220円のお支払いと、契約書へのご署名がどちらも確認できました。',
+      '作業開始の前提が整いましたので、発送をご案内してください。',
+      '',
+      '手順:',
+      sheetUrl,
+      '　→「ササゲパス」→「対応を選ぶ」',
+      '　→ 対応の種類で「手続き完了」を選ぶ',
+      '　→「この対応で返信案を作る」',
+      '',
+      '案件ボードの「次にやること」も「手続き完了のご連絡を送る」に変わっています。'
+    ].join('\n'),
+    name: 'ササゲパス業務ボード'
+  });
+}
+
 /** 手順2: 実際に送信されたかを Square 側の状態で確認し、記録する。 */
 function squareConfirmSent(caseRow) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
