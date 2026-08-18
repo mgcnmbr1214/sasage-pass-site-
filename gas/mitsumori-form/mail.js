@@ -64,12 +64,20 @@ function mailCheckNow() {
     boardLog_('②エラー', '支払い・署名の確認に失敗: ' + err.message);
   }
 
+  let shipped = 0;
+  try {
+    shipped = shipCheckAll();
+  } catch (err) {
+    boardLog_('②エラー', '発送の確認に失敗: ' + err.message);
+  }
+
   const result = mailScan_({ notify: false });
   const lines = [
     'フォームの新しい回答　：' + imported + ' 件',
     'お問い合わせ内容の更新：' + refreshed + ' 件',
     'メールの新しい返信案　：' + result.drafted + ' 件',
-    '支払い・署名の完了確認：' + completed + ' 件'
+    '支払い・署名の完了確認：' + completed + ' 件',
+    '発送の確認　　　　　　：' + shipped + ' 件'
   ];
 
   if (result.drafted > 0) {
@@ -182,6 +190,11 @@ function mailScanFromTrigger() {
     squareCheckCompletions();
   } catch (err) {
     boardLog_('②エラー', '支払い・署名の確認に失敗: ' + err.message);
+  }
+  try {
+    shipCheckAll();
+  } catch (err) {
+    boardLog_('②エラー', '発送の確認に失敗: ' + err.message);
   }
   mailScan_({ notify: true });
 }

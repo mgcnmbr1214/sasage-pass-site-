@@ -315,6 +315,8 @@ function squareCheckCompletions() {
     }
 
     sheet.getRange(i + 2, BOARD_COL.signedAt).setValue(signedAt);
+    // 連絡は不要なので、そのまま発送待ちへ進める
+    sheet.getRange(i + 2, BOARD_COL.status).setValue('発送待ち');
     boardSetTodoFormula_(sheet, i + 2);
     boardLog_('Square', caseId + ' の支払いと署名を確認しました');
     squareNotifyCompletion_(settings, caseId, customer, ss.getUrl());
@@ -473,20 +475,18 @@ function squareNotifyCompletion_(settings, caseId, customer, sheetUrl) {
   const name = customer.company || customer.name || customer.email;
   MailApp.sendEmail({
     to: to,
-    subject: '【要対応】' + name + ' ─ 手続き完了。発送のご案内を送ってください',
+    subject: '【ご報告】' + name + ' ─ お支払いと署名が完了しました',
     body: [
       caseId + '　' + name + ' 様',
       '',
       '220円のお支払いと、契約書へのご署名がどちらも確認できました。',
-      '作業開始の前提が整いましたので、発送をご案内してください。',
+      'ステータスを「発送待ち」に進めています。',
       '',
-      '手順:',
-      sheetUrl,
-      '　→「ササゲパス」→「対応を選ぶ」',
-      '　→ 対応の種類で「手続き完了」を選ぶ',
-      '　→「この対応で返信案を作る」',
+      'このあとお客様から商品が発送されると、',
+      'メールの内容から自動で「発送済み」に切り替わり、',
+      '作業チームへの共有内容が案件ボードにまとまります。',
       '',
-      '案件ボードの「次にやること」も「手続き完了のご連絡を送る」に変わっています。'
+      sheetUrl
     ].join('\n'),
     name: 'ササゲパス業務ボード'
   });

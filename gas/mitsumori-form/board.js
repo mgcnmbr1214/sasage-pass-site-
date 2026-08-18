@@ -18,7 +18,9 @@ const BOARD_SOURCE_SHEET = 'Responses';
 
 const BOARD_STATUS_SIGNING = '支払い情報登録・契約書署名待ち';
 
-const BOARD_STATUSES = ['問合せ', '返信済', '依頼確定', BOARD_STATUS_SIGNING, '発送待ち', '作業中', '返送済', '見送り'];
+const BOARD_STATUS_SHIPPED = '発送済み';
+
+const BOARD_STATUSES = ['問合せ', '返信済', '依頼確定', BOARD_STATUS_SIGNING, '発送待ち', BOARD_STATUS_SHIPPED, '作業中', '返送済', '見送り'];
 
 const BOARD_STATUS_COLORS = {
   '問合せ': '#FAEEDA',
@@ -26,6 +28,7 @@ const BOARD_STATUS_COLORS = {
   '依頼確定': '#EEEDFE',
   '支払い情報登録・契約書署名待ち': '#E6F1FB',
   '発送待ち': '#E1F5EE',
+  '発送済み': '#EAF3DE',
   '作業中': '#F1EFE8',
   '返送済': '#F1EFE8',
   '見送り': '#F1EFE8'
@@ -39,14 +42,14 @@ const BOARD_CASE_HEADERS = [
   '案件ID', 'ステータス', 'お客様', '予定点数', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
   '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新のメール内容', '単価',
   '請求書送付日', 'Square請求書ID', '署名・支払確認日',
-  '追跡番号', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
+  '追跡番号', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
 const BOARD_COL = {
   caseId: 1, status: 2, customer: 3, qty: 4, startDate: 5, dueFrom: 6, dueTo: 7, todo: 8,
   customerId: 9, detail: 10, formInquiry: 11, lastMail: 12, unitPrice: 13,
   invoiceSent: 14, invoiceId: 15, signedAt: 16,
-  tracking: 17, guideDraftAt: 18, lastContact: 19, memo: 20, sourceRow: 21
+  tracking: 17, teamNote: 18, guideDraftAt: 19, lastContact: 20, memo: 21, sourceRow: 22
 };
 
 /** 案件ボードに載せる問い合わせ内容の最大文字数。全文はメール履歴で見る。 */
@@ -281,6 +284,7 @@ function boardMigrateCases_(ss) {
   headers = boardInsertColumnAfter_(sheet, headers, '依頼内容', 'フォームの問い合わせ内容');
   headers = boardInsertColumnAfter_(sheet, headers, 'フォームの問い合わせ内容', '最新のメール内容');
   headers = boardInsertColumnAfter_(sheet, headers, '請求書送付日', 'Square請求書ID');
+  headers = boardInsertColumnAfter_(sheet, headers, '追跡番号', '作業チーム共有');
 
   // 契約書は請求書の作成時にその場で添付するため、事前作成の記録は不要になった
   const contract = headers.indexOf('契約書作成日');
@@ -443,7 +447,7 @@ function boardApplyCaseFormatting_(sheet) {
   });
 
   const todoRange = sheet.getRange(2, BOARD_COL.todo, maxRows, 1);
-  ['確認して返信', '日付を入れて', '経過', '手続き完了のご連絡'].forEach(function (word) {
+  ['確認して返信', '日付を入れて', '経過', '作業チームへ共有'].forEach(function (word) {
     rules.push(SpreadsheetApp.newConditionalFormatRule()
       .whenTextContains(word)
       .setFontColor('#A32D2D')
@@ -460,6 +464,7 @@ function boardApplyCaseFormatting_(sheet) {
 
   // 問い合わせ内容は折り返して読めるようにする
   sheet.getRange(2, BOARD_COL.formInquiry, maxRows, 2).setWrap(true).setVerticalAlignment('top');
+  sheet.getRange(2, BOARD_COL.teamNote, maxRows, 1).setWrap(true).setVerticalAlignment('top');
 }
 
 function boardHideSourceSheets_(ss) {
@@ -1357,9 +1362,10 @@ function boardSetTodoFormula_(sheet, row) {
     b + '="問合せ","返信案を確認して返信",' +
     b + '="返信済","お客様の返信待ち",' +
     b + '="依頼確定",IF(OR(' + start + '="",' + from + '=""),"日付を入れて案内メール","案内メールを送る"),' +
-    b + '="' + BOARD_STATUS_SIGNING + '",IF(' + cell(BOARD_COL.signedAt) + '<>"","手続き完了のご連絡を送る",' +
+    b + '="' + BOARD_STATUS_SIGNING + '",IF(' + cell(BOARD_COL.signedAt) + '<>"","お客様のご発送待ち",' +
       '"支払い情報の登録・署名待ち"&IF(' + draft + '="","",' + elapsed + ')),' +
-    b + '="発送待ち","追跡番号の連絡待ち",' +
+    b + '="発送待ち","お客様のご発送待ち",' +
+    b + '="' + BOARD_STATUS_SHIPPED + '","作業チームへ共有する",' +
     b + '="作業中","作業"&IF(' + from + '="","","（納期 "&TEXT(' + dueEnd + ',"m/d")&"）"),' +
     'TRUE,""))';
   sheet.getRange(row, BOARD_COL.todo).setFormula(formula);
