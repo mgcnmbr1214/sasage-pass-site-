@@ -305,7 +305,7 @@ function squareCheckCompletions() {
 
     const invoice = squareGetInvoice_(invoiceId);
     const paid = invoice && (invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID');
-    const signedAt = squareFindSignedDate_(customer.email);
+    const signedAt = squareFindSignedDate_(customer);
 
     if (!paid || !signedAt) {
       boardLog_('Square', caseId + '：支払い ' +
@@ -394,29 +394,77 @@ function squareIsInvoicePaid_(invoiceId) {
   return invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID';
 }
 
-/** 署名完了メールを探す。本文にお客様のメールアドレスが含まれるものを対象とする。 */
-function squareFindSignedDate_(email) {
-  const query = 'from:' + SQUARE_SIGN_SENDER + ' "' + SQUARE_SIGN_KEYWORD + '" "' + email + '"' +
+/**
+ * 署名完了メールを探す。
+ *
+ * 契約書はSquare上の顧客に対して発行されるため、業務ボードに登録している
+ * 連絡先とメールアドレスが違うことがある。そのためSquare側の顧客情報も
+ * 手がかりに加え、メールアドレスか氏名のどちらかが一致すれば対象とする。
+ */
+function squareFindSignedDate_(customer) {
+  const keys = squareIdentityKeys_(customer);
+  if (keys.length === 0) return null;
+
+  const query = 'from:' + SQUARE_SIGN_SENDER + ' "' + SQUARE_SIGN_KEYWORD + '"' +
     ' newer_than:' + SQUARE_SIGN_LOOKBACK_DAYS + 'd';
   let threads;
   try {
-    threads = GmailApp.search(query, 0, 5);
+    threads = GmailApp.search(query, 0, 50);
   } catch (err) {
     boardLog_('Square', '署名メールの検索に失敗: ' + err.message);
     return null;
   }
-  if (threads.length === 0) return null;
 
   let latest = null;
   threads.forEach(function (thread) {
     thread.getMessages().forEach(function (message) {
       if (String(message.getFrom() || '').indexOf(SQUARE_SIGN_SENDER) < 0) return;
-      if (String(message.getSubject() || '').indexOf(SQUARE_SIGN_KEYWORD) < 0) return;
-      if (String(message.getBody() || '').indexOf(email) < 0) return;
+      const subject = String(message.getSubject() || '');
+      if (subject.indexOf(SQUARE_SIGN_KEYWORD) < 0) return;
+
+      const haystack = squareNormalizeIdentity_(subject + ' ' + String(message.getBody() || ''));
+      const hit = keys.some(function (key) { return haystack.indexOf(key) >= 0; });
+      if (!hit) return;
       if (!latest || message.getDate() > latest) latest = message.getDate();
     });
   });
   return latest;
+}
+
+/** その顧客を見分けるための文字列。メールアドレスと氏名。 */
+function squareIdentityKeys_(customer) {
+  const keys = [];
+  const add = function (value) {
+    const key = squareNormalizeIdentity_(value);
+    if (key.length >= 3 && keys.indexOf(key) < 0) keys.push(key);
+  };
+
+  add(customer.email);
+  add(customer.name);
+
+  if (customer.squareId) {
+    const remote = squareGetCustomer_(customer.squareId);
+    if (remote) {
+      add(remote.email_address);
+      add(String(remote.family_name || '') + String(remote.given_name || ''));
+      add(String(remote.given_name || '') + String(remote.family_name || ''));
+      add(remote.company_name);
+    }
+  }
+  return keys;
+}
+
+function squareNormalizeIdentity_(text) {
+  return String(text || '').toLowerCase().replace(/[\s　]/g, '');
+}
+
+function squareGetCustomer_(customerId) {
+  try {
+    return squareFetch_('GET', '/customers/' + customerId).customer || null;
+  } catch (err) {
+    boardLog_('Square', '顧客の取得に失敗: ' + err.message);
+    return null;
+  }
 }
 
 function squareNotifyCompletion_(settings, caseId, customer, sheetUrl) {

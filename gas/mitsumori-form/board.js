@@ -185,7 +185,7 @@ const BOARD_SOURCE_FIELDS = {
   monthly: ['月間予定数', '月間の依頼予定数量'],
   detail: ['選択内容'],
   unitPrice: ['概算単価'],
-  inquiry: ['お問い合わせ・ご要望', 'お問い合わせ内容・補足', 'お問い合わせ内容', 'ご要望', '備考']
+  inquiry: ['問い合わせ内容', 'お問い合わせ・ご要望', 'お問い合わせ内容・補足', 'ご要望', '備考']
 };
 
 function onOpen() {
@@ -958,16 +958,35 @@ function boardRebuild() {
 function boardResolveSourceColumns_(sheet) {
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
     .map(function (h) { return String(h || '').trim(); });
+  // 「お問い合わせ内容」と「問い合わせ内容」のような表記ゆれを吸収する
+  const norm = headers.map(boardNormalizeHeader_);
   const map = {};
   Object.keys(BOARD_SOURCE_FIELDS).forEach(function (key) {
     const candidates = BOARD_SOURCE_FIELDS[key];
     for (let i = 0; i < candidates.length; i++) {
-      const index = headers.indexOf(candidates[i]);
-      if (index >= 0) { map[key] = index; return; }
+      const exact = headers.indexOf(candidates[i]);
+      if (exact >= 0) { map[key] = exact; return; }
+    }
+    for (let i = 0; i < candidates.length; i++) {
+      const want = boardNormalizeHeader_(candidates[i]);
+      for (let c = 0; c < norm.length; c++) {
+        if (!norm[c]) continue;
+        if (norm[c] === want || norm[c].indexOf(want) >= 0 || want.indexOf(norm[c]) >= 0) {
+          map[key] = c;
+          return;
+        }
+      }
     }
     map[key] = -1;
   });
   return map;
+}
+
+/** 見出しの表記ゆれを揃える。丁寧語の接頭辞と記号・空白を落とす。 */
+function boardNormalizeHeader_(text) {
+  return String(text || '').trim()
+    .replace(/[\s　・･、,／\/（）()]/g, '')
+    .replace(/^[おご]/, '');
 }
 
 function boardImportResponses_(ss) {
@@ -1200,7 +1219,6 @@ function boardFillInquiryFromForm_(ss) {
 
   rows.forEach(function (row, i) {
     if (!String(row[BOARD_COL.caseId - 1] || '').trim()) return;
-    if (String(row[BOARD_COL.formInquiry - 1] || '').trim()) return;
 
     const sourceRow = Number(row[BOARD_COL.sourceRow - 1] || 0);
     if (sourceRow < 2 || sourceRow > source.getLastRow()) {
@@ -1213,6 +1231,8 @@ function boardFillInquiryFromForm_(ss) {
       skipped.push(row[BOARD_COL.caseId - 1] + '（フォームの記入なし）');
       return;
     }
+    // フォームの内容は後から変わらないため、常に上書きして正しい状態に保つ
+    if (String(row[BOARD_COL.formInquiry - 1] || '') === text) return;
     sheet.getRange(i + 2, BOARD_COL.formInquiry).setValue(text);
     filled++;
   });
