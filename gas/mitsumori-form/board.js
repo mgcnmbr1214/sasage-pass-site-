@@ -37,15 +37,18 @@ const BOARD_STATUS_RENAMES = { '手続き待ち': BOARD_STATUS_SIGNING };
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
   '案件ID', 'ステータス', 'お客様', '予定点数', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
-  '顧客ID', '依頼内容', '単価', '請求書送付日', 'Square請求書ID', '署名・支払確認日',
+  '顧客ID', '依頼内容', '最新のお問い合わせ内容', '単価', '請求書送付日', 'Square請求書ID', '署名・支払確認日',
   '追跡番号', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
 const BOARD_COL = {
   caseId: 1, status: 2, customer: 3, qty: 4, startDate: 5, dueFrom: 6, dueTo: 7, todo: 8,
-  customerId: 9, detail: 10, unitPrice: 11, invoiceSent: 12, invoiceId: 13,
-  signedAt: 14, tracking: 15, guideDraftAt: 16, lastContact: 17, memo: 18, sourceRow: 19
+  customerId: 9, detail: 10, inquiry: 11, unitPrice: 12, invoiceSent: 13, invoiceId: 14,
+  signedAt: 15, tracking: 16, guideDraftAt: 17, lastContact: 18, memo: 19, sourceRow: 20
 };
+
+/** 案件ボードに載せる問い合わせ内容の最大文字数。全文はメール履歴で見る。 */
+const BOARD_INQUIRY_MAX = 400;
 
 const BOARD_CUSTOMER_HEADERS = [
   '顧客ID', '会社名・屋号', '担当者名', 'メールアドレス', '電話番号',
@@ -218,7 +221,8 @@ function boardSetup() {
   boardMigrateCases_(ss);
   boardMigrateCustomers_(ss);
 
-  boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS, [90, 210, 150, 70, 95, 95, 95, 220]);
+  boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS,
+    [90, 210, 150, 70, 95, 95, 95, 220, 80, 220, 320]);
   boardSetupSheet_(ss, BOARD_SHEET_CUSTOMERS, BOARD_CUSTOMER_HEADERS, [80, 170, 120, 220, 130]);
   boardSetupSheet_(ss, BOARD_SHEET_MAILS, BOARD_MAIL_HEADERS, [140, 80, 200, 240, 240, 300, 260, 300, 110, 200, 140]);
   boardSetupSheet_(ss, BOARD_SHEET_EXAMPLES, BOARD_EXAMPLE_HEADERS, [140, 150, 240, 300, 260, 300, 320]);
@@ -271,6 +275,7 @@ function boardMigrateCases_(ss) {
     boardLog_('移行', '納期予定を（自）（至）の2列に分割しました');
   }
 
+  headers = boardInsertColumnAfter_(sheet, headers, '依頼内容', '最新のお問い合わせ内容');
   headers = boardInsertColumnAfter_(sheet, headers, '請求書送付日', 'Square請求書ID');
 
   // 契約書は請求書の作成時にその場で添付するため、事前作成の記録は不要になった
@@ -438,6 +443,9 @@ function boardApplyCaseFormatting_(sheet) {
     // 日付列のみ書式を揃える
     sheet.getRange(2, col, maxRows, 1).setNumberFormat('yyyy/mm/dd');
   });
+
+  // 問い合わせ内容は折り返して読めるようにする
+  sheet.getRange(2, BOARD_COL.inquiry, maxRows, 1).setWrap(true).setVerticalAlignment('top');
 }
 
 function boardHideSourceSheets_(ss) {
@@ -1002,6 +1010,7 @@ function boardImportResponses_(ss) {
     values[BOARD_COL.customer - 1] = company || name;
     values[BOARD_COL.customerId - 1] = customerId;
     values[BOARD_COL.detail - 1] = detail;
+    values[BOARD_COL.inquiry - 1] = boardTrimInquiry_(pick('inquiry'));
     values[BOARD_COL.unitPrice - 1] = pick('unitPrice');
     values[BOARD_COL.lastContact - 1] = pick('date');
     values[BOARD_COL.sourceRow - 1] = sourceRow;
@@ -1083,6 +1092,24 @@ function boardBackfillInquiryMails_(ss, source, col) {
 
   if (added > 0) boardLog_('取込', '未対応の案件 ' + added + ' 件を対応リストに追加しました');
   return added;
+}
+
+/** 案件ボードのセルに収まる長さへ整える。全文はメール履歴に残る。 */
+function boardTrimInquiry_(text) {
+  const value = String(text == null ? '' : text).replace(/\r\n?/g, '\n').trim();
+  if (!value) return '';
+  return value.length > BOARD_INQUIRY_MAX ? value.slice(0, BOARD_INQUIRY_MAX) + '…（続きはメール履歴）' : value;
+}
+
+/** 最新のお問い合わせ内容を案件ボードへ書き込む。 */
+function boardUpdateInquiry_(ss, customerId, text) {
+  const trimmed = boardTrimInquiry_(text);
+  if (!trimmed) return;
+  const row = boardFindLatestCaseRow_(ss, customerId);
+  if (!row) return;
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  sheet.getRange(row, BOARD_COL.inquiry).setValue(trimmed);
+  sheet.getRange(row, BOARD_COL.lastContact).setValue(new Date());
 }
 
 /** フォーム回答の内容を、確認画面に出すための文章にまとめる。 */

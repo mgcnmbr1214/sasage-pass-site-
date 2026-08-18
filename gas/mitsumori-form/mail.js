@@ -206,6 +206,7 @@ function mailScan_(options) {
       try {
         boardApplyCustomerIntake_(ss, customer.email,
           boardExtractCustomerIntake_(last.getPlainBody()));
+        boardUpdateInquiry_(ss, customer.customerId, mailPlainBody_(last));
       } catch (err) {
         boardLog_('②エラー', '顧客情報の取込に失敗: ' + err.message);
       }
@@ -223,7 +224,7 @@ function mailScan_(options) {
           customerId: customer.customerId,
           from: customer.email,
           subject: thread.getFirstMessageSubject(),
-          summary: mailFirstLines_(last.getPlainBody(), 3),
+          summary: mailPlainBody_(last).slice(0, MAIL_MAX_BODY_CHARS),
           aiFirst: reply,
           finalText: reply,
           status: MAIL_STATUS_PENDING,
@@ -376,6 +377,32 @@ function mailGetCustomerMessage(row) {
   } catch (err) {
     return { text: fallback };
   }
+}
+
+/** 同じお客様の過去のお問い合わせ。新しい順に返す（表示中のものは除く）。 */
+function mailGetHistory(row) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+
+  const r = Number(row);
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
+  const customerId = String(rows[r - 2][BOARD_MAIL_COL.customerId - 1] || '').trim();
+  if (!customerId) return [];
+
+  const out = [];
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (i + 2 === r) continue;
+    if (String(rows[i][BOARD_MAIL_COL.customerId - 1] || '').trim() !== customerId) continue;
+    out.push({
+      date: boardFormatDate_(rows[i][BOARD_MAIL_COL.date - 1]),
+      subject: rows[i][BOARD_MAIL_COL.subject - 1],
+      responseType: rows[i][BOARD_MAIL_COL.responseType - 1],
+      status: rows[i][BOARD_MAIL_COL.status - 1],
+      text: rows[i][BOARD_MAIL_COL.summary - 1]
+    });
+  }
+  return out;
 }
 
 /** 対応種別の一覧を画面に渡す。 */
@@ -891,6 +918,14 @@ function mailBuildThreadText_(messages) {
   });
   const text = parts.join('\n\n');
   return text.length > MAIL_MAX_BODY_CHARS ? text.slice(text.length - MAIL_MAX_BODY_CHARS) : text;
+}
+
+/** 引用部分を落とした本文。案件ボードや要約に載せるために使う。 */
+function mailPlainBody_(message) {
+  return String(message.getPlainBody() || '')
+    .replace(/^>.*$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function mailFirstLines_(text, count) {
