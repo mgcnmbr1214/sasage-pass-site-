@@ -50,6 +50,13 @@ function mailCheckNow() {
     ui.alert('フォーム回答の取り込みに失敗しました。\n\n' + err.message);
   }
 
+  let refreshed = 0;
+  try {
+    refreshed = boardRefreshInquiries_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '問い合わせ内容の更新に失敗: ' + err.message);
+  }
+
   let completed = 0;
   try {
     completed = squareCheckCompletions();
@@ -60,6 +67,7 @@ function mailCheckNow() {
   const result = mailScan_({ notify: false });
   const lines = [
     'フォームの新しい回答　：' + imported + ' 件',
+    'お問い合わせ内容の更新：' + refreshed + ' 件',
     'メールの新しい返信案　：' + result.drafted + ' 件',
     '支払い・署名の完了確認：' + completed + ' 件'
   ];
@@ -166,6 +174,11 @@ function mailScanFromTrigger() {
     boardLog_('②エラー', 'フォーム回答の取り込みに失敗: ' + err.message);
   }
   try {
+    boardRefreshInquiries_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '問い合わせ内容の更新に失敗: ' + err.message);
+  }
+  try {
     squareCheckCompletions();
   } catch (err) {
     boardLog_('②エラー', '支払い・署名の確認に失敗: ' + err.message);
@@ -219,7 +232,6 @@ function mailScan_(options) {
       try {
         boardApplyCustomerIntake_(ss, customer.email,
           boardExtractCustomerIntake_(last.getPlainBody()));
-        boardUpdateInquiry_(ss, customer.customerId, mailPlainBody_(last));
       } catch (err) {
         boardLog_('②エラー', '顧客情報の取込に失敗: ' + err.message);
       }

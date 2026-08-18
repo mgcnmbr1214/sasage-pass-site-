@@ -1101,15 +1101,94 @@ function boardTrimInquiry_(text) {
   return value.length > BOARD_INQUIRY_MAX ? value.slice(0, BOARD_INQUIRY_MAX) + '…（続きはメール履歴）' : value;
 }
 
-/** 最新のお問い合わせ内容を案件ボードへ書き込む。 */
-function boardUpdateInquiry_(ss, customerId, text) {
-  const trimmed = boardTrimInquiry_(text);
-  if (!trimmed) return;
-  const row = boardFindLatestCaseRow_(ss, customerId);
-  if (!row) return;
+const BOARD_INQUIRY_LOOKBACK_DAYS = 60;
+const BOARD_INQUIRY_MAX_CUSTOMERS = 30;
+
+/**
+ * 案件ボードの「最新のお問い合わせ内容」を最新の状態に保つ。
+ *
+ * 返信案の生成とは切り離してある。返信案は一度処理したスレッドを
+ * 二度と読まないため、そこに相乗りすると既存のメールが反映されないため。
+ * 顧客のアドレスをまとめて1回のGmail検索で引き、最後に届いた本文を書き込む。
+ */
+function boardRefreshInquiries_(ss) {
+  const customers = mailLoadCustomers_(ss).slice(0, BOARD_INQUIRY_MAX_CUSTOMERS);
+  if (customers.length === 0) return 0;
+
+  const byEmail = {};
+  customers.forEach(function (c) { byEmail[c.email.toLowerCase()] = c.customerId; });
+
+  const query = 'newer_than:' + BOARD_INQUIRY_LOOKBACK_DAYS + 'd {' +
+    customers.map(function (c) { return 'from:' + c.email; }).join(' ') + '}';
+
+  let threads;
+  try {
+    threads = GmailApp.search(query, 0, 50);
+  } catch (err) {
+    boardLog_('取込', '問い合わせ内容の検索に失敗: ' + err.message);
+    return 0;
+  }
+
+  // 顧客ごとに、いちばん新しいメールだけを残す
+  const latest = {};
+  threads.forEach(function (thread) {
+    thread.getMessages().forEach(function (message) {
+      const from = String(message.getFrom() || '').toLowerCase();
+      const hit = Object.keys(byEmail).filter(function (email) { return from.indexOf(email) >= 0; })[0];
+      if (!hit) return;
+      const id = byEmail[hit];
+      if (!latest[id] || message.getDate() > latest[id].date) {
+        latest[id] = { date: message.getDate(), body: mailPlainBody_(message) };
+      }
+    });
+  });
+
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-  sheet.getRange(row, BOARD_COL.inquiry).setValue(trimmed);
-  sheet.getRange(row, BOARD_COL.lastContact).setValue(new Date());
+  let updated = 0;
+  Object.keys(latest).forEach(function (customerId) {
+    const row = boardFindLatestCaseRow_(ss, customerId);
+    if (!row) return;
+    const text = boardTrimInquiry_(latest[customerId].body);
+    if (!text) return;
+    if (String(sheet.getRange(row, BOARD_COL.inquiry).getValue() || '') === text) return;
+
+    sheet.getRange(row, BOARD_COL.inquiry).setValue(text);
+    const current = sheet.getRange(row, BOARD_COL.lastContact).getValue();
+    if (!(current instanceof Date) || latest[customerId].date > current) {
+      sheet.getRange(row, BOARD_COL.lastContact).setValue(latest[customerId].date);
+    }
+    updated++;
+  });
+
+  updated += boardFillInquiryFromForm_(ss);
+  if (updated > 0) boardLog_('取込', '最新のお問い合わせ内容を ' + updated + ' 件更新しました');
+  return updated;
+}
+
+/** メールが1通も無い案件は、フォームの問い合わせ内容で埋める。 */
+function boardFillInquiryFromForm_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  const source = ss.getSheetByName(BOARD_SOURCE_SHEET);
+  if (!sheet || !source || sheet.getLastRow() < 2 || source.getLastRow() < 2) return 0;
+
+  const col = boardResolveSourceColumns_(source);
+  if (col.inquiry < 0) return 0;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  let filled = 0;
+
+  rows.forEach(function (row, i) {
+    if (String(row[BOARD_COL.inquiry - 1] || '').trim()) return;
+    const sourceRow = Number(row[BOARD_COL.sourceRow - 1] || 0);
+    if (sourceRow < 2 || sourceRow > source.getLastRow()) return;
+
+    const text = boardTrimInquiry_(source.getRange(sourceRow, col.inquiry + 1).getValue());
+    if (!text) return;
+    sheet.getRange(i + 2, BOARD_COL.inquiry).setValue(text);
+    filled++;
+  });
+
+  return filled;
 }
 
 /** フォーム回答の内容を、確認画面に出すための文章にまとめる。 */
