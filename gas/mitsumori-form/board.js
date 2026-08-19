@@ -20,11 +20,32 @@ const BOARD_STATUS_SIGNING = '支払い情報登録・契約書署名待ち';
 
 const BOARD_STATUS_SHIPPED = '発送済み';
 
-const BOARD_STATUSES = ['問合せ', '返信済', '依頼確定', BOARD_STATUS_SIGNING, '発送待ち', BOARD_STATUS_SHIPPED, '作業中', '返送済', '見送り'];
+const BOARD_STATUS_SHORT = '情報不足';
+const BOARD_STATUS_READY = '依頼確定前';
+const BOARD_STATUS_CLOSED = '見送り';
+
+const BOARD_STATUSES = ['問合せ', '返信済', BOARD_STATUS_SHORT, BOARD_STATUS_READY, '依頼確定', BOARD_STATUS_SIGNING, '発送待ち', BOARD_STATUS_SHIPPED, '作業中', '返送済', BOARD_STATUS_CLOSED];
+
+/** そのステータスで次に動くのは誰か。案件ボードの「対応者」列に出す。 */
+const BOARD_STATUS_OWNER = {
+  '問合せ': '自分',
+  '返信済': 'お客様',
+  '情報不足': '自分',
+  '依頼確定前': '自分',
+  '依頼確定': '自分',
+  '支払い情報登録・契約書署名待ち': 'お客様',
+  '発送待ち': 'お客様',
+  '発送済み': '自分',
+  '作業中': '自分',
+  '返送済': '完了',
+  '見送り': '完了'
+};
 
 const BOARD_STATUS_COLORS = {
   '問合せ': '#FAEEDA',
   '返信済': '#FAEEDA',
+  '情報不足': '#FCEBEB',
+  '依頼確定前': '#EEEDFE',
   '依頼確定': '#EEEDFE',
   '支払い情報登録・契約書署名待ち': '#E6F1FB',
   '発送待ち': '#E1F5EE',
@@ -39,17 +60,17 @@ const BOARD_STATUS_RENAMES = { '手続き待ち': BOARD_STATUS_SIGNING };
 
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
-  '案件ID', 'ステータス', 'お客様', '予定点数', '初回ご依頼予定数', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
+  '案件ID', 'ステータス', '対応者', 'お客様', '予定点数', '初回ご依頼予定数', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
   '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新のメール内容', '単価',
   '請求書送付日', 'Square請求書ID', '署名・支払確認日',
   '追跡番号', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
 const BOARD_COL = {
-  caseId: 1, status: 2, customer: 3, qty: 4, firstQty: 5, startDate: 6, dueFrom: 7, dueTo: 8, todo: 9,
-  customerId: 10, detail: 11, formInquiry: 12, lastMail: 13, unitPrice: 14,
-  invoiceSent: 15, invoiceId: 16, signedAt: 17,
-  tracking: 18, teamNote: 19, guideDraftAt: 20, lastContact: 21, memo: 22, sourceRow: 23
+  caseId: 1, status: 2, owner: 3, customer: 4, qty: 5, firstQty: 6, startDate: 7, dueFrom: 8, dueTo: 9, todo: 10,
+  customerId: 11, detail: 12, formInquiry: 13, lastMail: 14, unitPrice: 15,
+  invoiceSent: 16, invoiceId: 17, signedAt: 18,
+  tracking: 19, teamNote: 20, guideDraftAt: 21, lastContact: 22, memo: 23, sourceRow: 24
 };
 
 /** 案件ボードに載せる問い合わせ内容の最大文字数。全文はメール履歴で見る。 */
@@ -232,7 +253,7 @@ function boardSetup() {
   boardMigrateCustomers_(ss);
 
   boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS,
-    [90, 210, 150, 70, 95, 95, 95, 220, 80, 220, 320]);
+    [90, 210, 80, 150, 70, 110, 95, 95, 95, 220]);
   boardSetupSheet_(ss, BOARD_SHEET_CUSTOMERS, BOARD_CUSTOMER_HEADERS, [80, 170, 120, 220, 130]);
   boardSetupSheet_(ss, BOARD_SHEET_MAILS, BOARD_MAIL_HEADERS, [140, 80, 200, 240, 240, 300, 260, 300, 110, 200, 140]);
   boardSetupSheet_(ss, BOARD_SHEET_EXAMPLES, BOARD_EXAMPLE_HEADERS, [140, 150, 240, 300, 260, 300, 320]);
@@ -242,6 +263,7 @@ function boardSetup() {
   boardSetupSheet_(ss, BOARD_SHEET_LOGS, BOARD_LOG_HEADERS, [150, 100, 500]);
 
   boardApplyCaseFormatting_(ss.getSheetByName(BOARD_SHEET_CASES));
+  boardRefreshFormulas_(ss.getSheetByName(BOARD_SHEET_CASES));
   boardMigrateSettings_(ss.getSheetByName(BOARD_SHEET_SETTINGS));
   boardSeedSettings_(ss.getSheetByName(BOARD_SHEET_SETTINGS));
   boardSeedKnowledge_(ss.getSheetByName(BOARD_SHEET_KNOWLEDGE));
@@ -297,6 +319,7 @@ function boardMigrateCases_(ss) {
     boardLog_('移行', '納期予定を（自）（至）の2列に分割しました');
   }
 
+  headers = boardInsertColumnAfter_(sheet, headers, 'ステータス', '対応者');
   headers = boardInsertColumnAfter_(sheet, headers, '予定点数', '初回ご依頼予定数');
   headers = boardRenameColumn_(sheet, headers, '最新のお問い合わせ内容', 'フォームの問い合わせ内容');
   headers = boardInsertColumnAfter_(sheet, headers, '依頼内容', 'フォームの問い合わせ内容');
@@ -465,13 +488,22 @@ function boardApplyCaseFormatting_(sheet) {
   });
 
   const todoRange = sheet.getRange(2, BOARD_COL.todo, maxRows, 1);
-  ['確認して返信', '日付を入れて', '経過', '作業チームへ共有'].forEach(function (word) {
+  ['確認して返信', '日付を入れて', '経過', '作業チームへ共有', '不足している情報', '依頼確定メール'].forEach(function (word) {
     rules.push(SpreadsheetApp.newConditionalFormatRule()
       .whenTextContains(word)
       .setFontColor('#A32D2D')
       .setRanges([todoRange])
       .build());
   });
+  const ownerRange = sheet.getRange(2, BOARD_COL.owner, maxRows, 1);
+  rules.push(SpreadsheetApp.newConditionalFormatRule()
+    .whenTextEqualTo('自分').setBackground('#FFE3D3').setFontColor('#C24A18')
+    .setRanges([ownerRange]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule()
+    .whenTextEqualTo('お客様').setBackground('#F1EFE8').setFontColor('#5F5E5A')
+    .setRanges([ownerRange]).build());
+  sheet.getRange(2, BOARD_COL.owner, maxRows, 1).setHorizontalAlignment('center');
+
   sheet.setConditionalFormatRules(rules);
 
   [BOARD_COL.startDate, BOARD_COL.dueFrom, BOARD_COL.dueTo, BOARD_COL.invoiceSent,
@@ -1081,6 +1113,7 @@ function boardImportResponses_(ss) {
 
     cases.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).setValues([values]);
     boardSetTodoFormula_(cases, caseRow);
+    boardSetOwnerFormula_(cases, caseRow);
 
     // フォームに回答があった時点で「対応を選ぶ」の一覧にも載せる。
     // お客様からメールが届くまで待っていると、初回の返信が漏れるため。
@@ -1502,6 +1535,86 @@ function boardBackfillMonthlyToDetail_(ss) {
   return updated;
 }
 
+/** 全ての案件行に「次にやること」と「対応者」の数式を入れ直す。 */
+function boardRefreshFormulas_(sheet) {
+  if (!sheet || sheet.getLastRow() < 2) return;
+  for (let row = 2; row <= sheet.getLastRow(); row++) {
+    if (!String(sheet.getRange(row, BOARD_COL.caseId).getValue() || '').trim()) continue;
+    boardSetTodoFormula_(sheet, row);
+    boardSetOwnerFormula_(sheet, row);
+  }
+}
+
+/**
+ * 依頼確定へ進める情報がそろっているかを調べる。
+ * 見積もり回答で伺った項目のうち、埋まっていないものを返す。
+ */
+function boardEvaluateReadiness_(ss, customerId) {
+  const customer = boardFindCustomerRow_(ss, customerId);
+  const missing = [];
+  if (!customer) return { ready: false, missing: ['顧客情報'] };
+
+  BOARD_CUSTOMER_INTAKE.forEach(function (item) {
+    const col = BOARD_CUSTOMER_COL[item.col];
+    if (!col) return;
+    if (!String(customer.values[col - 1] || '').trim()) missing.push(item.label);
+  });
+
+  const caseRow = boardFindLatestCaseRow_(ss, customerId);
+  if (caseRow) {
+    const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+    if (!String(sheet.getRange(caseRow, BOARD_COL.firstQty).getValue() || '').trim()) {
+      missing.push('初回ご依頼予定数');
+    }
+  }
+  return { ready: missing.length === 0, missing: missing };
+}
+
+function boardFindCustomerRow_(ss, customerId) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  if (!sheet || sheet.getLastRow() < 2 || !customerId) return null;
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CUSTOMER_HEADERS.length).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][BOARD_CUSTOMER_COL.id - 1]).trim() === String(customerId).trim()) {
+      return { row: i + 2, values: rows[i] };
+    }
+  }
+  return null;
+}
+
+/**
+ * お客様から返信が届いたときに、情報の過不足でステータスを進める。
+ * こちらが返信を待っている段階の案件だけを対象にする。
+ */
+function boardAdvanceOnReply_(ss, customerId) {
+  const row = boardFindLatestCaseRow_(ss, customerId);
+  if (!row) return '';
+
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  const status = String(sheet.getRange(row, BOARD_COL.status).getValue() || '').trim();
+  if (['返信済', BOARD_STATUS_SHORT, BOARD_STATUS_READY].indexOf(status) < 0) return '';
+
+  const next = boardEvaluateReadiness_(ss, customerId).ready ? BOARD_STATUS_READY : BOARD_STATUS_SHORT;
+  if (next === status) return '';
+
+  sheet.getRange(row, BOARD_COL.status).setValue(next);
+  boardSetTodoFormula_(sheet, row);
+  boardSetOwnerFormula_(sheet, row);
+  boardLog_('案件情報', sheet.getRange(row, BOARD_COL.caseId).getValue() + ' を「' + next + '」に進めました');
+  return next;
+}
+
+/** 次に動くのが自分かお客様かを、ステータスから自動で表示する。 */
+function boardSetOwnerFormula_(sheet, row) {
+  const status = '$' + boardColLetter_(BOARD_COL.status) + row;
+  const cases = Object.keys(BOARD_STATUS_OWNER).map(function (name) {
+    return status + '="' + name + '","' + BOARD_STATUS_OWNER[name] + '"';
+  }).join(',');
+  sheet.getRange(row, BOARD_COL.owner).setFormula(
+    '=IF($' + boardColLetter_(BOARD_COL.caseId) + row + '="","",IFS(' + cases + ',TRUE,""))'
+  );
+}
+
 function boardSetTodoFormula_(sheet, row) {
   const cell = function (col) { return '$' + boardColLetter_(col) + row; };
   const b = cell(BOARD_COL.status);
@@ -1514,6 +1627,8 @@ function boardSetTodoFormula_(sheet, row) {
   const formula = '=IF(' + cell(BOARD_COL.caseId) + '="","",IFS(' +
     b + '="問合せ","返信案を確認して返信",' +
     b + '="返信済","お客様の返信待ち",' +
+    b + '="' + BOARD_STATUS_SHORT + '","不足している情報を聞く",' +
+    b + '="' + BOARD_STATUS_READY + '","依頼確定メールを送る",' +
     b + '="依頼確定",IF(OR(' + start + '="",' + from + '=""),"日付を入れて案内メール","案内メールを送る"),' +
     b + '="' + BOARD_STATUS_SIGNING + '",IF(' + cell(BOARD_COL.signedAt) + '<>"","お客様のご発送待ち",' +
       '"支払い情報の登録・署名待ち"&IF(' + draft + '="","",' + elapsed + ')),' +

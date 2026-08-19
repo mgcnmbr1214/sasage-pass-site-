@@ -135,11 +135,17 @@
 
   function renderTasks(type) {
     var box = el('tasks');
-    if (!type) { box.innerHTML = ''; return; }
-    box.innerHTML = type.status
-      ? '<div class="tasks-note">下書きに保存すると、案件のステータスが' +
-        '<b>「' + type.status + '」</b>に変わります。</div>'
-      : '';
+    var html = '';
+    if (ctx && ctx.missing && ctx.missing.length > 0) {
+      html += '<div class="tasks"><div class="tasks-title">依頼確定に不足している情報</div><ul>';
+      ctx.missing.forEach(function (label) { html += '<li>' + esc(label) + '</li>'; });
+      html += '</ul></div>';
+    }
+    if (type && type.status) {
+      html += '<div class="tasks-note">下書きに保存すると、案件のステータスが' +
+        '<b>「' + esc(type.status) + '」</b>に変わります。</div>';
+    }
+    box.innerHTML = html;
   }
 
   var INVOICE_LABELS = {
@@ -264,6 +270,7 @@
   function loadContext(type) {
     google.script.run.withSuccessHandler(function (data) {
       ctx = data;
+      renderTasks(type);
       renderExtras(type);
     }).withFailureHandler(function (e) { show('err', e.message); })
       .mailGetCaseContext(current.row);

@@ -257,6 +257,7 @@ function mailScan_(options) {
         const body = last.getPlainBody();
         boardApplyCustomerIntake_(ss, customer.email, boardExtractCustomerIntake_(body));
         boardApplyCaseIntake_(ss, customer.customerId, boardExtractCaseIntake_(body));
+        boardAdvanceOnReply_(ss, customer.customerId);
       } catch (err) {
         boardLog_('②エラー', '顧客情報の取込に失敗: ' + err.message);
       }
@@ -332,11 +333,13 @@ function mailGetPendingList() {
   mailRefreshSentStatus_(ss);
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   if (!sheet || sheet.getLastRow() < 2) return [];
+  const closed = mailClosedCustomers_(ss);
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
   const out = [];
   for (let i = rows.length - 1; i >= 0; i--) {
     const status = String(rows[i][BOARD_MAIL_COL.status - 1] || '').trim();
     if (MAIL_OPEN_STATUSES.indexOf(status) < 0) continue;
+    if (closed[String(rows[i][BOARD_MAIL_COL.customerId - 1] || '').trim()]) continue;
     out.push({
       row: i + 2,
       date: boardFormatDate_(rows[i][BOARD_MAIL_COL.date - 1]),
@@ -429,6 +432,26 @@ function mailGetCustomerMessage(row) {
   }
 }
 
+/** 見送りになったお客様。対応リストには出さない。 */
+function mailClosedCustomers_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  const closed = {};
+  if (!sheet || sheet.getLastRow() < 2) return closed;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  const active = {};
+  rows.forEach(function (row) {
+    const id = String(row[BOARD_COL.customerId - 1] || '').trim();
+    if (!id) return;
+    if (String(row[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_CLOSED) closed[id] = true;
+    else active[id] = true;
+  });
+
+  // 見送り以外の案件が1件でもあれば、そのお客様は対象に残す
+  Object.keys(active).forEach(function (id) { delete closed[id]; });
+  return closed;
+}
+
 /** 同じお客様の過去のお問い合わせ。新しい順に返す（表示中のものは除く）。 */
 function mailGetHistory(row) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -496,6 +519,7 @@ function mailGetCaseContext(row) {
       ? boardExtractCount_(v[BOARD_COL.firstQty - 1])
       : v[BOARD_COL.qty - 1],
     firstQty: v[BOARD_COL.firstQty - 1],
+    missing: boardEvaluateReadiness_(ss, values[BOARD_MAIL_COL.customerId - 1]).missing,
     signedAt: boardToInputDate_(v[BOARD_COL.signedAt - 1]),
     invoiceId: invoiceId,
     invoiceStatus: invoice ? invoice.status : '',
