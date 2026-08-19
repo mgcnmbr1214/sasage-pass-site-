@@ -71,6 +71,12 @@ function mailCheckNow() {
     boardLog_('②エラー', '発送の確認に失敗: ' + err.message);
   }
 
+  try {
+    boardRefreshCustomerNotes_(ss);
+  } catch (err) {
+    boardLog_('②エラー', 'お客様欄のメモ更新に失敗: ' + err.message);
+  }
+
   const result = mailScan_({ notify: false });
   const lines = [
     'フォームの新しい回答　：' + imported + ' 件',
@@ -195,6 +201,11 @@ function mailScanFromTrigger() {
     shipCheckAll();
   } catch (err) {
     boardLog_('②エラー', '発送の確認に失敗: ' + err.message);
+  }
+  try {
+    boardRefreshCustomerNotes_(ss);
+  } catch (err) {
+    boardLog_('②エラー', 'お客様欄のメモ更新に失敗: ' + err.message);
   }
   mailScan_({ notify: true });
 }

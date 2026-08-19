@@ -246,6 +246,11 @@ function boardSetup() {
 
   const repaired = boardMigrateMails_(ss);
   const imported = boardImportResponses_(ss);
+  try {
+    boardRefreshCustomerNotes_(ss);
+  } catch (err) {
+    boardLog_('②エラー', 'お客様欄のメモ更新に失敗: ' + err.message);
+  }
   boardLog_('セットアップ', '初期セットアップを実行しました（取込 ' + imported + ' 件）');
 
   SpreadsheetApp.getUi().alert(
@@ -955,6 +960,11 @@ function boardRebuild() {
     }
   });
   const imported = boardImportResponses_(ss);
+  try {
+    boardRefreshCustomerNotes_(ss);
+  } catch (err) {
+    boardLog_('②エラー', 'お客様欄のメモ更新に失敗: ' + err.message);
+  }
   boardLog_('作り直し', imported + ' 件を再取込しました');
   ui.alert(imported + ' 件を取り込み直しました。');
 }
@@ -1347,6 +1357,45 @@ function boardFindCustomerRowByEmail_(sheet, email) {
     if (String(emails[i][0]).trim().toLowerCase() === String(email).trim().toLowerCase()) return i + 2;
   }
   return 0;
+}
+
+/**
+ * 案件ボードの「お客様」列（C列）に、顧客タブの主要項目をメモ（ホバーで見える注釈）として表示する。
+ * BOARD_CUSTOMER_INTAKE の9項目（ストア名・会社名・代表者名義・請求先/返送先の住所等）を対象とする。
+ * これらは既に案件ボードの他の列に出ている情報（お客様名・依頼内容など）とは重複しない。
+ * mailCheckNow / mailScanFromTrigger の1サイクルごとに全行まとめて再計算する。
+ */
+function boardRefreshCustomerNotes_(ss) {
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  const customers = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  if (!cases || !customers || cases.getLastRow() < 2) return;
+
+  const byId = {};
+  if (customers.getLastRow() > 1) {
+    customers.getRange(2, 1, customers.getLastRow() - 1, BOARD_CUSTOMER_HEADERS.length).getValues()
+      .forEach(function (row) { byId[String(row[BOARD_CUSTOMER_COL.id - 1] || '').trim()] = row; });
+  }
+
+  const caseRows = cases.getRange(2, 1, cases.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  const notes = caseRows.map(function (row) {
+    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
+    const cust = customerId ? byId[customerId] : null;
+    return [cust ? boardBuildCustomerNote_(cust) : ''];
+  });
+
+  cases.getRange(2, BOARD_COL.customer, notes.length, 1).setNotes(notes);
+}
+
+/** メールアドレス＋BOARD_CUSTOMER_INTAKE の9項目を「ラベル：値」の形で1行ずつ並べる。未回答は（未回答）と表示する。 */
+function boardBuildCustomerNote_(custRow) {
+  const email = String(custRow[BOARD_CUSTOMER_COL.email - 1] || '').trim();
+  const lines = ['メールアドレス：' + (email || '（未登録）')];
+  BOARD_CUSTOMER_INTAKE.forEach(function (item) {
+    const col = BOARD_CUSTOMER_COL[item.col];
+    const value = String(custRow[col - 1] || '').trim();
+    lines.push(item.label + '：' + (value || '（未回答）'));
+  });
+  return lines.join('\n');
 }
 
 function boardSetTodoFormula_(sheet, row) {
