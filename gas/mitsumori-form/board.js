@@ -271,6 +271,7 @@ function boardSetup() {
   boardOrderSheets_(ss);
   boardHideSourceSheets_(ss);
 
+  const brokenFixed = boardRepairBrokenCases_(ss);
   const deduped = boardDedupeCases_(ss);
   const repaired = boardMigrateMails_(ss);
   const imported = boardImportResponses_(ss);
@@ -1053,6 +1054,43 @@ function boardNormalizeHeader_(text) {
   return String(text || '').trim()
     .replace(/[\s　・･、,／\/（）()]/g, '')
     .replace(/^[おご]/, '');
+}
+
+/**
+ * 列がずれた状態で作られてしまった案件を取り除く。
+ *
+ * 列構成が古いまま取り込みが走ると、値が本来と違う列に入る。
+ * その行は顧客とも結びつかず機能しないため、案件IDはあるのに
+ * 顧客IDの列が顧客IDの形をしていない行を壊れた行とみなす。
+ */
+function boardRepairBrokenCases_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const width = Math.max(sheet.getLastColumn(), BOARD_CASE_HEADERS.length);
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues();
+  const broken = [];
+
+  rows.forEach(function (row, i) {
+    const caseId = String(row[BOARD_COL.caseId - 1] || '').trim();
+    if (!caseId) return;
+    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
+    if (/^C\d+$/.test(customerId)) return;
+    broken.push({ row: i + 2, caseId: caseId });
+  });
+
+  broken.slice().reverse().forEach(function (item) { sheet.deleteRow(item.row); });
+
+  // ずれた値が右側の余った列に残っていれば、その列ごと取り除く
+  if (sheet.getLastColumn() > BOARD_CASE_HEADERS.length) {
+    sheet.deleteColumns(BOARD_CASE_HEADERS.length + 1, sheet.getLastColumn() - BOARD_CASE_HEADERS.length);
+  }
+
+  if (broken.length > 0) {
+    boardLog_('整理', '列がずれた案件 ' + broken.length + ' 件を削除しました（' +
+      broken.map(function (b) { return b.caseId; }).join('、') + '）');
+  }
+  return broken.length;
 }
 
 /** 手入力された値が入っている列。重複を消してよいかの判断に使う。 */
