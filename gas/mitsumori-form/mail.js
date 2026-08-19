@@ -571,7 +571,7 @@ function mailApplyResponseType(row, typeId) {
  * 対応種別のテンプレートを土台に、お客様の問い合わせ内容へ合わせた返信案をAIが作る。
  * テンプレートが無い「通常の返信」では、方針と実例だけを頼りに書く。
  */
-function mailComposeWithType(row, typeId) {
+function mailComposeWithType(row, typeId, fields) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const apiKey = mailGetApiKey_();
   if (!apiKey) throw new Error('Anthropic APIキーが未設定です。');
@@ -588,6 +588,8 @@ function mailComposeWithType(row, typeId) {
   if (type.template) {
     const caseRow = boardFindLatestCaseRow_(ss, customerId);
     if (!caseRow) throw new Error('このお客様の案件が案件ボードに見つかりません。');
+    // 画面で入力した内容を先に保存し、そのうえで文面へ差し込む
+    if (fields && Object.keys(fields).length > 0) mailSaveCaseFields(caseRow, fields);
     template = boardBuildTemplateText_(ss, caseRow, type.template).body;
   }
 

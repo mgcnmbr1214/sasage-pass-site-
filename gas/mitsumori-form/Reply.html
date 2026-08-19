@@ -107,6 +107,17 @@
     return hit;
   }
 
+  /** 対応種別ごとに出している入力欄の、現在の値を集める。 */
+  function collectFields(type) {
+    var data = {};
+    if (!type) return data;
+    (type.fields || []).forEach(function (f) {
+      var input = el('fx_' + f.key);
+      if (input) data[f.key] = input.value;
+    });
+    return data;
+  }
+
   function refreshTypeView() {
     var type = findType(el('rtype').value);
     renderTasks(type);
@@ -114,7 +125,7 @@
     el('btnCompose').disabled = !type;
     el('composeHint').textContent = type
       ? (type.template
-        ? '定型文を土台に、お客様の内容へ合わせた返信案をAIが作ります。'
+        ? '入力内容を保存したうえで、定型文を土台にした返信案をAIが作ります。'
         : 'お客様の内容と回答方針をもとに、AIが返信案を作ります。')
       : '対応の種類を選ぶと、返信案を作れるようになります。';
   }
@@ -175,7 +186,7 @@
         html += '<div class="hint">お客様の回答：初回ご依頼予定数 ' + esc(ctx.firstQty) + '</div>';
       }
       if (type.template) {
-        html += '<div class="hint">保存すると、入力した内容が下の返信案の本文にも反映されます。</div>';
+        html += '<div class="hint">保存するだけでは返信案は変わりません。反映するには［この対応で返信案を作る］を押してください。</div>';
       }
     }
 
@@ -194,14 +205,12 @@
 
     if (type.fields.length > 0) {
       el('btnFields').addEventListener('click', function () {
-        var data = {};
-        type.fields.forEach(function (f) { data[f.key] = el('fx_' + f.key).value; });
         google.script.run.withSuccessHandler(function (r) {
-          if (type.template && el('editor').value.trim()) { refreshBody(type, r.message); return; }
-          show('ok', r.message);
+          show('ok', r.message + (type.template
+            ? '\n返信案にも反映するには［この対応で返信案を作る］を押してください。' : ''));
           loadContext(type);
         }).withFailureHandler(function (e) { show('err', e.message); })
-          .mailSaveCaseFields(ctx.caseRow, data);
+          .mailSaveCaseFields(ctx.caseRow, collectFields(type));
       });
       type.fields.forEach(function (f) {
         el('fx_' + f.key).addEventListener('change', updateApprove);
@@ -230,23 +239,6 @@
     }
 
     updateApprove();
-  }
-
-  /** 入力した日付や点数を、返信案の本文に反映し直す。 */
-  function refreshBody(type, note) {
-    var edited = lastApplied !== null && el('editor').value !== lastApplied;
-    if (edited && !confirm('入力内容を文面に反映します。編集された内容は失われます。よろしいですか？')) {
-      show('ok', note + '\n文面には反映していません。');
-      loadContext(type);
-      return;
-    }
-    google.script.run.withSuccessHandler(function (r) {
-      el('editor').value = r.text;
-      lastApplied = r.text;
-      show('ok', note + '\n入力内容を文面に反映しました。');
-      loadContext(type);
-    }).withFailureHandler(function (e) { show('err', e.message); loadContext(type); })
-      .mailComposeWithType(current.row, type.id);
   }
 
   function updateApprove() {
@@ -383,9 +375,18 @@
     el('btnCompose').addEventListener('click', function () {
       var type = findType(sel.value);
       if (!type) { show('err', '先に対応の種類を選んでください。'); return; }
-      if (el('editor').value.trim() && !confirm('AIが返信案を作り直します。現在の本文は失われます。よろしいですか？')) return;
+
+      var fields = collectFields(type);
+      var missing = (type.requireKeys || []).filter(function (key) { return !fields[key]; });
+      if (missing.length > 0) {
+        show('err', '「' + type.requires.join('」「') + '」を入力してから作成してください。');
+        return;
+      }
+      if (el('editor').value.trim() &&
+        !confirm('入力内容を反映して、返信案を作り直します。現在の本文は失われます。よろしいですか？')) return;
+
       busy(true);
-      showBusy('AIが返信案を作成しています...');
+      showBusy('入力内容を保存し、AIが返信案を作成しています...');
       google.script.run.withSuccessHandler(function (r) {
         el('editor').value = r.text;
         lastApplied = r.text;
@@ -393,7 +394,7 @@
         busy(false);
         loadContext(type);
       }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
-        .mailComposeWithType(current.row, sel.value);
+        .mailComposeWithType(current.row, sel.value, fields);
     });
 
     el('btnAi').addEventListener('click', function () {
