@@ -1066,7 +1066,7 @@ function boardImportResponses_(ss) {
     values[BOARD_COL.customerId - 1] = customerId;
     const monthly = String(pick('monthly') || '').trim();
     values[BOARD_COL.detail - 1] = monthly
-      ? (detail ? detail + '　／　月間予定数：' + monthly : '月間予定数：' + monthly)
+      ? (detail ? detail + '\n月間予定数：' + monthly : '月間予定数：' + monthly)
       : detail;
     values[BOARD_COL.formInquiry - 1] = boardTrimInquiry_(pick('inquiry'));
     values[BOARD_COL.unitPrice - 1] = pick('unitPrice');
@@ -1436,11 +1436,15 @@ function boardBackfillMonthlyToDetail_(ss) {
     const monthly = String(cust[BOARD_CUSTOMER_COL.monthly - 1] || '').trim();
     if (!monthly) return;
 
-    const detail = String(row[BOARD_COL.detail - 1] || '').trim();
-    if (detail.indexOf('月間予定数：') >= 0) return; // 既に反映済み
+    const current = String(row[BOARD_COL.detail - 1] || '');
+    // 既存の「月間予定数：…」部分（区切りが／・改行・区切りなし、いずれでも）を取り除いてから付け直す
+    const idx = current.indexOf('月間予定数：');
+    let base = idx >= 0 ? current.slice(0, idx) : current;
+    base = base.replace(/[　\s]*／[　\s]*$/, '').replace(/\n$/, '').trim();
+    const rebuilt = base ? base + '\n月間予定数：' + monthly : '月間予定数：' + monthly;
+    if (rebuilt === current) return; // 既に最新の形式
 
-    const newDetail = detail ? detail + '　／　月間予定数：' + monthly : '月間予定数：' + monthly;
-    cases.getRange(i + 2, BOARD_COL.detail).setValue(newDetail);
+    cases.getRange(i + 2, BOARD_COL.detail).setValue(rebuilt);
     updated++;
   });
 
