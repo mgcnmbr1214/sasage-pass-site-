@@ -1064,7 +1064,7 @@ function boardImportResponses_(ss) {
     values[BOARD_COL.status - 1] = '問合せ';
     values[BOARD_COL.customer - 1] = company || name;
     values[BOARD_COL.customerId - 1] = customerId;
-    const monthly = String(pick('monthly') || '').trim();
+    const monthly = boardMonthlyLabel_(pick('monthly'));
     values[BOARD_COL.detail - 1] = monthly
       ? (detail ? detail + '\n月間予定数：' + monthly : '月間予定数：' + monthly)
       : detail;
@@ -1408,6 +1408,13 @@ function boardBuildCustomerNote_(custRow) {
   return lines.join('\n');
 }
 
+/** 月間予定数の表示を「○点」の形に揃える。既に「点」を含む場合はそのまま。空欄は空文字を返す。 */
+function boardMonthlyLabel_(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  return /点/.test(value) ? value : value + '点';
+}
+
 /**
  * 既存の案件ボードの行のうち、依頼内容（J列）に月間予定数が未反映のものへ、
  * 顧客タブに保存済みの月間予定数を追記する。ui.alert等のUI呼び出しは行わない
@@ -1433,7 +1440,7 @@ function boardBackfillMonthlyToDetail_(ss) {
     const cust = customerId ? byId[customerId] : null;
     if (!cust) return;
 
-    const monthly = String(cust[BOARD_CUSTOMER_COL.monthly - 1] || '').trim();
+    const monthly = boardMonthlyLabel_(cust[BOARD_CUSTOMER_COL.monthly - 1]);
     if (!monthly) return;
 
     const current = String(row[BOARD_COL.detail - 1] || '');
