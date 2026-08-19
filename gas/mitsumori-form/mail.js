@@ -333,13 +333,13 @@ function mailGetPendingList() {
   mailRefreshSentStatus_(ss);
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   if (!sheet || sheet.getLastRow() < 2) return [];
-  const closed = mailClosedCustomers_(ss);
+  const active = mailActiveCustomers_(ss);
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
   const out = [];
   for (let i = rows.length - 1; i >= 0; i--) {
     const status = String(rows[i][BOARD_MAIL_COL.status - 1] || '').trim();
     if (MAIL_OPEN_STATUSES.indexOf(status) < 0) continue;
-    if (closed[String(rows[i][BOARD_MAIL_COL.customerId - 1] || '').trim()]) continue;
+    if (!active[String(rows[i][BOARD_MAIL_COL.customerId - 1] || '').trim()]) continue;
     out.push({
       row: i + 2,
       date: boardFormatDate_(rows[i][BOARD_MAIL_COL.date - 1]),
@@ -432,24 +432,24 @@ function mailGetCustomerMessage(row) {
   }
 }
 
-/** 見送りになったお客様。対応リストには出さない。 */
-function mailClosedCustomers_(ss) {
+/**
+ * 対応リストに出してよいお客様。
+ * 進行中の案件が1件でもある方だけを対象にする。
+ * 見送りだけの方や、案件が1件も無い方は出さない。
+ */
+function mailActiveCustomers_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-  const closed = {};
-  if (!sheet || sheet.getLastRow() < 2) return closed;
-
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
   const active = {};
-  rows.forEach(function (row) {
-    const id = String(row[BOARD_COL.customerId - 1] || '').trim();
-    if (!id) return;
-    if (String(row[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_CLOSED) closed[id] = true;
-    else active[id] = true;
-  });
+  if (!sheet || sheet.getLastRow() < 2) return active;
 
-  // 見送り以外の案件が1件でもあれば、そのお客様は対象に残す
-  Object.keys(active).forEach(function (id) { delete closed[id]; });
-  return closed;
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues()
+    .forEach(function (row) {
+      const id = String(row[BOARD_COL.customerId - 1] || '').trim();
+      if (!id) return;
+      if (String(row[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_CLOSED) return;
+      active[id] = true;
+    });
+  return active;
 }
 
 /** 同じお客様の過去のお問い合わせ。新しい順に返す（表示中のものは除く）。 */

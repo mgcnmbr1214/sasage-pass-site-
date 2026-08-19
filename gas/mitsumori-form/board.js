@@ -274,6 +274,7 @@ function boardSetup() {
   const brokenFixed = boardRepairBrokenCases_(ss);
   const deduped = boardDedupeCases_(ss);
   const repaired = boardMigrateMails_(ss);
+  const mailDeduped = boardDedupeMails_(ss);
   const imported = boardImportResponses_(ss);
   let backfilled = 0;
   try {
@@ -300,6 +301,7 @@ function boardSetup() {
     (brokenFixed > 0 ? '\n列がずれた案件を削除：' + brokenFixed + ' 件' : '') +
     (deduped > 0 ? '\n重複した案件を削除：' + deduped + ' 件' : '') +
     (repaired > 0 ? '\nメール履歴の列ずれを修復：' + repaired + ' 件' : '') +
+    (mailDeduped > 0 ? '\n重複したメール履歴を削除：' + mailDeduped + ' 件' : '') +
     (backfilled > 0 ? '\n依頼内容へ月間予定数を追記：' + backfilled + ' 件' : '') +
     (restated > 0 ? '\nステータスの見直し：' + restated + ' 件' : '') +
     '\n\n「案件ボード」タブをご確認ください。'
@@ -1099,6 +1101,55 @@ function boardRepairBrokenCases_(ss) {
       broken.map(function (b) { return b.caseId; }).join('、') + '）');
   }
   return broken.length;
+}
+
+/** 作業がどこまで進んだか。重複したメール履歴のうち、どれを残すかの判断に使う。 */
+const BOARD_MAIL_PROGRESS = { '対応不要': 1, '未確認': 2, '修正中': 3, '下書き保存済': 4, '送信済': 5 };
+
+/**
+ * 重複したメール履歴を1件にまとめる。
+ *
+ * 案件が重複して取り込まれた際に、メール履歴の行も一緒に増えてしまった。
+ * 同じお客様・同じ件名で、返信先のスレッドも同じものを重複とみなし、
+ * いちばん作業が進んでいる行だけを残す。
+ */
+function boardDedupeMails_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!sheet || sheet.getLastRow() < 3) return 0;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
+  const best = {};
+  const remove = [];
+
+  const score = function (row) {
+    const status = String(row[BOARD_MAIL_COL.status - 1] || '').trim();
+    let value = BOARD_MAIL_PROGRESS[status] || 0;
+    if (String(row[BOARD_MAIL_COL.finalText - 1] || '').trim()) value += 10;
+    if (String(row[BOARD_MAIL_COL.instructions - 1] || '').trim()) value += 5;
+    if (String(row[BOARD_MAIL_COL.responseType - 1] || '').trim()) value += 5;
+    return value;
+  };
+
+  rows.forEach(function (row, i) {
+    const key = [
+      String(row[BOARD_MAIL_COL.customerId - 1] || '').trim(),
+      String(row[BOARD_MAIL_COL.subject - 1] || '').trim(),
+      String(row[BOARD_MAIL_COL.threadId - 1] || '').trim()
+    ].join('\t');
+    if (key === '\t\t') return;
+
+    const current = { row: i + 2, score: score(row) };
+    const kept = best[key];
+    if (!kept) { best[key] = current; return; }
+
+    // 進み具合が同じなら、あとから作られた行を残す
+    if (current.score >= kept.score) { remove.push(kept.row); best[key] = current; }
+    else remove.push(current.row);
+  });
+
+  remove.sort(function (a, b) { return b - a; }).forEach(function (row) { sheet.deleteRow(row); });
+  if (remove.length > 0) boardLog_('整理', '重複したメール履歴 ' + remove.length + ' 件を削除しました');
+  return remove.length;
 }
 
 /** 手入力された値が入っている列。重複を消してよいかの判断に使う。 */
