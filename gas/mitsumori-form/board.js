@@ -286,6 +286,12 @@ function boardSetup() {
   } catch (err) {
     boardLog_('②エラー', 'お客様欄のメモ更新に失敗: ' + err.message);
   }
+  let restated = 0;
+  try {
+    restated = boardReevaluateStatuses_(ss);
+  } catch (err) {
+    boardLog_('②エラー', 'ステータスの見直しに失敗: ' + err.message);
+  }
   boardLog_('セットアップ', '初期セットアップを実行しました（取込 ' + imported + ' 件）');
 
   SpreadsheetApp.getUi().alert(
@@ -295,6 +301,7 @@ function boardSetup() {
     (deduped > 0 ? '\n重複した案件を削除：' + deduped + ' 件' : '') +
     (repaired > 0 ? '\nメール履歴の列ずれを修復：' + repaired + ' 件' : '') +
     (backfilled > 0 ? '\n依頼内容へ月間予定数を追記：' + backfilled + ' 件' : '') +
+    (restated > 0 ? '\nステータスの見直し：' + restated + ' 件' : '') +
     '\n\n「案件ボード」タブをご確認ください。'
   );
 }
@@ -1675,9 +1682,10 @@ function boardEvaluateReadiness_(ss, customerId) {
   const caseRow = boardFindLatestCaseRow_(ss, customerId);
   if (caseRow) {
     const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-    if (!String(sheet.getRange(caseRow, BOARD_COL.firstQty).getValue() || '').trim()) {
-      missing.push('初回ご依頼予定数');
-    }
+    const firstQty = String(sheet.getRange(caseRow, BOARD_COL.firstQty).getValue() || '').trim();
+    const qty = String(sheet.getRange(caseRow, BOARD_COL.qty).getValue() || '').trim();
+    // 予定点数が既に入っていれば、初回ご依頼予定数は無くても進められる
+    if (!firstQty && !qty) missing.push('初回ご依頼予定数');
   }
   return { ready: missing.length === 0, missing: missing };
 }
@@ -1714,6 +1722,43 @@ function boardAdvanceOnReply_(ss, customerId) {
   boardSetOwnerFormula_(sheet, row);
   boardLog_('案件情報', sheet.getRange(row, BOARD_COL.caseId).getValue() + ' を「' + next + '」に進めました');
   return next;
+}
+
+/**
+ * 情報の過不足を見て、全案件のステータスを判定し直す。
+ *
+ * 判定の仕組みを作る前に届いた返信は一度も評価されていないため、
+ * 初期セットアップのたびに手当てする。対象は返信のやりとり中の案件だけで、
+ * 依頼確定より先へ進んだ案件には触れない。
+ */
+function boardReevaluateStatuses_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const targets = ['返信済', BOARD_STATUS_SHORT, BOARD_STATUS_READY];
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  const changed = [];
+
+  rows.forEach(function (row, i) {
+    const status = String(row[BOARD_COL.status - 1] || '').trim();
+    if (targets.indexOf(status) < 0) return;
+
+    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
+    if (!customerId) return;
+
+    const next = boardEvaluateReadiness_(ss, customerId).ready ? BOARD_STATUS_READY : BOARD_STATUS_SHORT;
+    // 一度も返信が届いていない案件は「返信済」のままにしておく
+    if (next === BOARD_STATUS_SHORT && status === '返信済') return;
+    if (next === status) return;
+
+    sheet.getRange(i + 2, BOARD_COL.status).setValue(next);
+    boardSetTodoFormula_(sheet, i + 2);
+    boardSetOwnerFormula_(sheet, i + 2);
+    changed.push(row[BOARD_COL.caseId - 1] + '→' + next);
+  });
+
+  if (changed.length > 0) boardLog_('整理', 'ステータスを見直しました: ' + changed.join('、'));
+  return changed.length;
 }
 
 /** 次に動くのが自分かお客様かを、ステータスから自動で表示する。 */
