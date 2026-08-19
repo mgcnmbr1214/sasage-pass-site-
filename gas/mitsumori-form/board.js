@@ -246,6 +246,12 @@ function boardSetup() {
 
   const repaired = boardMigrateMails_(ss);
   const imported = boardImportResponses_(ss);
+  let backfilled = 0;
+  try {
+    backfilled = boardBackfillMonthlyToDetail_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '月間予定数の追記に失敗: ' + err.message);
+  }
   try {
     boardRefreshCustomerNotes_(ss);
   } catch (err) {
@@ -257,6 +263,7 @@ function boardSetup() {
     'セットアップが完了しました。\n\n' +
     'フォーム回答の取り込み：' + imported + ' 件' +
     (repaired > 0 ? '\nメール履歴の列ずれを修復：' + repaired + ' 件' : '') +
+    (backfilled > 0 ? '\n依頼内容へ月間予定数を追記：' + backfilled + ' 件' : '') +
     '\n\n「案件ボード」タブをご確認ください。'
   );
 }
@@ -1057,7 +1064,10 @@ function boardImportResponses_(ss) {
     values[BOARD_COL.status - 1] = '問合せ';
     values[BOARD_COL.customer - 1] = company || name;
     values[BOARD_COL.customerId - 1] = customerId;
-    values[BOARD_COL.detail - 1] = detail;
+    const monthly = String(pick('monthly') || '').trim();
+    values[BOARD_COL.detail - 1] = monthly
+      ? (detail ? detail + '　／　月間予定数：' + monthly : '月間予定数：' + monthly)
+      : detail;
     values[BOARD_COL.formInquiry - 1] = boardTrimInquiry_(pick('inquiry'));
     values[BOARD_COL.unitPrice - 1] = pick('unitPrice');
     values[BOARD_COL.lastContact - 1] = pick('date');
@@ -1396,6 +1406,46 @@ function boardBuildCustomerNote_(custRow) {
     lines.push(item.label + '：' + (value || '（未回答）'));
   });
   return lines.join('\n');
+}
+
+/**
+ * 既存の案件ボードの行のうち、依頼内容（J列）に月間予定数が未反映のものへ、
+ * 顧客タブに保存済みの月間予定数を追記する。ui.alert等のUI呼び出しは行わない
+ * （boardSetup から自動実行できるようにするため）。
+ */
+function boardBackfillMonthlyToDetail_(ss) {
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  const customers = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  if (!cases || !customers || cases.getLastRow() < 2) return 0;
+
+  const byId = {};
+  if (customers.getLastRow() > 1) {
+    customers.getRange(2, 1, customers.getLastRow() - 1, BOARD_CUSTOMER_HEADERS.length).getValues()
+      .forEach(function (row) { byId[String(row[BOARD_CUSTOMER_COL.id - 1] || '').trim()] = row; });
+  }
+
+  const last = cases.getLastRow();
+  const rows = cases.getRange(2, 1, last - 1, BOARD_CASE_HEADERS.length).getValues();
+  let updated = 0;
+
+  rows.forEach(function (row, i) {
+    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
+    const cust = customerId ? byId[customerId] : null;
+    if (!cust) return;
+
+    const monthly = String(cust[BOARD_CUSTOMER_COL.monthly - 1] || '').trim();
+    if (!monthly) return;
+
+    const detail = String(row[BOARD_COL.detail - 1] || '').trim();
+    if (detail.indexOf('月間予定数：') >= 0) return; // 既に反映済み
+
+    const newDetail = detail ? detail + '　／　月間予定数：' + monthly : '月間予定数：' + monthly;
+    cases.getRange(i + 2, BOARD_COL.detail).setValue(newDetail);
+    updated++;
+  });
+
+  if (updated > 0) boardLog_('修正', '既存の依頼内容へ月間予定数を追記しました（' + updated + '件）');
+  return updated;
 }
 
 function boardSetTodoFormula_(sheet, row) {
