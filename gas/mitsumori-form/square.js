@@ -627,8 +627,8 @@ function squarePublishForCase(caseRow) {
 }
 
 function squareGetInvoiceStatusForCase(caseRow) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_CASES);
-  const invoiceId = String(sheet.getRange(Number(caseRow), BOARD_COL.invoiceId).getValue() || '').trim();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const invoiceId = squareVerifyInvoiceId_(ss, Number(caseRow));
   if (!invoiceId) return { invoiceId: '', status: '', url: '' };
   const invoice = squareGetInvoice_(invoiceId);
   return {
@@ -636,6 +636,26 @@ function squareGetInvoiceStatusForCase(caseRow) {
     status: invoice ? invoice.status : '(取得できません)',
     url: (invoice && invoice.public_url) || squareDashboardUrl_(invoiceId)
   };
+}
+
+/**
+ * 案件に記録された請求書がSquare側にまだあるか確かめる。
+ * 消された請求書のIDが残っていると新しく作れなくなるため、
+ * 見つからなければ記録を外して作り直せるようにする。
+ */
+function squareVerifyInvoiceId_(ss, caseRow) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  const invoiceId = String(sheet.getRange(caseRow, BOARD_COL.invoiceId).getValue() || '').trim();
+  if (!invoiceId) return '';
+  if (!squareGetToken_()) return invoiceId;
+
+  const invoice = squareGetInvoice_(invoiceId);
+  if (invoice && invoice.status !== 'CANCELED') return invoiceId;
+
+  sheet.getRange(caseRow, BOARD_COL.invoiceId).setValue('');
+  boardLog_('Square', sheet.getRange(caseRow, BOARD_COL.caseId).getValue() +
+    '：Squareに請求書が無いため記録を外しました（' + invoiceId + '）');
+  return '';
 }
 
 function squareFindOrCreateCustomer_(customer) {

@@ -336,10 +336,16 @@ function mailGetPendingList() {
   const active = mailActiveCustomers_(ss);
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
   const out = [];
+  const shown = {};
   for (let i = rows.length - 1; i >= 0; i--) {
     const status = String(rows[i][BOARD_MAIL_COL.status - 1] || '').trim();
     if (MAIL_OPEN_STATUSES.indexOf(status) < 0) continue;
-    if (!active[String(rows[i][BOARD_MAIL_COL.customerId - 1] || '').trim()]) continue;
+
+    const customerId = String(rows[i][BOARD_MAIL_COL.customerId - 1] || '').trim();
+    if (!active[customerId]) continue;
+    // 返信するのは最新のやりとりに対してなので、お客様ごとに1件だけ出す
+    if (shown[customerId]) continue;
+    shown[customerId] = true;
     out.push({
       row: i + 2,
       date: boardFormatDate_(rows[i][BOARD_MAIL_COL.date - 1]),
@@ -503,7 +509,7 @@ function mailGetCaseContext(row) {
 
   const cases = ss.getSheetByName(BOARD_SHEET_CASES);
   const v = cases.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
-  const invoiceId = String(v[BOARD_COL.invoiceId - 1] || '').trim();
+  const invoiceId = squareVerifyInvoiceId_(ss, caseRow);
   const invoice = invoiceId ? squareGetInvoice_(invoiceId) : null;
   const settings = boardGetSettings_(ss);
 
@@ -868,18 +874,7 @@ function mailGenerateReply_(apiKey, ctx) {
     '- 冒頭は宛名から始める。',
     '',
     '【過去に採用された返信の例】文体と距離感の参考にすること。内容は流用しない。',
-    ctx.examples || '（まだ例がありません）',
-    '',
-    ctx.template ? [
-      '【今回の土台となる定型文】',
-      'この定型文を土台にしてください。',
-      '- 料金・納期・住所・手続きなどの記載は、一字一句そのまま残すこと。',
-      '- お客様が触れていない項目でも、定型文にある案内は削らないこと。',
-      '- お客様の質問や要望に対しては、定型文の前後に必要な文を足して答えること。',
-      '- 定型文に書かれていない事実は足さないこと。',
-      '',
-      ctx.template
-    ].join('\n') : ''
+    ctx.examples || '（まだ例がありません）'
   ].join('\n');
 
   const user = [
@@ -897,7 +892,23 @@ function mailGenerateReply_(apiKey, ctx) {
     ctx.thread,
     '',
     ctx.instructions ? '【担当者が過去に出した修正指示。今回も反映すること】\n' + ctx.instructions + '\n' : '',
-    '以上を踏まえ、最新のお客様のメールに対する返信本文だけを出力してください。'
+    ctx.template ? [
+      '【今回送る定型文（すでに案件の情報が差し込まれています）】',
+      '━━━ ここから ━━━',
+      ctx.template,
+      '━━━ ここまで ━━━',
+      '',
+      'この定型文を、そのまま返信本文の土台として出力してください。',
+      '守ること:',
+      '- 見出し・箇条書き・並び順を変えないこと。',
+      '- 日付・金額・点数・住所・電話番号・手続きの説明は一字一句そのまま残すこと。',
+      '- お客様が触れていない項目でも、案内を削らないこと。',
+      '- お客様に質問や要望があるときだけ、定型文の前か後ろに短い段落を足して答えること。',
+      '- 定型文に書かれていない事実は足さないこと。',
+      '- 「{{」で囲まれた文字が残っていたら、その行ごと削除すること。',
+      '',
+      '以上を踏まえ、送信できる状態の返信本文だけを出力してください。'
+    ].join('\n') : '以上を踏まえ、最新のお客様のメールに対する返信本文だけを出力してください。'
   ].join('\n');
 
   return mailAskClaude_(apiKey, system, user);

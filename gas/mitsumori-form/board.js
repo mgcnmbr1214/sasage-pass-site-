@@ -1969,9 +1969,14 @@ function boardBuildTemplateText_(ss, caseRow, templateId) {
     '品名': settings['品名']
   };
 
+  // 変数名を変える前に作られたテンプレートも動くよう、古い名前も受け付ける
+  vars['点数'] = vars['予定点数'];
+
   let body = String(tpl.body || '');
   if (qty === '' || qty === null || qty === undefined) {
-    body = boardDropLinesWith_(body, '{{予定点数}}');
+    ['{{予定点数}}', '{{点数}}'].forEach(function (needle) {
+      body = boardDropLinesWith_(body, needle);
+    });
   }
 
   return {
