@@ -291,6 +291,7 @@ function boardSetup() {
   SpreadsheetApp.getUi().alert(
     'セットアップが完了しました。\n\n' +
     'フォーム回答の取り込み：' + imported + ' 件' +
+    (brokenFixed > 0 ? '\n列がずれた案件を削除：' + brokenFixed + ' 件' : '') +
     (deduped > 0 ? '\n重複した案件を削除：' + deduped + ' 件' : '') +
     (repaired > 0 ? '\nメール履歴の列ずれを修復：' + repaired + ' 件' : '') +
     (backfilled > 0 ? '\n依頼内容へ月間予定数を追記：' + backfilled + ' 件' : '') +
