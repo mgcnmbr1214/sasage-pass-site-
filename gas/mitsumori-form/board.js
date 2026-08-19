@@ -271,6 +271,7 @@ function boardSetup() {
   boardOrderSheets_(ss);
   boardHideSourceSheets_(ss);
 
+  const deduped = boardDedupeCases_(ss);
   const repaired = boardMigrateMails_(ss);
   const imported = boardImportResponses_(ss);
   let backfilled = 0;
@@ -289,6 +290,7 @@ function boardSetup() {
   SpreadsheetApp.getUi().alert(
     'セットアップが完了しました。\n\n' +
     'フォーム回答の取り込み：' + imported + ' 件' +
+    (deduped > 0 ? '\n重複した案件を削除：' + deduped + ' 件' : '') +
     (repaired > 0 ? '\nメール履歴の列ずれを修復：' + repaired + ' 件' : '') +
     (backfilled > 0 ? '\n依頼内容へ月間予定数を追記：' + backfilled + ' 件' : '') +
     '\n\n「案件ボード」タブをご確認ください。'
@@ -353,6 +355,8 @@ function boardInsertColumnAfter_(sheet, headers, after, name) {
   const index = headers.indexOf(after);
   if (index < 0) return headers;
   sheet.insertColumnAfter(index + 1);
+  // 挿入した列は左隣の書式と入力規則を引き継ぐため、規則だけ外す
+  sheet.getRange(1, index + 2, sheet.getMaxRows(), 1).setDataValidation(null);
   sheet.getRange(1, index + 2).setValue(name);
   boardLog_('移行', name + ' 列を追加しました');
   return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
@@ -472,6 +476,8 @@ function boardApplyCaseFormatting_(sheet) {
   sheet.setFrozenColumns(3);
 
   const maxRows = Math.max(sheet.getMaxRows() - 1, 1);
+  // 入力規則はステータス列だけに付ける。列の挿入で他の列へ広がることがあるため一度全部外す
+  sheet.getRange(2, 1, maxRows, sheet.getMaxColumns()).setDataValidation(null);
   const statusRange = sheet.getRange(2, BOARD_COL.status, maxRows, 1);
   statusRange.setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(BOARD_STATUSES, true)
@@ -1049,7 +1055,74 @@ function boardNormalizeHeader_(text) {
     .replace(/^[おご]/, '');
 }
 
+/** 手入力された値が入っている列。重複を消してよいかの判断に使う。 */
+const BOARD_MANUAL_COLS = ['startDate', 'dueFrom', 'dueTo', 'qty', 'signedAt',
+  'invoiceId', 'invoiceSent', 'tracking', 'teamNote', 'memo'];
+
+/**
+ * 同じフォーム回答から作られた案件が重複していたら取り除く。
+ * 手で入力した値が残っている行は消さず、ログに出して判断を委ねる。
+ */
+function boardDedupeCases_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 3) return 0;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  const seen = {};
+  const removable = [];
+  const kept = [];
+
+  rows.forEach(function (row, i) {
+    const source = String(row[BOARD_COL.sourceRow - 1] || '').trim();
+    if (!source) return;
+    if (!seen[source]) { seen[source] = true; return; }
+
+    const hasManual = BOARD_MANUAL_COLS.some(function (key) {
+      return String(row[BOARD_COL[key] - 1] || '').trim();
+    });
+    if (hasManual) kept.push(row[BOARD_COL.caseId - 1]);
+    else removable.push(i + 2);
+  });
+
+  removable.sort(function (a, b) { return b - a; }).forEach(function (row) { sheet.deleteRow(row); });
+
+  if (removable.length > 0) boardLog_('整理', '重複した案件 ' + removable.length + ' 件を削除しました');
+  if (kept.length > 0) {
+    boardLog_('整理', '重複しているが入力済みのため残した案件: ' + kept.join('、') + '（手動でご確認ください）');
+  }
+  return removable.length;
+}
+
+/**
+ * 案件ボードの列構成が最新かどうかを確かめ、古ければ移行する。
+ *
+ * コードは列を番号で読み書きするため、シートが古い並びのまま処理すると
+ * 別の列を読んでしまう。実際、取込済みの目印である「元回答行」を読み損ねて
+ * 同じ回答を何度も取り込んでしまう不具合が起きた。
+ */
+function boardEnsureLayout_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet) return false;
+
+  const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+  if (headers.join('\t') === BOARD_CASE_HEADERS.join('\t')) return true;
+
+  boardLog_('移行', '案件ボードの列構成が古いため移行します');
+  boardMigrateCases_(ss);
+  boardMigrateCustomers_(ss);
+  sheet.getRange(1, 1, 1, BOARD_CASE_HEADERS.length).setValues([BOARD_CASE_HEADERS]);
+
+  const after = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+  const ok = after.join('\t') === BOARD_CASE_HEADERS.join('\t');
+  if (!ok) boardLog_('移行', '列構成を合わせられませんでした。初期セットアップを実行してください');
+  return ok;
+}
+
 function boardImportResponses_(ss) {
+  if (!boardEnsureLayout_(ss)) return 0;
+
   const source = ss.getSheetByName(BOARD_SOURCE_SHEET);
   if (!source || source.getLastRow() < 2) return 0;
 
