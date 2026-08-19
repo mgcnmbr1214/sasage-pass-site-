@@ -254,8 +254,9 @@ function mailScan_(options) {
 
       // 見積もり回答への返信であれば、請求先・返送先を顧客タブへ取り込む
       try {
-        boardApplyCustomerIntake_(ss, customer.email,
-          boardExtractCustomerIntake_(last.getPlainBody()));
+        const body = last.getPlainBody();
+        boardApplyCustomerIntake_(ss, customer.email, boardExtractCustomerIntake_(body));
+        boardApplyCaseIntake_(ss, customer.customerId, boardExtractCaseIntake_(body));
       } catch (err) {
         boardLog_('②エラー', '顧客情報の取込に失敗: ' + err.message);
       }
@@ -490,7 +491,11 @@ function mailGetCaseContext(row) {
     startDate: boardToInputDate_(v[BOARD_COL.startDate - 1]),
     dueFrom: boardToInputDate_(v[BOARD_COL.dueFrom - 1]),
     dueTo: boardToInputDate_(v[BOARD_COL.dueTo - 1]),
-    qty: v[BOARD_COL.qty - 1],
+    // 予定点数が未入力なら、お客様が答えた初回ご依頼予定数を初期値にする
+    qty: v[BOARD_COL.qty - 1] === '' || v[BOARD_COL.qty - 1] === null
+      ? boardExtractCount_(v[BOARD_COL.firstQty - 1])
+      : v[BOARD_COL.qty - 1],
+    firstQty: v[BOARD_COL.firstQty - 1],
     signedAt: boardToInputDate_(v[BOARD_COL.signedAt - 1]),
     invoiceId: invoiceId,
     invoiceStatus: invoice ? invoice.status : '',

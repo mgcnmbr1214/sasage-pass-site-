@@ -165,6 +165,9 @@
     });
     if (type.fields.length > 0) {
       html += '<div class="btns"><button class="b-sub" id="btnFields">入力内容を保存する</button></div>';
+      if (ctx.firstQty) {
+        html += '<div class="hint">お客様の回答：初回ご依頼予定数 ' + esc(ctx.firstQty) + '</div>';
+      }
       if (type.template) {
         html += '<div class="hint">保存すると、入力した内容が下の返信案の本文にも反映されます。</div>';
       }

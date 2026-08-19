@@ -39,17 +39,17 @@ const BOARD_STATUS_RENAMES = { '手続き待ち': BOARD_STATUS_SIGNING };
 
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
-  '案件ID', 'ステータス', 'お客様', '予定点数', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
+  '案件ID', 'ステータス', 'お客様', '予定点数', '初回ご依頼予定数', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
   '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新のメール内容', '単価',
   '請求書送付日', 'Square請求書ID', '署名・支払確認日',
   '追跡番号', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
 const BOARD_COL = {
-  caseId: 1, status: 2, customer: 3, qty: 4, startDate: 5, dueFrom: 6, dueTo: 7, todo: 8,
-  customerId: 9, detail: 10, formInquiry: 11, lastMail: 12, unitPrice: 13,
-  invoiceSent: 14, invoiceId: 15, signedAt: 16,
-  tracking: 17, teamNote: 18, guideDraftAt: 19, lastContact: 20, memo: 21, sourceRow: 22
+  caseId: 1, status: 2, customer: 3, qty: 4, firstQty: 5, startDate: 6, dueFrom: 7, dueTo: 8, todo: 9,
+  customerId: 10, detail: 11, formInquiry: 12, lastMail: 13, unitPrice: 14,
+  invoiceSent: 15, invoiceId: 16, signedAt: 17,
+  tracking: 18, teamNote: 19, guideDraftAt: 20, lastContact: 21, memo: 22, sourceRow: 23
 };
 
 /** 案件ボードに載せる問い合わせ内容の最大文字数。全文はメール履歴で見る。 */
@@ -83,6 +83,11 @@ const BOARD_CUSTOMER_INTAKE = [
   { label: '返送先住所', col: 'returnAddress' },
   { label: '返送先電話番号', col: 'returnTel' },
   { label: '宛名', col: 'returnName' }
+];
+
+/** 見積もり回答で伺う項目のうち、案件ごとに保管するもの。 */
+const BOARD_CASE_INTAKE = [
+  { label: '初回ご依頼予定数', col: 'firstQty' }
 ];
 
 const BOARD_MAIL_HEADERS = [
@@ -292,6 +297,7 @@ function boardMigrateCases_(ss) {
     boardLog_('移行', '納期予定を（自）（至）の2列に分割しました');
   }
 
+  headers = boardInsertColumnAfter_(sheet, headers, '予定点数', '初回ご依頼予定数');
   headers = boardRenameColumn_(sheet, headers, '最新のお問い合わせ内容', 'フォームの問い合わせ内容');
   headers = boardInsertColumnAfter_(sheet, headers, '依頼内容', 'フォームの問い合わせ内容');
   headers = boardInsertColumnAfter_(sheet, headers, 'フォームの問い合わせ内容', '最新のメール内容');
@@ -1316,6 +1322,16 @@ function boardUpsertCustomer_(sheet, data) {
  * 引用された空欄のテンプレートは値が無いため、自然に無視される。
  */
 function boardExtractCustomerIntake_(text) {
+  return boardMatchIntake_(boardParseLabeledLines_(text), BOARD_CUSTOMER_INTAKE);
+}
+
+/** 案件側に保管する項目を抜き出す。 */
+function boardExtractCaseIntake_(text) {
+  return boardMatchIntake_(boardParseLabeledLines_(text), BOARD_CASE_INTAKE);
+}
+
+/** 「見出し：値」の行を集める。括弧書きの補足と空白は落とす。 */
+function boardParseLabeledLines_(text) {
   const found = {};
   String(text || '').split('\n').forEach(function (raw) {
     const line = raw.replace(/^[\s>＞・･]+/, '').trim();
@@ -1324,13 +1340,40 @@ function boardExtractCustomerIntake_(text) {
 
     const label = match[1].replace(/[（(].*?[)）]/g, '').replace(/\s/g, '').trim();
     const value = match[2].trim();
-    if (!value) return;
-
-    BOARD_CUSTOMER_INTAKE.forEach(function (item) {
-      if (item.label === label) found[item.col] = value;
-    });
+    if (label && value) found[label] = value;
   });
   return found;
+}
+
+function boardMatchIntake_(labels, definitions) {
+  const found = {};
+  definitions.forEach(function (item) {
+    if (labels[item.label]) found[item.col] = labels[item.label];
+  });
+  return found;
+}
+
+/** 抜き出した内容を案件へ書き込む。値が入っている項目だけを更新する。 */
+function boardApplyCaseIntake_(ss, customerId, values) {
+  const keys = Object.keys(values);
+  if (keys.length === 0) return 0;
+
+  const row = boardFindLatestCaseRow_(ss, customerId);
+  if (!row) return 0;
+
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  let changed = 0;
+  keys.forEach(function (key) {
+    const col = BOARD_COL[key];
+    if (!col) return;
+    const cell = sheet.getRange(row, col);
+    if (String(cell.getValue() || '').trim() === values[key]) return;
+    cell.setValue(values[key]);
+    changed++;
+  });
+
+  if (changed > 0) boardLog_('案件情報', customerId + ' の初回ご依頼予定数などを更新しました');
+  return changed;
 }
 
 /** 抜き出した内容を顧客タブへ書き込む。値が入っている項目だけを更新する。 */
@@ -1496,6 +1539,15 @@ function boardPad_(num, size) {
   let s = String(num);
   while (s.length < size) s = '0' + s;
   return s;
+}
+
+/** 「50点」「約50」などから点数だけを取り出す。読み取れなければ空。 */
+function boardExtractCount_(value) {
+  if (typeof value === 'number') return value;
+  const match = String(value == null ? '' : value).replace(/[０-９]/g, function (c) {
+    return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+  }).match(/\d+/);
+  return match ? Number(match[0]) : '';
 }
 
 function boardIsEmail_(value) {
