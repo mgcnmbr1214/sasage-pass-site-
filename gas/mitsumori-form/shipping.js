@@ -164,7 +164,10 @@ function shipBuildTeamNote_(row, customer, tracking, result) {
     .map(function (line) { return '　・' + line; })
     .join('\n');
 
-  const quantity = String(result.quantity || '').trim() || String(row[BOARD_COL.qty - 1] || '').trim();
+  // 「10点」と答えられても「10点点」にならないよう数字だけ取り出す
+  const answered = String(result.quantity || '').trim() || String(row[BOARD_COL.qty - 1] || '').trim();
+  const count = boardExtractCount_(answered);
+  const quantity = count === '' ? answered : String(count);
   const due = boardFormatDateRange_(row[BOARD_COL.dueFrom - 1], row[BOARD_COL.dueTo - 1]);
 
   const lines = [
