@@ -315,11 +315,13 @@ function squareCheckCompletions() {
     }
 
     sheet.getRange(i + 2, BOARD_COL.signedAt).setValue(signedAt);
-    // 連絡は不要なので、そのまま発送待ちへ進める
     sheet.getRange(i + 2, BOARD_COL.status).setValue('発送待ち');
     boardSetTodoFormula_(sheet, i + 2);
+    boardSetOwnerFormula_(sheet, i + 2);
     boardLog_('Square', caseId + ' の支払いと署名を確認しました');
-    squareNotifyCompletion_(settings, caseId, customer, ss.getUrl());
+
+    const sent = squareSendCompletionMail_(ss, settings, i + 2, customer);
+    squareNotifyCompletion_(settings, caseId, customer, ss.getUrl(), sent);
     done++;
   });
 
@@ -469,7 +471,52 @@ function squareGetCustomer_(customerId) {
   }
 }
 
-function squareNotifyCompletion_(settings, caseId, customer, sheetUrl) {
+/**
+ * 手続き完了のご連絡（T4）をお客様へ送る。
+ *
+ * このシステムで唯一、下書きを挟まずに自動送信する処理。
+ * 定型文をそのまま使い、AIは通さない。設定で止められる。
+ */
+function squareSendCompletionMail_(ss, settings, caseRow, customer) {
+  if (String(settings['手続き完了の自動送信'] || 'オン').trim() === 'オフ') return false;
+  if (!boardIsEmail_(customer.email)) return false;
+
+  let built;
+  try {
+    built = boardBuildTemplateText_(ss, caseRow, 'T4');
+  } catch (err) {
+    boardLog_('Square', '手続き完了のご連絡を作れませんでした: ' + err.message);
+    return false;
+  }
+
+  const options = { name: 'ササゲパス' };
+  const alias = settings['送信元エイリアス'];
+  if (alias && GmailApp.getAliases().indexOf(alias) >= 0) options.from = alias;
+
+  try {
+    GmailApp.sendEmail(customer.email, built.subject, built.body, options);
+  } catch (err) {
+    boardLog_('Square', '手続き完了のご連絡の送信に失敗: ' + err.message);
+    return false;
+  }
+
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  sheet.getRange(caseRow, BOARD_COL.lastContact).setValue(new Date());
+  mailAppendHistory_(ss, {
+    customerId: sheet.getRange(caseRow, BOARD_COL.customerId).getValue(),
+    from: customer.email,
+    subject: built.subject,
+    summary: '支払いと署名の確認後、自動で送信しました。',
+    aiFirst: built.body,
+    finalText: built.body,
+    status: '送信済',
+    threadId: ''
+  });
+  boardLog_('Square', customer.email + ' へ手続き完了のご連絡を送信しました');
+  return true;
+}
+
+function squareNotifyCompletion_(settings, caseId, customer, sheetUrl, sentMail) {
   const to = String(settings['通知先メールアドレス'] || '').trim();
   if (!to) return;
   const name = customer.company || customer.name || customer.email;
@@ -481,6 +528,10 @@ function squareNotifyCompletion_(settings, caseId, customer, sheetUrl) {
       '',
       '220円のお支払いと、契約書へのご署名がどちらも確認できました。',
       'ステータスを「発送待ち」に進めています。',
+      '',
+      sentMail
+        ? '「手続き完了のご連絡」をお客様へ自動送信しました（発送のご案内済み）。'
+        : '※「手続き完了のご連絡」は送信していません。設定またはログをご確認ください。',
       '',
       'このあとお客様から商品が発送されると、',
       'メールの内容から自動で「発送済み」に切り替わり、',
