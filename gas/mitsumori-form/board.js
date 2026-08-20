@@ -60,17 +60,18 @@ const BOARD_STATUS_RENAMES = { '手続き待ち': BOARD_STATUS_SIGNING };
 
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
-  '案件ID', 'ステータス', '対応者', 'お客様', '予定点数', '初回ご依頼予定数', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
+  '案件ID', 'ステータス', '対応者', 'お客様', '予定点数', '初回ご依頼予定数', '初回ご依頼予定日', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
   '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新のメール内容', '単価',
   '請求書送付日', 'Square請求書ID', '署名・支払確認日',
   '追跡番号', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
 const BOARD_COL = {
-  caseId: 1, status: 2, owner: 3, customer: 4, qty: 5, firstQty: 6, startDate: 7, dueFrom: 8, dueTo: 9, todo: 10,
-  customerId: 11, detail: 12, formInquiry: 13, lastMail: 14, unitPrice: 15,
-  invoiceSent: 16, invoiceId: 17, signedAt: 18,
-  tracking: 19, teamNote: 20, guideDraftAt: 21, lastContact: 22, memo: 23, sourceRow: 24
+  caseId: 1, status: 2, owner: 3, customer: 4, qty: 5, firstQty: 6, firstDate: 7,
+  startDate: 8, dueFrom: 9, dueTo: 10, todo: 11,
+  customerId: 12, detail: 13, formInquiry: 14, lastMail: 15, unitPrice: 16,
+  invoiceSent: 17, invoiceId: 18, signedAt: 19,
+  tracking: 20, teamNote: 21, guideDraftAt: 22, lastContact: 23, memo: 24, sourceRow: 25
 };
 
 /** 案件ボードに載せる問い合わせ内容の最大文字数。全文はメール履歴で見る。 */
@@ -108,7 +109,8 @@ const BOARD_CUSTOMER_INTAKE = [
 
 /** 見積もり回答で伺う項目のうち、案件ごとに保管するもの。 */
 const BOARD_CASE_INTAKE = [
-  { label: '初回ご依頼予定数', col: 'firstQty' }
+  { label: '初回ご依頼予定数', col: 'firstQty' },
+  { label: '初回ご依頼予定日', col: 'firstDate' }
 ];
 
 const BOARD_MAIL_HEADERS = [
@@ -334,6 +336,7 @@ function boardMigrateCases_(ss) {
 
   headers = boardInsertColumnAfter_(sheet, headers, 'ステータス', '対応者');
   headers = boardInsertColumnAfter_(sheet, headers, '予定点数', '初回ご依頼予定数');
+  headers = boardInsertColumnAfter_(sheet, headers, '初回ご依頼予定数', '初回ご依頼予定日');
   headers = boardRenameColumn_(sheet, headers, '最新のお問い合わせ内容', 'フォームの問い合わせ内容');
   headers = boardInsertColumnAfter_(sheet, headers, '依頼内容', 'フォームの問い合わせ内容');
   headers = boardInsertColumnAfter_(sheet, headers, 'フォームの問い合わせ内容', '最新のメール内容');
@@ -1862,6 +1865,37 @@ function boardPad_(num, size) {
   let s = String(num);
   while (s.length < size) s = '0' + s;
   return s;
+}
+
+/**
+ * お客様が書いた日付を読み取る。
+ * 「2026年9月1日」「2026/9/1」「9/1」などに対応し、
+ * 「9月上旬」のように日が定まらない書き方は読み取らない。
+ */
+function boardParseDate_(value) {
+  if (value instanceof Date) return value;
+  const text = String(value == null ? '' : value).replace(/[０-９]/g, function (c) {
+    return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+  }).trim();
+  if (!text) return null;
+
+  let m = text.match(/(\d{4})\s*[年\/\-.]\s*(\d{1,2})\s*[月\/\-.]\s*(\d{1,2})/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+
+  m = text.match(/(\d{1,2})\s*[月\/\-.]\s*(\d{1,2})/);
+  if (m) {
+    const month = Number(m[1]);
+    const day = Number(m[2]);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    const today = new Date();
+    const date = new Date(today.getFullYear(), month - 1, day);
+    // 過ぎた日付なら翌年のこととみなす
+    if (date < new Date(today.getFullYear(), today.getMonth(), today.getDate())) {
+      date.setFullYear(today.getFullYear() + 1);
+    }
+    return date;
+  }
+  return null;
 }
 
 /** 「50点」「約50」などから点数だけを取り出す。読み取れなければ空。 */

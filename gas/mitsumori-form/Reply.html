@@ -122,12 +122,6 @@
     var type = findType(el('rtype').value);
     renderTasks(type);
     loadContext(type);
-    el('btnCompose').disabled = !type;
-    el('composeHint').textContent = type
-      ? (type.template
-        ? '入力内容を保存したうえで、定型文を土台にした返信案をAIが作ります。'
-        : 'お客様の内容と回答方針をもとに、AIが返信案を作ります。')
-      : '対応の種類を選ぶと、返信案を作れるようになります。';
   }
 
   function renderHistory(list) {
@@ -142,6 +136,35 @@
         '<div class="hist-body">' + esc(h.text) + '</div></div>';
     });
     box.innerHTML = html + '</details>';
+  }
+
+  function bindCompose() {
+    var btn = el('btnCompose');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var type = findType(el('rtype').value);
+      if (!type) { show('err', '先に対応の種類を選んでください。'); return; }
+
+      var fields = collectFields(type);
+      var missing = (type.requireKeys || []).filter(function (key) { return !fields[key]; });
+      if (missing.length > 0) {
+        show('err', '「' + type.requires.join('」「') + '」を入力してから作成してください。');
+        return;
+      }
+      if (el('editor').value.trim() &&
+        !confirm('入力内容を反映して、返信案を作り直します。現在の本文は失われます。よろしいですか？')) return;
+
+      busy(true);
+      showBusy('入力内容を保存し、AIが返信案を作成しています...');
+      google.script.run.withSuccessHandler(function (r) {
+        el('editor').value = r.text;
+        lastApplied = r.text;
+        show('ok', r.message);
+        busy(false);
+        loadContext(type);
+      }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
+        .mailComposeWithType(current.row, el('rtype').value, fields);
+    });
   }
 
   function renderTasks(type) {
@@ -164,12 +187,27 @@
     PAID: '支払い済み', PARTIALLY_PAID: '一部支払い済み', CANCELED: 'キャンセル済み', FAILED: '失敗'
   };
 
+  function composeBlock(type) {
+    if (!type) return '<div class="hint">対応の種類を選ぶと、返信案を作れるようになります。</div>';
+    return '<div class="btns"><button class="b-ai" id="btnCompose">この対応で返信案を作る</button></div>' +
+      '<div class="hint">' + (type.template
+        ? '入力内容を保存したうえで、定型文を土台にした返信案をAIが作ります。'
+        : 'お客様の内容と回答方針をもとに、AIが返信案を作ります。') + '</div>';
+  }
+
   function renderExtras(type) {
     var box = el('extras');
-    if (!type || (type.fields.length === 0 && !type.invoice)) { box.innerHTML = ''; updateApprove(); return; }
+    if (!type || (type.fields.length === 0 && !type.invoice)) {
+      box.innerHTML = composeBlock(type);
+      bindCompose();
+      updateApprove();
+      return;
+    }
     if (!ctx || !ctx.caseRow) {
       box.innerHTML = '<div class="tasks"><div class="tasks-title">案件が見つかりません</div>' +
-        '<div style="font-size:12.5px;color:#5A6A8A">このお客様の案件が案件ボードにないため、日程の入力や請求書の作成ができません。</div></div>';
+        '<div style="font-size:12.5px;color:#5A6A8A">このお客様の案件が案件ボードにないため、日程の入力や請求書の作成ができません。</div></div>' +
+        composeBlock(type);
+      bindCompose();
       updateApprove();
       return;
     }
@@ -181,13 +219,17 @@
         '<input type="' + f.type + '" id="fx_' + f.key + '" value="' + esc(ctx[f.key] == null ? '' : ctx[f.key]) + '">';
     });
     if (type.fields.length > 0) {
-      html += '<div class="btns"><button class="b-sub" id="btnFields">入力内容を保存する</button></div>';
-      if (ctx.firstQty) {
-        html += '<div class="hint">お客様の回答：初回ご依頼予定数 ' + esc(ctx.firstQty) + '</div>';
+      var answered = [];
+      if (ctx.firstQty) answered.push('初回ご依頼予定数 ' + ctx.firstQty);
+      if (ctx.firstDate) answered.push('初回ご依頼予定日 ' + ctx.firstDate);
+      if (answered.length > 0) {
+        html += '<div class="hint">お客様の回答：' + esc(answered.join('　／　')) + '</div>';
       }
-      if (type.template) {
-        html += '<div class="hint">保存するだけでは返信案は変わりません。反映するには［この対応で返信案を作る］を押してください。</div>';
-      }
+      html += '<div class="btns"><button class="b-sub" id="btnFields">入力内容を保存する</button>' +
+        '<button class="b-ai" id="btnCompose">この対応で返信案を作る</button></div>' +
+        '<div class="hint">' + (type.template
+          ? '［この対応で返信案を作る］を押すと、上の入力内容を保存したうえで返信案に反映します。'
+          : '［入力内容を保存する］はシートに保存するだけです。') + '</div>';
     }
 
     if (type.invoice) {
@@ -201,7 +243,8 @@
         '<div class="btns"><button class="b-sub" id="btnInvOpen">Squareで請求書を開く</button>' +
         '<button class="b-sub" id="btnInvSent">送信しました</button></div></div>';
     }
-    box.innerHTML = html + '</div>';
+    box.innerHTML = html + '</div>' + (type.fields.length > 0 ? '' : composeBlock(type));
+    bindCompose();
 
     if (type.fields.length > 0) {
       el('btnFields').addEventListener('click', function () {
@@ -326,8 +369,6 @@
       '<div class="log" id="log"></div></div>' +
       '<div class="card"><label>どの状況での対応か</label>' +
       '<select id="rtype"></select>' +
-      '<div class="btns"><button class="b-ai" id="btnCompose">この対応で返信案を作る</button></div>' +
-      '<div class="hint" id="composeHint"></div>' +
       '<div id="tasks"></div><div id="extras"></div></div>' +
       '<div class="card"><label>返信案（そのまま編集できます）</label>' +
       '<textarea id="editor"></textarea>' +
@@ -370,31 +411,6 @@
     sel.addEventListener('change', function () {
       refreshTypeView();
       google.script.run.mailApplyResponseType(current.row, sel.value);
-    });
-
-    el('btnCompose').addEventListener('click', function () {
-      var type = findType(sel.value);
-      if (!type) { show('err', '先に対応の種類を選んでください。'); return; }
-
-      var fields = collectFields(type);
-      var missing = (type.requireKeys || []).filter(function (key) { return !fields[key]; });
-      if (missing.length > 0) {
-        show('err', '「' + type.requires.join('」「') + '」を入力してから作成してください。');
-        return;
-      }
-      if (el('editor').value.trim() &&
-        !confirm('入力内容を反映して、返信案を作り直します。現在の本文は失われます。よろしいですか？')) return;
-
-      busy(true);
-      showBusy('入力内容を保存し、AIが返信案を作成しています...');
-      google.script.run.withSuccessHandler(function (r) {
-        el('editor').value = r.text;
-        lastApplied = r.text;
-        show('ok', r.message);
-        busy(false);
-        loadContext(type);
-      }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
-        .mailComposeWithType(current.row, sel.value, fields);
     });
 
     el('btnAi').addEventListener('click', function () {

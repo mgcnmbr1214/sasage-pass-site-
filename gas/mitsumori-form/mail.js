@@ -517,7 +517,11 @@ function mailGetCaseContext(row) {
     caseRow: caseRow,
     caseId: v[BOARD_COL.caseId - 1],
     caseStatus: v[BOARD_COL.status - 1],
-    startDate: boardToInputDate_(v[BOARD_COL.startDate - 1]),
+    // 受付開始日が未入力なら、お客様が答えた初回ご依頼予定日を初期値にする
+    startDate: v[BOARD_COL.startDate - 1]
+      ? boardToInputDate_(v[BOARD_COL.startDate - 1])
+      : boardToInputDate_(boardParseDate_(v[BOARD_COL.firstDate - 1])),
+    firstDate: v[BOARD_COL.firstDate - 1],
     dueFrom: boardToInputDate_(v[BOARD_COL.dueFrom - 1]),
     dueTo: boardToInputDate_(v[BOARD_COL.dueTo - 1]),
     // 予定点数が未入力なら、お客様が答えた初回ご依頼予定数を初期値にする
