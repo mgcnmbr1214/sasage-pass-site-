@@ -1878,7 +1878,7 @@ function boardSetTodoFormula_(sheet, row) {
   const to = cell(BOARD_COL.dueTo);
   const draft = cell(BOARD_COL.guideDraftAt);
   const dueEnd = 'IF(' + to + '="",' + from + ',' + to + ')';
-  const elapsed = '" ("&TEXT(TODAY()-' + draft + ',"0")&"日経過)"';
+  const elapsed = '" ("&TEXT(MAX(0,TODAY()-' + draft + '),"0")&"日経過)"';
   const formula = '=IF(' + cell(BOARD_COL.caseId) + '="","",IFS(' +
     b + '="問合せ","返信案を確認して返信",' +
     b + '="返信済","お客様の返信待ち",' +
