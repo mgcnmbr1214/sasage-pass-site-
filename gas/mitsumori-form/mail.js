@@ -775,14 +775,22 @@ function mailApproveToDraft(row, text) {
 
   const type = boardFindResponseTypeByName_(values[BOARD_MAIL_COL.responseType - 1]);
   let statusNote = '';
-  if (type && type.status) {
+  if (type) {
     const caseRow = boardFindLatestCaseRow_(ss, values[BOARD_MAIL_COL.customerId - 1]);
     if (caseRow) {
       const cases = ss.getSheetByName(BOARD_SHEET_CASES);
-      cases.getRange(caseRow, BOARD_COL.status).setValue(type.status);
+      if (type.status) {
+        cases.getRange(caseRow, BOARD_COL.status).setValue(type.status);
+        statusNote = '\n案件のステータスを「' + type.status + '」に更新しました。';
+      }
+      // 送った日付を残す種別（案内メールなど）は、その列にも記録する
+      if (type.stamp && BOARD_COL[type.stamp]) {
+        const cell = cases.getRange(caseRow, BOARD_COL[type.stamp]);
+        if (!cell.getValue()) cell.setValue(new Date());
+      }
       cases.getRange(caseRow, BOARD_COL.lastContact).setValue(new Date());
       boardSetTodoFormula_(cases, caseRow);
-      statusNote = '\n案件のステータスを「' + type.status + '」に更新しました。';
+      boardSetOwnerFormula_(cases, caseRow);
     }
   }
 

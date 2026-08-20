@@ -140,7 +140,8 @@ const BOARD_RESPONSE_TYPES = [
     id: 'T2', name: '依頼確定（受付開始日・納期を回答し、依頼内容・支払い・発送に関する事項を伝えます）',
     template: 'T2', status: BOARD_STATUS_SIGNING,
     fields: ['startDate', 'dueFrom', 'dueTo', 'qty'], invoice: true,
-    requires: ['startDate', 'dueFrom']
+    requires: ['startDate', 'dueFrom'],
+    stamp: 'guideDraftAt'
   },
   {
     id: 'T4', name: '手続き完了（支払いと署名の確認をお伝えし、発送をご案内します）',
@@ -289,6 +290,12 @@ function boardSetup() {
   } catch (err) {
     boardLog_('②エラー', 'お客様欄のメモ更新に失敗: ' + err.message);
   }
+  try {
+    boardBackfillGuideDate_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '案内メール作成日の補完に失敗: ' + err.message);
+  }
+
   let restated = 0;
   try {
     restated = boardReevaluateStatuses_(ss);
@@ -1776,6 +1783,43 @@ function boardAdvanceOnReply_(ss, customerId) {
   boardSetOwnerFormula_(sheet, row);
   boardLog_('案件情報', sheet.getRange(row, BOARD_COL.caseId).getValue() + ' を「' + next + '」に進めました');
   return next;
+}
+
+/**
+ * 案内メール作成日が空の案件を、メール履歴の記録から埋める。
+ *
+ * 「対応を選ぶ」から送った分はこの列を書いていなかったため、
+ * 依頼確定の対応をした行の下書き保存日時を使って後から補う。
+ */
+function boardBackfillGuideDate_(ss) {
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  const mails = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!cases || !mails || cases.getLastRow() < 2 || mails.getLastRow() < 2) return 0;
+
+  const sentAt = {};
+  mails.getRange(2, 1, mails.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues()
+    .forEach(function (row) {
+      if (String(row[BOARD_MAIL_COL.responseType - 1] || '').indexOf('依頼確定') !== 0) return;
+      const when = row[BOARD_MAIL_COL.savedAt - 1] || row[BOARD_MAIL_COL.date - 1];
+      if (!(when instanceof Date)) return;
+      const id = String(row[BOARD_MAIL_COL.customerId - 1] || '').trim();
+      if (!id) return;
+      if (!sentAt[id] || when > sentAt[id]) sentAt[id] = when;
+    });
+
+  const rows = cases.getRange(2, 1, cases.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  let filled = 0;
+  rows.forEach(function (row, i) {
+    if (row[BOARD_COL.guideDraftAt - 1]) return;
+    const id = String(row[BOARD_COL.customerId - 1] || '').trim();
+    if (!sentAt[id]) return;
+    cases.getRange(i + 2, BOARD_COL.guideDraftAt).setValue(sentAt[id]);
+    boardSetTodoFormula_(cases, i + 2);
+    filled++;
+  });
+
+  if (filled > 0) boardLog_('整理', '案内メール作成日を ' + filled + ' 件補完しました');
+  return filled;
 }
 
 /**
