@@ -7,11 +7,16 @@
  * 自動送信は実装しない。
  */
 
-const MAIL_LABEL_DONE = 'ササゲパス/返信案作成済';
 const MAIL_PROP_API_KEY = 'ANTHROPIC_API_KEY';
 const MAIL_MODEL = 'claude-sonnet-5';
 const MAIL_LOOKBACK_DAYS = 30;
 const MAIL_MAX_THREADS_PER_RUN = 5;
+/** 1回の実行で記録するメールの上限。1スレッドに複数通あるため、スレッド数とは別に持つ。 */
+const MAIL_MAX_MESSAGES_PER_RUN = 10;
+/** これより古いメールは、記録はするが通知はしない（過去分のまとめ取り込みで通知が溢れないように）。 */
+const MAIL_NOTIFY_WITHIN_HOURS = 24;
+/** 「過去のやりとり」でさかのぼる期間。 */
+const MAIL_HISTORY_DAYS = 180;
 const MAIL_MAX_BODY_CHARS = 4000;
 const MAIL_TRIGGER_MINUTES = 10;
 const MAIL_EXAMPLE_COUNT = 3;
@@ -116,7 +121,7 @@ function mailShowStatus() {
       });
   }
 
-  const switchOn = String(settings['返信案の自動チェック'] || 'オン').trim() !== 'オフ';
+  const switchOn = String(settings['新着メールの読み取り'] || 'オン').trim() !== 'オフ';
   const lines = [
     '■ 自動確認（フォーム回答の取り込みとメールの確認）',
     '　定期実行　：' + (triggers.length > 0 ? MAIL_TRIGGER_MINUTES + '分ごと（動作中）' : 'なし（停止中）'),
@@ -185,7 +190,7 @@ function mailScanFromTrigger() {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const settings = boardGetSettings_(ss);
-  if (String(settings['返信案の自動チェック'] || 'オン').trim() === 'オフ') return;
+  if (String(settings['新着メールの読み取り'] || 'オン').trim() === 'オフ') return;
 
   try {
     boardImportResponses_(ss);
@@ -226,56 +231,72 @@ function mailScan_(options) {
   const customers = mailLoadCustomers_(ss);
   if (customers.length === 0) return { found: 0, note: '顧客タブに登録がありません。' };
 
-  const label = mailGetLabel_();
+  // 記録済みのメールは「メール履歴」のメッセージIDで見分ける。
+  // スレッド単位のラベルでは、同じスレッドに届いた2通目以降を取りこぼしていた
+  mailBackfillMessageIds_(ss);
+  const recorded = mailRecordedMessageIds_(ss);
   const settings = boardGetSettings_(ss);
+  const fresh = new Date().getTime() - MAIL_NOTIFY_WITHIN_HOURS * 3600 * 1000;
   let found = 0;
 
-  for (let i = 0; i < customers.length && found < MAIL_MAX_THREADS_PER_RUN; i++) {
+  for (let i = 0; i < customers.length && found < MAIL_MAX_MESSAGES_PER_RUN; i++) {
     const customer = customers[i];
-    const query = 'from:' + customer.email +
-      ' newer_than:' + MAIL_LOOKBACK_DAYS + 'd' +
-      ' -label:' + MAIL_LABEL_DONE.replace(/\//g, '-');
     let threads;
     try {
-      threads = GmailApp.search(query, 0, MAIL_MAX_THREADS_PER_RUN);
+      threads = GmailApp.search(
+        'from:' + customer.email + ' newer_than:' + MAIL_LOOKBACK_DAYS + 'd',
+        0, MAIL_MAX_THREADS_PER_RUN
+      );
     } catch (err) {
       boardLog_('②エラー', 'Gmail検索に失敗: ' + err.message);
       continue;
     }
 
-    for (let t = 0; t < threads.length && found < MAIL_MAX_THREADS_PER_RUN; t++) {
-      const thread = threads[t];
-      if (mailHasLabel_(thread, label)) continue;
+    // 同じお客様の中では、届いた順に記録する
+    const incoming = [];
+    threads.forEach(function (thread) {
+      thread.getMessages().forEach(function (message) {
+        if (String(message.getFrom() || '').indexOf(customer.email) < 0) return;
+        if (recorded[message.getId()]) return;
+        incoming.push({ thread: thread, message: message });
+      });
+    });
+    incoming.sort(function (a, b) { return a.message.getDate() - b.message.getDate(); });
 
-      const messages = thread.getMessages();
-      const last = messages[messages.length - 1];
-      if (last.getFrom().indexOf(customer.email) < 0) continue;
+    for (let m = 0; m < incoming.length && found < MAIL_MAX_MESSAGES_PER_RUN; m++) {
+      const thread = incoming[m].thread;
+      const message = incoming[m].message;
 
       // 見積もり回答への返信であれば、請求先・返送先を顧客タブへ取り込む
       try {
-        const body = last.getPlainBody();
-        boardApplyCustomerIntake_(ss, customer.email, boardExtractCustomerIntake_(body));
-        boardApplyCaseIntake_(ss, customer.customerId, boardExtractCaseIntake_(body));
+        const raw = message.getPlainBody();
+        boardApplyCustomerIntake_(ss, customer.email, boardExtractCustomerIntake_(raw));
+        boardApplyCaseIntake_(ss, customer.customerId, boardExtractCaseIntake_(raw));
         boardAdvanceOnReply_(ss, customer.customerId);
       } catch (err) {
         boardLog_('②エラー', '顧客情報の取込に失敗: ' + err.message);
       }
 
       try {
-        const body = mailPlainBody_(last).slice(0, MAIL_MAX_BODY_CHARS);
+        const body = mailPlainBody_(message).slice(0, MAIL_MAX_BODY_CHARS);
 
         // 返信案はここでは作らない。「対応を選ぶ」で対応種別を選んでから作る
         mailAppendHistory_(ss, {
           customerId: customer.customerId,
           from: customer.email,
-          subject: thread.getFirstMessageSubject(),
+          subject: message.getSubject() || thread.getFirstMessageSubject(),
           summary: body,
           status: MAIL_STATUS_PENDING,
-          threadId: thread.getId()
+          threadId: thread.getId(),
+          messageId: message.getId()
         });
+        recorded[message.getId()] = true;
 
-        thread.addLabel(label);
-        if (notify) mailNotify_(ss, settings, customer, thread, body);
+        // 取りこぼしていた過去のメールをまとめて記録する場合があるため、
+        // 通知するのは届いたばかりのものだけにする
+        if (notify && message.getDate().getTime() >= fresh) {
+          mailNotify_(ss, settings, customer, message, body);
+        }
         found++;
       } catch (err) {
         boardLog_('②エラー', customer.email + ': ' + err.message);
@@ -287,8 +308,64 @@ function mailScan_(options) {
   return { found: found, note: '' };
 }
 
+/**
+ * メッセージIDを持たない過去の行に、当時記録したであろうメールのIDを埋める。
+ *
+ * 以前はスレッド単位で記録していたため、どのメールを記録したかが残っていない。
+ * 記録日時より前に届いた、そのお客様からの最後のメールを当時のものとみなす。
+ * これをしないと、過去に確認済みのメールがすべて新着として出てきてしまう。
+ */
+function mailBackfillMessageIds_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!sheet || sheet.getLastRow() < 2) return;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
+  let filled = 0;
+
+  rows.forEach(function (row, i) {
+    if (String(row[BOARD_MAIL_COL.messageId - 1] || '').trim()) return;
+    const threadId = String(row[BOARD_MAIL_COL.threadId - 1] || '').trim();
+    if (!threadId) return;
+
+    const from = String(row[BOARD_MAIL_COL.from - 1] || '').trim();
+    const recordedAt = row[BOARD_MAIL_COL.date - 1];
+    if (!from || !(recordedAt instanceof Date)) return;
+
+    try {
+      const thread = GmailApp.getThreadById(threadId);
+      if (!thread) return;
+      let hit = null;
+      thread.getMessages().forEach(function (message) {
+        if (String(message.getFrom() || '').indexOf(from) < 0) return;
+        if (message.getDate() > recordedAt) return;
+        if (!hit || message.getDate() > hit.getDate()) hit = message;
+      });
+      if (!hit) return;
+      sheet.getRange(i + 2, BOARD_MAIL_COL.messageId).setValue(hit.getId());
+      filled++;
+    } catch (err) {
+      boardLog_('②エラー', 'メッセージIDの補完に失敗: ' + err.message);
+    }
+  });
+
+  if (filled > 0) boardLog_('移行', filled + ' 件のメール履歴にメッセージIDを補いました');
+}
+
+/** すでに記録したメールのメッセージID。 */
+function mailRecordedMessageIds_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  const ids = {};
+  if (!sheet || sheet.getLastRow() < 2) return ids;
+  sheet.getRange(2, BOARD_MAIL_COL.messageId, sheet.getLastRow() - 1, 1).getValues()
+    .forEach(function (row) {
+      const id = String(row[0] || '').trim();
+      if (id) ids[id] = true;
+    });
+  return ids;
+}
+
 /** 新着を知らせる。返信案は載せず、届いたメールの中身だけを伝える。 */
-function mailNotify_(ss, settings, customer, thread, received) {
+function mailNotify_(ss, settings, customer, message, received) {
   const to = String(settings['通知先メールアドレス'] || '').trim();
   if (!to) return;
   const who = customer.company || customer.name || customer.email;
@@ -296,7 +373,8 @@ function mailNotify_(ss, settings, customer, thread, received) {
     who + ' 様からメールが届きました。',
     '',
     '差出人: ' + customer.email,
-    '件名　: ' + thread.getFirstMessageSubject(),
+    '件名　: ' + message.getSubject(),
+    '受信　: ' + Utilities.formatDate(message.getDate(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm'),
     '',
     '───────── 届いたメール ─────────',
     received,
@@ -400,36 +478,45 @@ function mailOwnAddresses_(ss) {
 }
 
 /** 確認画面に表示する、お客様から届いたメールの全文。 */
+/**
+ * 確認画面に出す「お客様のメール」。
+ *
+ * その行のスレッドの中ではなく、**そのお客様から届いた最新のメール**を探す。
+ * フォーム回答から作られた行のように、行そのものがメールでない場合もあるため。
+ */
 function mailGetCustomerMessage(row) {
   boardUseCurrentColumns_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
   const values = sheet.getRange(Number(row), 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
-  const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
   const fallback = String(values[BOARD_MAIL_COL.summary - 1] || '(本文を取得できませんでした)');
-  if (!threadId) return { text: fallback };
+  const from = String(values[BOARD_MAIL_COL.from - 1] || '').trim();
+  if (!from) return { text: fallback };
 
   try {
-    const thread = GmailApp.getThreadById(threadId);
-    if (!thread) return { text: fallback };
-    const from = String(values[BOARD_MAIL_COL.from - 1] || '').toLowerCase();
-    const messages = thread.getMessages();
+    const latest = mailLatestFrom_(from);
+    if (!latest) return { text: fallback };
 
-    let target = messages[messages.length - 1];
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (String(messages[i].getFrom() || '').toLowerCase().indexOf(from) >= 0) {
-        target = messages[i];
-        break;
-      }
-    }
-
-    const body = target.getPlainBody().replace(/\n{3,}/g, '\n\n').trim();
-    const header = Utilities.formatDate(target.getDate(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm') +
-      '　' + target.getFrom() + '\n' + '件名: ' + target.getSubject() + '\n' +
+    const body = latest.getPlainBody().replace(/\n{3,}/g, '\n\n').trim();
+    const header = Utilities.formatDate(latest.getDate(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm') +
+      '　' + latest.getFrom() + '\n' + '件名: ' + latest.getSubject() + '\n' +
       '────────────────────\n';
     return { text: header + body };
   } catch (err) {
     return { text: fallback };
   }
+}
+
+/** そのアドレスから届いた最新のメール。 */
+function mailLatestFrom_(email) {
+  const threads = GmailApp.search('from:' + email + ' newer_than:' + MAIL_HISTORY_DAYS + 'd', 0, 20);
+  let latest = null;
+  threads.forEach(function (thread) {
+    thread.getMessages().forEach(function (message) {
+      if (String(message.getFrom() || '').indexOf(email) < 0) return;
+      if (!latest || message.getDate() > latest.getDate()) latest = message;
+    });
+  });
+  return latest;
 }
 
 /**
@@ -456,30 +543,52 @@ function mailActiveCustomers_(ss) {
   return active;
 }
 
-/** 同じお客様の過去のお問い合わせ。新しい順に返す（表示中のものは除く）。 */
+/**
+ * そのお客様との過去のやりとり。送受信をまとめて、古い順に返す。
+ *
+ * シートの記録ではなく Gmail から直接組み立てる。
+ * こちらから送ったメールもシートには残らないため、Gmail が唯一の全体像になる。
+ */
 function mailGetHistory(row) {
   boardUseCurrentColumns_();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
   if (!sheet || sheet.getLastRow() < 2) return [];
 
-  const r = Number(row);
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
-  const customerId = String(rows[r - 2][BOARD_MAIL_COL.customerId - 1] || '').trim();
-  if (!customerId) return [];
+  const values = sheet.getRange(Number(row), 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
+  const email = String(values[BOARD_MAIL_COL.from - 1] || '').trim();
+  if (!email) return [];
 
-  const out = [];
-  for (let i = rows.length - 1; i >= 0; i--) {
-    if (i + 2 === r) continue;
-    if (String(rows[i][BOARD_MAIL_COL.customerId - 1] || '').trim() !== customerId) continue;
-    out.push({
-      date: boardFormatDate_(rows[i][BOARD_MAIL_COL.date - 1]),
-      subject: rows[i][BOARD_MAIL_COL.subject - 1],
-      responseType: rows[i][BOARD_MAIL_COL.responseType - 1],
-      status: rows[i][BOARD_MAIL_COL.status - 1],
-      text: rows[i][BOARD_MAIL_COL.summary - 1]
-    });
+  let threads;
+  try {
+    threads = GmailApp.search(
+      '(from:' + email + ' OR to:' + email + ') newer_than:' + MAIL_HISTORY_DAYS + 'd',
+      0, 30
+    );
+  } catch (err) {
+    boardLog_('②エラー', 'やりとりの取得に失敗: ' + err.message);
+    return [];
   }
+
+  const seen = {};
+  const out = [];
+  threads.forEach(function (thread) {
+    thread.getMessages().forEach(function (message) {
+      const id = message.getId();
+      if (seen[id]) return;
+      seen[id] = true;
+      const incoming = String(message.getFrom() || '').indexOf(email) >= 0;
+      out.push({
+        at: message.getDate().getTime(),
+        date: Utilities.formatDate(message.getDate(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm'),
+        direction: incoming ? '受信' : '送信',
+        incoming: incoming,
+        subject: message.getSubject(),
+        text: mailPlainBody_(message).slice(0, MAIL_MAX_BODY_CHARS)
+      });
+    });
+  });
+
+  out.sort(function (a, b) { return a.at - b.at; });
   return out;
 }
 
@@ -1079,17 +1188,9 @@ function mailAppendHistory_(ss, data) {
   if (!sheet) return;
   sheet.appendRow([
     new Date(), data.customerId, data.from, data.subject, data.summary,
-    data.aiFirst || '', '', data.finalText || '', data.status, data.threadId, ''
+    data.aiFirst || '', '', data.finalText || '', data.status, data.threadId, '',
+    data.responseType || '', '', data.messageId || ''
   ]);
-}
-
-function mailGetLabel_() {
-  return GmailApp.getUserLabelByName(MAIL_LABEL_DONE) || GmailApp.createLabel(MAIL_LABEL_DONE);
-}
-
-function mailHasLabel_(thread, label) {
-  const name = label.getName();
-  return thread.getLabels().some(function (l) { return l.getName() === name; });
 }
 
 // ------------------------------------------------------------

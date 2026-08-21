@@ -115,12 +115,14 @@ const BOARD_CASE_INTAKE = [
 
 const BOARD_MAIL_HEADERS = [
   '日時', '顧客ID', '差出人', '件名', '要約',
-  'AI初回案', '修正指示ログ', '最終文面', '状態', 'GmailスレッドID', '下書き保存日時', '対応種別', '下書きID'
+  'AI初回案', '修正指示ログ', '最終文面', '状態', 'GmailスレッドID', '下書き保存日時', '対応種別', '下書きID',
+  'GmailメッセージID'
 ];
 
 const BOARD_MAIL_COL = {
   date: 1, customerId: 2, from: 3, subject: 4, summary: 5,
-  aiFirst: 6, instructions: 7, finalText: 8, status: 9, threadId: 10, savedAt: 11, responseType: 12, draftId: 13
+  aiFirst: 6, instructions: 7, finalText: 8, status: 9, threadId: 10, savedAt: 11, responseType: 12, draftId: 13,
+  messageId: 14
 };
 
 /**
@@ -643,7 +645,7 @@ const BOARD_DEFAULT_SETTINGS = [
   ['品名', '衣類', ''],
   ['署名待ちリマインド日数', 5, '支払い情報の登録・契約書署名が確認できないまま経過した日数'],
   ['発送待ちリマインド日数', 7, '追跡番号の連絡がないまま経過した日数'],
-  ['返信案の自動チェック', 'オン', 'オフにすると定期チェックで返信案を作らない'],
+  ['新着メールの読み取り', 'オン', 'オフにすると定期チェックで新着メールを読み取らない'],
   ['手続き完了の自動送信', 'オン', '支払いと署名の確認後、テンプレT4をお客様へ自動送信する。オフで停止'],
   ['請求書送信の手順', boardDefaultInvoiceSteps_(), 'Square手続き画面に表示される手順。実際の操作に合わせて自由に書き換えてください']
 ];
@@ -668,6 +670,11 @@ function boardMigrateSettings_(sheet) {
     if (key === '契約書作成の手順') {
       sheet.deleteRow(i + 2);
       boardLog_('移行', '設定「契約書作成の手順」を削除しました');
+    } else if (key === '返信案の自動チェック') {
+      // 検知の時点では返信案を作らなくなったため、実態に合う名前に変える。オン/オフの値はそのまま
+      sheet.getRange(i + 2, 1).setValue('新着メールの読み取り');
+      sheet.getRange(i + 2, 3).setValue('オフにすると定期チェックで新着メールを読み取らない');
+      boardLog_('移行', '設定「返信案の自動チェック」を「新着メールの読み取り」に変更しました');
     } else if (key === '請求書送信の手順' && value.indexOf('既存の契約書') >= 0) {
       sheet.getRange(i + 2, 2).setValue(boardDefaultInvoiceSteps_());
       boardLog_('移行', '設定「請求書送信の手順」を更新しました');
@@ -2355,9 +2362,29 @@ function boardUseCurrentColumns_() {
   if (BOARD_COLUMNS_SYNCED) return;
   BOARD_COLUMNS_SYNCED = true;
   try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_CASES);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
     if (sheet) boardSyncColumns_(sheet);
+    boardEnsureMailColumns_(ss);
   } catch (err) {
     boardLog_('移行', '列の並びを読めませんでした: ' + err.message);
   }
+}
+
+/**
+ * メール履歴タブに足りない列を補う。
+ * 初期セットアップを待たずにトリガーが動いても落ちないようにする。
+ */
+function boardEnsureMailColumns_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!sheet) return;
+  const need = BOARD_MAIL_HEADERS.length;
+  const short = need - sheet.getMaxColumns();
+  if (short > 0) sheet.insertColumnsAfter(sheet.getMaxColumns(), short);
+
+  const headers = sheet.getRange(1, 1, 1, need).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+  if (headers.join('\t') === BOARD_MAIL_HEADERS.join('\t')) return;
+  sheet.getRange(1, 1, 1, need).setValues([BOARD_MAIL_HEADERS]);
+  boardLog_('移行', 'メール履歴の見出しを更新しました');
 }
