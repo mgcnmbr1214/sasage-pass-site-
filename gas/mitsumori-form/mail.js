@@ -544,7 +544,7 @@ function mailActiveCustomers_(ss) {
 }
 
 /**
- * そのお客様との過去のやりとり。送受信をまとめて、古い順に返す。
+ * そのお客様との過去のやりとり。送受信をまとめて、新しい順に返す。
  *
  * シートの記録ではなく Gmail から直接組み立てる。
  * こちらから送ったメールもシートには残らないため、Gmail が唯一の全体像になる。
@@ -588,7 +588,7 @@ function mailGetHistory(row) {
     });
   });
 
-  out.sort(function (a, b) { return a.at - b.at; });
+  out.sort(function (a, b) { return b.at - a.at; });
   return out;
 }
 
