@@ -250,13 +250,13 @@ function onOpen() {
 // ------------------------------------------------------------
 
 function boardSetup() {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   boardMigrateCases_(ss);
   boardMigrateCustomers_(ss);
 
-  boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS,
-    [90, 210, 80, 150, 70, 110, 95, 95, 95, 220]);
+  boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS);
   boardSetupSheet_(ss, BOARD_SHEET_CUSTOMERS, BOARD_CUSTOMER_HEADERS, [80, 170, 120, 220, 130]);
   boardSetupSheet_(ss, BOARD_SHEET_MAILS, BOARD_MAIL_HEADERS, [140, 80, 200, 240, 240, 300, 260, 300, 110, 200, 140]);
   boardSetupSheet_(ss, BOARD_SHEET_EXAMPLES, BOARD_EXAMPLE_HEADERS, [140, 150, 240, 300, 260, 300, 320]);
@@ -483,20 +483,49 @@ function boardSetupSheet_(ss, name, headers, widths) {
   let sheet = ss.getSheetByName(name);
   if (!sheet) sheet = ss.insertSheet(name);
 
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+  const current = sheet.getLastColumn() > 0
+    ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+      .map(function (h) { return String(h || '').trim(); })
+    : [];
+  const sameOrder = current.slice(0, headers.length).join('\t') === headers.join('\t');
+  // 見出しが揃っていれば並び順は尊重する。手で並べ替えたものを戻さないため
+  const sameSet = headers.every(function (h) { return current.indexOf(h) >= 0; });
+
+  if (!sameSet) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+  sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), headers.length))
     .setFontWeight('bold')
     .setBackground('#F1EFE8')
     .setVerticalAlignment('middle');
   sheet.setFrozenRows(1);
 
-  if (widths) {
+  // 幅は位置で決まるため、既定の並びのときだけ適用する
+  if (widths && (sameOrder || !sameSet)) {
     for (let i = 0; i < widths.length; i++) sheet.setColumnWidth(i + 1, widths[i]);
   }
   return sheet;
 }
 
+/** 長文が入る列。折り返さず1行に収めて、一覧を見やすく保つ。 */
+const BOARD_CLIPPED_COLS = ['detail', 'formInquiry', 'lastInbound', 'lastOutbound', 'teamNote', 'memo'];
+const BOARD_ROW_HEIGHT = 30;
+
+/** 列の幅。並べ替えても効くよう、位置ではなく列の意味で指定する。 */
+const BOARD_CASE_WIDTHS = {
+  caseId: 80, status: 190, owner: 70, customer: 150, qty: 70, firstQty: 100, firstDate: 95,
+  startDate: 95, dueFrom: 95, dueTo: 95, todo: 230,
+  customerId: 70, detail: 160, formInquiry: 160, lastInbound: 200, lastOutbound: 200, unitPrice: 70,
+  invoiceSent: 95, invoiceId: 110, signedAt: 95,
+  tracking: 130, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
+};
+
 function boardApplyCaseFormatting_(sheet) {
-  sheet.setFrozenColumns(3);
+  if (sheet.getFrozenColumns() === 0) sheet.setFrozenColumns(4);
+
+  Object.keys(BOARD_CASE_WIDTHS).forEach(function (key) {
+    sheet.setColumnWidth(BOARD_COL[key], BOARD_CASE_WIDTHS[key]);
+  });
 
   const maxRows = Math.max(sheet.getMaxRows() - 1, 1);
   // 入力規則はステータス列だけに付ける。列の挿入で他の列へ広がることがあるため一度全部外す
@@ -542,8 +571,29 @@ function boardApplyCaseFormatting_(sheet) {
   });
 
   // 問い合わせ内容は折り返して読めるようにする
-  sheet.getRange(2, BOARD_COL.formInquiry, maxRows, 3).setWrap(true).setVerticalAlignment('top');
-  sheet.getRange(2, BOARD_COL.teamNote, maxRows, 1).setWrap(true).setVerticalAlignment('top');
+  // 長文の列は折り返さない。折り返すと1行が数十行分の高さになり一覧にならない
+  BOARD_CLIPPED_COLS.forEach(function (key) {
+    sheet.getRange(2, BOARD_COL[key], maxRows, 1)
+      .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP)
+      .setVerticalAlignment('middle');
+  });
+
+  const rows = Math.max(sheet.getLastRow() - 1, 1);
+  sheet.setRowHeights(2, rows, BOARD_ROW_HEIGHT);
+
+  boardApplyCaseFilter_(sheet);
+}
+
+/** 見出し行に絞り込みを付ける。ステータス順や担当順に並べ替えて見られるようにする。 */
+function boardApplyCaseFilter_(sheet) {
+  if (sheet.getLastRow() < 2) return;
+  try {
+    const existing = sheet.getFilter();
+    if (existing) existing.remove();
+    sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).createFilter();
+  } catch (err) {
+    boardLog_('表示', '絞り込みを付けられませんでした: ' + err.message);
+  }
 }
 
 function boardHideSourceSheets_(ss) {
@@ -1015,11 +1065,13 @@ function boardDefaultDoneBody_() {
 // ------------------------------------------------------------
 
 function boardImportResponses() {
+  boardUseCurrentColumns_();
   const count = boardImportResponses_(SpreadsheetApp.getActiveSpreadsheet());
   SpreadsheetApp.getUi().alert(count > 0 ? count + ' 件の新しい回答を取り込みました。' : '新しい回答はありませんでした。');
 }
 
 function boardRebuild() {
+  boardUseCurrentColumns_();
   const ui = SpreadsheetApp.getUi();
   const answer = ui.alert('顧客・案件を作り直す',
     '「案件ボード」と「顧客」の内容をすべて削除し、フォーム回答から作り直します。\n' +
@@ -1214,20 +1266,49 @@ function boardEnsureLayout_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   if (!sheet) return false;
 
-  const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0]
-    .map(function (h) { return String(h || '').trim(); });
-  if (headers.join('\t') === BOARD_CASE_HEADERS.join('\t')) return true;
+  // 必要な見出しがすべて揃っていれば、並び順は自由でよい
+  if (boardSyncColumns_(sheet)) return true;
 
   boardLog_('移行', '案件ボードの列構成が古いため移行します');
   boardMigrateCases_(ss);
   boardMigrateCustomers_(ss);
-  sheet.getRange(1, 1, 1, BOARD_CASE_HEADERS.length).setValues([BOARD_CASE_HEADERS]);
+  if (boardSyncColumns_(sheet)) return true;
 
-  const after = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0]
-    .map(function (h) { return String(h || '').trim(); });
-  const ok = after.join('\t') === BOARD_CASE_HEADERS.join('\t');
+  sheet.getRange(1, 1, 1, BOARD_CASE_HEADERS.length).setValues([BOARD_CASE_HEADERS]);
+  const ok = boardSyncColumns_(sheet);
   if (!ok) boardLog_('移行', '列構成を合わせられませんでした。初期セットアップを実行してください');
   return ok;
+}
+
+/** 既定の並び順から「見出し名 → 設定キー」の対応を作る。 */
+const BOARD_COL_KEY_BY_HEADER = (function () {
+  const map = {};
+  Object.keys(BOARD_COL).forEach(function (key) {
+    map[BOARD_CASE_HEADERS[BOARD_COL[key] - 1]] = key;
+  });
+  return map;
+})();
+
+/**
+ * シートの見出しを読み、列番号の対応を実際の並びに合わせる。
+ *
+ * これにより、案件ボードの列を手で並べ替えても動く。
+ * 見出しが1つでも欠けていれば false を返し、移行処理に任せる。
+ */
+function boardSyncColumns_(sheet) {
+  if (!sheet || sheet.getLastColumn() < 1) return false;
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+
+  const found = {};
+  BOARD_CASE_HEADERS.forEach(function (name) {
+    const index = headers.indexOf(name);
+    if (index >= 0) found[BOARD_COL_KEY_BY_HEADER[name]] = index + 1;
+  });
+
+  if (Object.keys(found).length !== BOARD_CASE_HEADERS.length) return false;
+  Object.keys(found).forEach(function (key) { BOARD_COL[key] = found[key]; });
+  return true;
 }
 
 function boardImportResponses_(ss) {
@@ -1297,6 +1378,7 @@ function boardImportResponses_(ss) {
     cases.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).setValues([values]);
     boardSetTodoFormula_(cases, caseRow);
     boardSetOwnerFormula_(cases, caseRow);
+    cases.setRowHeight(caseRow, BOARD_ROW_HEIGHT);
 
     // フォームに回答があった時点で「対応を選ぶ」の一覧にも載せる。
     // お客様からメールが届くまで待っていると、初回の返信が漏れるため。
@@ -1991,6 +2073,7 @@ function boardIsEmail_(value) {
 // ------------------------------------------------------------
 
 function boardOpenPanel() {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet();
   if (sheet.getName() !== BOARD_SHEET_CASES) {
@@ -2009,6 +2092,7 @@ function boardOpenPanel() {
 }
 
 function boardGetActiveCase() {
+  boardUseCurrentColumns_();
   const row = Number(PropertiesService.getUserProperties().getProperty('BOARD_ACTIVE_ROW') || 0);
   if (!row) throw new Error('案件が選択されていません。');
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -2034,6 +2118,7 @@ function boardGetActiveCase() {
 }
 
 function boardSaveCase(data) {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const row = Number(data.row);
@@ -2112,6 +2197,7 @@ function boardFindLatestCaseRow_(ss, customerId) {
 }
 
 function boardCreateGuideDraft(data) {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const row = Number(data.row);
@@ -2246,4 +2332,20 @@ function boardLog_(kind, message) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_LOGS);
   if (!sheet) return;
   sheet.appendRow([new Date(), kind, message]);
+}
+
+/**
+ * 案件ボードの列は手で並べ替えてよい。
+ * 実行のたび一度だけ見出しを読み、BOARD_COL を実際の並びに合わせる。
+ */
+let BOARD_COLUMNS_SYNCED = false;
+function boardUseCurrentColumns_() {
+  if (BOARD_COLUMNS_SYNCED) return;
+  BOARD_COLUMNS_SYNCED = true;
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_CASES);
+    if (sheet) boardSyncColumns_(sheet);
+  } catch (err) {
+    boardLog_('移行', '列の並びを読めませんでした: ' + err.message);
+  }
 }

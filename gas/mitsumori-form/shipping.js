@@ -14,6 +14,7 @@ const SHIP_MAX_IMAGE_BYTES = 3500000;
 const SHIP_YAMATO_URL = 'https://toi.kuronekoyamato.co.jp/cgi-bin/tneko?number=';
 
 function shipCheckAll() {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const apiKey = mailGetApiKey_();
   if (!apiKey) return 0;

@@ -96,6 +96,7 @@ function squareGetToken_() {
  * 個人情報を伏せた設定内容を表示する。
  */
 function squareInspectTemplate() {
+  boardUseCurrentColumns_();
   const ui = SpreadsheetApp.getUi();
   if (!squareGetToken_()) {
     ui.alert('先に「Squareトークンを登録する」を実行してください。');
@@ -224,6 +225,7 @@ function squareDescribeOrder_(order) {
 
 /** 手続き画面を開く。案件ボードで行を選んでから実行する。 */
 function squareOpenFlow() {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet();
   if (sheet.getName() !== BOARD_SHEET_CASES) {
@@ -242,6 +244,7 @@ function squareOpenFlow() {
 
 /** 手続き画面に出す現在の状態。4段階のどこまで進んでいるかを返す。 */
 function squareGetFlowState() {
+  boardUseCurrentColumns_();
   const row = Number(PropertiesService.getUserProperties().getProperty('BOARD_ACTIVE_ROW') || 0);
   if (!row) throw new Error('案件が選択されていません。');
 
@@ -281,6 +284,7 @@ const SQUARE_SIGN_LOOKBACK_DAYS = 90;
  * 両方そろった案件だけ、署名・支払確認日を記録して連絡を促す。
  */
 function squareCheckCompletions() {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   if (!sheet || sheet.getLastRow() < 2) return 0;
@@ -545,6 +549,7 @@ function squareNotifyCompletion_(settings, caseId, customer, sheetUrl, sentMail)
 
 /** 手順2: 実際に送信されたかを Square 側の状態で確認し、記録する。 */
 function squareConfirmSent(caseRow) {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const row = Number(caseRow);
@@ -569,6 +574,7 @@ function squareConfirmSent(caseRow) {
  * この時点ではお客様には届かない。契約書を添付したうえで Square 画面から送信する。
  */
 function squareCreateDraftForCase(caseRow) {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const row = Number(caseRow);
@@ -644,6 +650,7 @@ function squareCreateDraftForCase(caseRow) {
 
 /** 下書きの請求書を送信する。ここで初めてお客様にメールが届く。 */
 function squarePublishForCase(caseRow) {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const row = Number(caseRow);
@@ -678,6 +685,7 @@ function squarePublishForCase(caseRow) {
 }
 
 function squareGetInvoiceStatusForCase(caseRow) {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const invoiceId = squareVerifyInvoiceId_(ss, Number(caseRow));
   if (!invoiceId) return { invoiceId: '', status: '', url: '' };

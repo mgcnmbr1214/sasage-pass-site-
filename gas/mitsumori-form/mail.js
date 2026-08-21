@@ -29,6 +29,7 @@ const MAIL_OPEN_STATUSES = [MAIL_STATUS_PENDING, MAIL_STATUS_EDITING, MAIL_STATU
 // ------------------------------------------------------------
 
 function mailOpenReviewPanel() {
+  boardUseCurrentColumns_();
   const html = HtmlService.createTemplateFromFile('Reply').evaluate()
     .setWidth(920)
     .setHeight(700);
@@ -40,6 +41,7 @@ function mailOpenReviewPanel() {
  * 画面の前にいる操作なので、通知メールは送らずダイアログで結果を返す。
  */
 function mailCheckNow() {
+  boardUseCurrentColumns_();
   const ui = SpreadsheetApp.getUi();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -96,6 +98,7 @@ function mailCheckNow() {
 
 /** 新着確認まわりが今どう動いているかを一覧で表示する。 */
 function mailShowStatus() {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const settings = boardGetSettings_(ss);
   const triggers = ScriptApp.getProjectTriggers().filter(function (t) {
@@ -178,6 +181,7 @@ function mailStopAutoCheck_() {
 }
 
 function mailScanFromTrigger() {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const settings = boardGetSettings_(ss);
   if (String(settings['返信案の自動チェック'] || 'オン').trim() === 'オフ') return;
@@ -329,6 +333,7 @@ function mailNotify_(ss, settings, customer, thread, reply) {
 // ------------------------------------------------------------
 
 function mailGetPendingList() {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   mailRefreshSentStatus_(ss);
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
@@ -408,6 +413,7 @@ function mailOwnAddresses_(ss) {
 
 /** 確認画面に表示する、お客様から届いたメールの全文。 */
 function mailGetCustomerMessage(row) {
+  boardUseCurrentColumns_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
   const values = sheet.getRange(Number(row), 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
   const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
@@ -460,6 +466,7 @@ function mailActiveCustomers_(ss) {
 
 /** 同じお客様の過去のお問い合わせ。新しい順に返す（表示中のものは除く）。 */
 function mailGetHistory(row) {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   if (!sheet || sheet.getLastRow() < 2) return [];
@@ -501,6 +508,7 @@ function mailGetResponseTypes() {
 
 /** この返信に紐づく案件の、入力欄とSquare請求書の状態。 */
 function mailGetCaseContext(row) {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   const values = sheet.getRange(Number(row), 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
@@ -541,6 +549,7 @@ function mailGetCaseContext(row) {
 
 /** 対応種別に応じた入力欄の値を案件へ保存する。 */
 function mailSaveCaseFields(caseRow, data) {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const row = Number(caseRow);
@@ -564,6 +573,7 @@ function mailSaveCaseFields(caseRow, data) {
 
 /** 対応種別を記録するだけ。文面は「この対応で返信案を作る」で生成する。 */
 function mailApplyResponseType(row, typeId) {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const type = boardFindResponseType_(typeId);
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
@@ -576,6 +586,7 @@ function mailApplyResponseType(row, typeId) {
  * テンプレートが無い「通常の返信」では、方針と実例だけを頼りに書く。
  */
 function mailComposeWithType(row, typeId, fields) {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const apiKey = mailGetApiKey_();
   if (!apiKey) throw new Error('Anthropic APIキーが未設定です。');
@@ -666,6 +677,7 @@ function mailContextText_(values) {
 
 /** 画面で編集した本文をシートに保存する（下書きにはしない）。 */
 function mailSaveText(row, text) {
+  boardUseCurrentColumns_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
   sheet.getRange(Number(row), BOARD_MAIL_COL.finalText).setValue(text);
   sheet.getRange(Number(row), BOARD_MAIL_COL.status).setValue(MAIL_STATUS_EDITING);
@@ -678,6 +690,7 @@ function mailSaveText(row, text) {
  * これまでの修正指示は引き継いで生成する。
  */
 function mailRegenerate(row) {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const apiKey = mailGetApiKey_();
   if (!apiKey) throw new Error('Anthropic APIキーが未設定です。');
@@ -718,6 +731,7 @@ function mailRegenerate(row) {
 
 /** AIに修正を依頼する。指示は履歴として蓄積する。 */
 function mailReviseText(row, text, instruction) {
+  boardUseCurrentColumns_();
   const trimmed = String(instruction || '').trim();
   if (!trimmed) throw new Error('修正の指示を入力してください。');
 
@@ -758,6 +772,7 @@ function mailReviseText(row, text, instruction) {
  * 送信はGmail側で人が行う。実際に送られたかは「最新の送信メール」で分かる。
  */
 function mailApproveToDraft(row, text) {
+  boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   const r = Number(row);
@@ -832,6 +847,7 @@ function mailApproveToDraft(row, text) {
 }
 
 function mailDismiss(row) {
+  boardUseCurrentColumns_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
   sheet.getRange(Number(row), BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SKIP);
   return { message: '対応不要にしました。' };
