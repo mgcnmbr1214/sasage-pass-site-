@@ -753,17 +753,11 @@ function mailReviseText(row, text, instruction) {
   return { text: revised };
 }
 
-/** 承認して Gmail の下書きに保存する。ここで学習用の記録も残す。 */
+/**
+ * 承認して Gmail の下書きに保存する。ここで学習用の記録も残す。
+ * 送信はGmail側で人が行う。実際に送られたかは「最新の送信メール」で分かる。
+ */
 function mailApproveToDraft(row, text) {
-  return mailFinalize_(row, text, false);
-}
-
-/** 下書きにせず、そのままお客様へ送信する。 */
-function mailSendNow(row, text) {
-  return mailFinalize_(row, text, true);
-}
-
-function mailFinalize_(row, text, send) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   const r = Number(row);
@@ -784,8 +778,7 @@ function mailFinalize_(row, text, send) {
   if (threadId) {
     const thread = GmailApp.getThreadById(threadId);
     if (!thread) throw new Error('元のメールスレッドが見つかりません。');
-    if (send) thread.reply(text, options);
-    else draftId = thread.createDraftReply(text, options).getId();
+    draftId = thread.createDraftReply(text, options).getId();
   } else {
     // フォーム回答が起点の場合は返信先のスレッドが無いため、新規メールとして作る
     const customer = boardFindCustomer_(ss, values[BOARD_MAIL_COL.customerId - 1]);
@@ -793,12 +786,11 @@ function mailFinalize_(row, text, send) {
       ? customer.email : String(values[BOARD_MAIL_COL.from - 1] || '').trim();
     if (!boardIsEmail_(to)) throw new Error('送信先のメールアドレスが分かりません。「顧客」タブをご確認ください。');
     const subject = mailSubjectFor_(ss, values);
-    if (send) GmailApp.sendEmail(to, subject, text, options);
-    else draftId = GmailApp.createDraft(to, subject, text, options).getId();
+    draftId = GmailApp.createDraft(to, subject, text, options).getId();
   }
 
   sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(text);
-  sheet.getRange(r, BOARD_MAIL_COL.status).setValue(send ? MAIL_STATUS_SENT : MAIL_STATUS_SAVED);
+  sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SAVED);
   sheet.getRange(r, BOARD_MAIL_COL.savedAt).setValue(new Date());
   sheet.getRange(r, BOARD_MAIL_COL.draftId).setValue(draftId);
 
@@ -831,13 +823,11 @@ function mailFinalize_(row, text, send) {
     }
   }
 
-  boardLog_(send ? '②送信' : '②下書き保存',
-    values[BOARD_MAIL_COL.subject - 1] + (send ? ' を送信しました' : ' の下書きを保存しました'));
+  boardLog_('②下書き保存', values[BOARD_MAIL_COL.subject - 1] + ' の下書きを保存しました');
   return {
-    message: send
-      ? 'お客様へ送信しました。' + (removed ? '\n作成済みだった下書きは削除しました。' : '') + statusNote
-      : 'Gmailの下書きに保存しました。内容を確認して送信してください。\n' +
-        '実際に送信するまでこの一覧には残ります（下書きを消してもやり直せます）。' + statusNote
+    message: 'Gmailの下書きに保存しました。内容を確認して送信してください。\n' +
+      (removed ? '前に作った下書きは削除し、最新の内容に作り直しました。\n' : '') +
+      '実際に送信するまでこの一覧には残ります（下書きを消してもやり直せます）。' + statusNote
   };
 }
 
