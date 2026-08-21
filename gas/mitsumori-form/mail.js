@@ -621,6 +621,25 @@ function mailComposeWithType(row, typeId, fields) {
   return { text: reply, message: '返信案を作成しました。内容をご確認ください。' };
 }
 
+/**
+ * この行で前に作った下書きを削除する。
+ * 二重送信や、古い文面の下書きが残るのを防ぐ。
+ */
+function mailDiscardDraft_(sheet, row, values) {
+  const draftId = String(values[BOARD_MAIL_COL.draftId - 1] || '').trim();
+  if (!draftId) return false;
+  try {
+    const draft = GmailApp.getDraft(draftId);
+    if (draft) draft.deleteDraft();
+  } catch (err) {
+    boardLog_('②下書き', '下書きの削除に失敗（すでに無い可能性）: ' + err.message);
+    sheet.getRange(row, BOARD_MAIL_COL.draftId).setValue('');
+    return false;
+  }
+  sheet.getRange(row, BOARD_MAIL_COL.draftId).setValue('');
+  return true;
+}
+
 /** 新規メールの件名。対応種別のテンプレートに件名があればそれを使う。 */
 function mailSubjectFor_(ss, values) {
   const type = boardFindResponseTypeByName_(values[BOARD_MAIL_COL.responseType - 1]);
@@ -756,12 +775,17 @@ function mailFinalize_(row, text, send) {
   const alias = settings['送信元エイリアス'];
   if (alias && GmailApp.getAliases().indexOf(alias) >= 0) options.from = alias;
 
+  // 前に作った下書きは、送るときも作り直すときも先に片付ける。
+  // 残しておくと、あとから下書きを送ってしまい二重送信になるため。
+  const removed = mailDiscardDraft_(sheet, r, values);
+
+  let draftId = '';
   const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
   if (threadId) {
     const thread = GmailApp.getThreadById(threadId);
     if (!thread) throw new Error('元のメールスレッドが見つかりません。');
     if (send) thread.reply(text, options);
-    else thread.createDraftReply(text, options);
+    else draftId = thread.createDraftReply(text, options).getId();
   } else {
     // フォーム回答が起点の場合は返信先のスレッドが無いため、新規メールとして作る
     const customer = boardFindCustomer_(ss, values[BOARD_MAIL_COL.customerId - 1]);
@@ -770,12 +794,13 @@ function mailFinalize_(row, text, send) {
     if (!boardIsEmail_(to)) throw new Error('送信先のメールアドレスが分かりません。「顧客」タブをご確認ください。');
     const subject = mailSubjectFor_(ss, values);
     if (send) GmailApp.sendEmail(to, subject, text, options);
-    else GmailApp.createDraft(to, subject, text, options);
+    else draftId = GmailApp.createDraft(to, subject, text, options).getId();
   }
 
   sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(text);
   sheet.getRange(r, BOARD_MAIL_COL.status).setValue(send ? MAIL_STATUS_SENT : MAIL_STATUS_SAVED);
   sheet.getRange(r, BOARD_MAIL_COL.savedAt).setValue(new Date());
+  sheet.getRange(r, BOARD_MAIL_COL.draftId).setValue(draftId);
 
   mailRecordExample_(ss, {
     customer: values[BOARD_MAIL_COL.from - 1],
@@ -806,10 +831,13 @@ function mailFinalize_(row, text, send) {
     }
   }
 
-  boardLog_('②下書き保存', values[BOARD_MAIL_COL.subject - 1] + ' の下書きを保存しました');
+  boardLog_(send ? '②送信' : '②下書き保存',
+    values[BOARD_MAIL_COL.subject - 1] + (send ? ' を送信しました' : ' の下書きを保存しました'));
   return {
-    message: 'Gmailの下書きに保存しました。内容を確認して送信してください。\n' +
-      '実際に送信するまでこの一覧には残ります（下書きを消してもやり直せます）。' + statusNote
+    message: send
+      ? 'お客様へ送信しました。' + (removed ? '\n作成済みだった下書きは削除しました。' : '') + statusNote
+      : 'Gmailの下書きに保存しました。内容を確認して送信してください。\n' +
+        '実際に送信するまでこの一覧には残ります（下書きを消してもやり直せます）。' + statusNote
   };
 }
 

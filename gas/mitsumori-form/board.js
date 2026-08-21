@@ -115,12 +115,12 @@ const BOARD_CASE_INTAKE = [
 
 const BOARD_MAIL_HEADERS = [
   '日時', '顧客ID', '差出人', '件名', '要約',
-  'AI初回案', '修正指示ログ', '最終文面', '状態', 'GmailスレッドID', '下書き保存日時', '対応種別'
+  'AI初回案', '修正指示ログ', '最終文面', '状態', 'GmailスレッドID', '下書き保存日時', '対応種別', '下書きID'
 ];
 
 const BOARD_MAIL_COL = {
   date: 1, customerId: 2, from: 3, subject: 4, summary: 5,
-  aiFirst: 6, instructions: 7, finalText: 8, status: 9, threadId: 10, savedAt: 11, responseType: 12
+  aiFirst: 6, instructions: 7, finalText: 8, status: 9, threadId: 10, savedAt: 11, responseType: 12, draftId: 13
 };
 
 /**
