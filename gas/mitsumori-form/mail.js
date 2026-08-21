@@ -1,7 +1,8 @@
 /**
  * ササゲパス 業務ボード ②メール返信支援
  *
- * 顧客からの新着メールを検知し、Claude API で返信案を生成して「メール履歴」に保存する。
+ * 顧客からの新着メールを検知して「メール履歴」に保存し、届いた中身を通知する。
+ * 返信案は検知の時点では作らない。「対応を選ぶ」で対応種別を選んでから Claude API で作る。
  * 確認・修正はスプレッドシート上の画面で行い、承認したものだけを Gmail の下書きにする。
  * 自動送信は実装しない。
  */
@@ -83,12 +84,12 @@ function mailCheckNow() {
   const lines = [
     'フォームの新しい回答　：' + imported + ' 件',
     'お問い合わせ内容の更新：' + refreshed + ' 件',
-    'メールの新しい返信案　：' + result.drafted + ' 件',
+    '新着のお客様メール　　：' + result.found + ' 件',
     '支払い・署名の完了確認：' + completed + ' 件',
     '発送の確認　　　　　　：' + shipped + ' 件'
   ];
 
-  if (result.drafted > 0) {
+  if (result.found > 0) {
     ui.alert(lines.join('\n') + '\n\n続けて「対応を選ぶ」画面を開きます。');
     mailOpenReviewPanel();
     return;
@@ -119,20 +120,20 @@ function mailShowStatus() {
   const lines = [
     '■ 自動確認（フォーム回答の取り込みとメールの確認）',
     '　定期実行　：' + (triggers.length > 0 ? MAIL_TRIGGER_MINUTES + '分ごと（動作中）' : 'なし（停止中）'),
-    '　設定の切替：' + (switchOn ? 'オン' : 'オフ（動作中でも返信案を作りません）'),
+    '　設定の切替：' + (switchOn ? 'オン' : 'オフ（動作中でも新着を確認しません）'),
     '',
-    '■ 通知',
+    '■ 通知（届いたメールの中身を知らせます。返信案は載せません）',
     '　通知先　　：' + (settings['通知先メールアドレス'] || '（未設定。通知は送られません）'),
     '　下書き差出人：' + (settings['送信元エイリアス'] || '（未設定）'),
     '',
     '■ 検知の対象',
     '　顧客タブの登録アドレス：' + customers.length + ' 件',
     '　さかのぼる期間　　　　：' + MAIL_LOOKBACK_DAYS + '日',
-    '　1回に作る返信案の上限　：' + MAIL_MAX_THREADS_PER_RUN + ' 件',
+    '　1回に読み取る上限　　　：' + MAIL_MAX_THREADS_PER_RUN + ' 件',
     '',
     '■ 現在の状況',
     '　APIキー　　　：' + (mailGetApiKey_() ? '登録済み' : '未登録（返信案を作れません）'),
-    '　確認待ちの返信案：' + pending + ' 件',
+    '　対応待ちのメール：' + pending + ' 件',
     '　最後の実行　　：' + (mailLastRunLog_(ss) || '記録なし')
   ];
 
@@ -221,21 +222,15 @@ function mailScanFromTrigger() {
 function mailScan_(options) {
   const notify = !options || options.notify !== false;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const apiKey = mailGetApiKey_();
-  if (!apiKey) {
-    return { drafted: 0, note: 'Anthropic APIキーが未設定です。「メール返信支援の設定」→「APIキーを登録する」から設定してください。' };
-  }
 
   const customers = mailLoadCustomers_(ss);
-  if (customers.length === 0) return { drafted: 0, note: '顧客タブに登録がありません。' };
+  if (customers.length === 0) return { found: 0, note: '顧客タブに登録がありません。' };
 
   const label = mailGetLabel_();
   const settings = boardGetSettings_(ss);
-  const knowledge = mailLoadKnowledge_(ss);
-  const examples = mailLoadExamples_(ss);
-  let drafted = 0;
+  let found = 0;
 
-  for (let i = 0; i < customers.length && drafted < MAIL_MAX_THREADS_PER_RUN; i++) {
+  for (let i = 0; i < customers.length && found < MAIL_MAX_THREADS_PER_RUN; i++) {
     const customer = customers[i];
     const query = 'from:' + customer.email +
       ' newer_than:' + MAIL_LOOKBACK_DAYS + 'd' +
@@ -248,7 +243,7 @@ function mailScan_(options) {
       continue;
     }
 
-    for (let t = 0; t < threads.length && drafted < MAIL_MAX_THREADS_PER_RUN; t++) {
+    for (let t = 0; t < threads.length && found < MAIL_MAX_THREADS_PER_RUN; t++) {
       const thread = threads[t];
       if (mailHasLabel_(thread, label)) continue;
 
@@ -267,62 +262,54 @@ function mailScan_(options) {
       }
 
       try {
-        const reply = mailGenerateReply_(apiKey, {
-          knowledge: knowledge,
-          examples: examples,
-          caseInfo: mailFindCaseSummary_(ss, customer.customerId),
-          customer: customer,
-          thread: mailBuildThreadText_(messages)
-        });
+        const body = mailPlainBody_(last).slice(0, MAIL_MAX_BODY_CHARS);
 
+        // 返信案はここでは作らない。「対応を選ぶ」で対応種別を選んでから作る
         mailAppendHistory_(ss, {
           customerId: customer.customerId,
           from: customer.email,
           subject: thread.getFirstMessageSubject(),
-          summary: mailPlainBody_(last).slice(0, MAIL_MAX_BODY_CHARS),
-          aiFirst: reply,
-          finalText: reply,
+          summary: body,
           status: MAIL_STATUS_PENDING,
           threadId: thread.getId()
         });
 
         thread.addLabel(label);
-        if (notify) mailNotify_(ss, settings, customer, thread, reply);
-        drafted++;
+        if (notify) mailNotify_(ss, settings, customer, thread, body);
+        found++;
       } catch (err) {
         boardLog_('②エラー', customer.email + ': ' + err.message);
       }
     }
   }
 
-  if (drafted > 0) boardLog_('②返信案', drafted + ' 件の返信案を作成しました');
-  return { drafted: drafted, note: '' };
+  if (found > 0) boardLog_('②新着メール', found + ' 件の新着メールを記録しました');
+  return { found: found, note: '' };
 }
 
-function mailNotify_(ss, settings, customer, thread, reply) {
+/** 新着を知らせる。返信案は載せず、届いたメールの中身だけを伝える。 */
+function mailNotify_(ss, settings, customer, thread, received) {
   const to = String(settings['通知先メールアドレス'] || '').trim();
   if (!to) return;
+  const who = customer.company || customer.name || customer.email;
   const body = [
-    (customer.company || customer.name || customer.email) + ' 様から返信がありました。',
-    '返信案を作成しましたので、内容をご確認ください。',
+    who + ' 様からメールが届きました。',
     '',
-    '件名: ' + thread.getFirstMessageSubject(),
+    '差出人: ' + customer.email,
+    '件名　: ' + thread.getFirstMessageSubject(),
     '',
-    '確認・修正はスプレッドシートで行います:',
+    '───────── 届いたメール ─────────',
+    received,
+    '────────────────────────────',
+    '',
+    '返信案はスプレッドシートで作ります:',
     ss.getUrl(),
-    '　→ メニュー「ササゲパス」→「返信案を確認する」',
-    '',
-    '───────── 返信案 ─────────',
-    reply,
-    '─────────────────────────',
-    '',
-    'この案はまだ下書きにも保存されていません。',
-    '確認画面で承認した時点で、Gmailの下書きに保存されます。'
+    '　→ メニュー「ササゲパス」→「対応を選ぶ」'
   ].join('\n');
 
   MailApp.sendEmail({
     to: to,
-    subject: '【要対応】' + (customer.company || customer.name || customer.email) + ' ─ 返信案ができました',
+    subject: '【要対応】' + who + ' ─ メールが届きました',
     body: body,
     name: 'ササゲパス業務ボード'
   });
@@ -1092,7 +1079,7 @@ function mailAppendHistory_(ss, data) {
   if (!sheet) return;
   sheet.appendRow([
     new Date(), data.customerId, data.from, data.subject, data.summary,
-    data.aiFirst, '', data.finalText, data.status, data.threadId, ''
+    data.aiFirst || '', '', data.finalText || '', data.status, data.threadId, ''
   ]);
 }
 
