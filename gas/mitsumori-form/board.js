@@ -61,7 +61,7 @@ const BOARD_STATUS_RENAMES = { '手続き待ち': BOARD_STATUS_SIGNING };
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
   '案件ID', 'ステータス', '対応者', 'お客様', '予定点数', '初回ご依頼予定数', '初回ご依頼予定日', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
-  '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新のメール内容', '単価',
+  '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール', '単価',
   '請求書送付日', 'Square請求書ID', '署名・支払確認日',
   '追跡番号', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
@@ -69,9 +69,9 @@ const BOARD_CASE_HEADERS = [
 const BOARD_COL = {
   caseId: 1, status: 2, owner: 3, customer: 4, qty: 5, firstQty: 6, firstDate: 7,
   startDate: 8, dueFrom: 9, dueTo: 10, todo: 11,
-  customerId: 12, detail: 13, formInquiry: 14, lastMail: 15, unitPrice: 16,
-  invoiceSent: 17, invoiceId: 18, signedAt: 19,
-  tracking: 20, teamNote: 21, guideDraftAt: 22, lastContact: 23, memo: 24, sourceRow: 25
+  customerId: 12, detail: 13, formInquiry: 14, lastInbound: 15, lastOutbound: 16, unitPrice: 17,
+  invoiceSent: 18, invoiceId: 19, signedAt: 20,
+  tracking: 21, teamNote: 22, guideDraftAt: 23, lastContact: 24, memo: 25, sourceRow: 26
 };
 
 /** 案件ボードに載せる問い合わせ内容の最大文字数。全文はメール履歴で見る。 */
@@ -345,8 +345,10 @@ function boardMigrateCases_(ss) {
   headers = boardInsertColumnAfter_(sheet, headers, '予定点数', '初回ご依頼予定数');
   headers = boardInsertColumnAfter_(sheet, headers, '初回ご依頼予定数', '初回ご依頼予定日');
   headers = boardRenameColumn_(sheet, headers, '最新のお問い合わせ内容', 'フォームの問い合わせ内容');
+  headers = boardRenameColumn_(sheet, headers, '最新のメール内容', '最新の受信メール');
   headers = boardInsertColumnAfter_(sheet, headers, '依頼内容', 'フォームの問い合わせ内容');
-  headers = boardInsertColumnAfter_(sheet, headers, 'フォームの問い合わせ内容', '最新のメール内容');
+  headers = boardInsertColumnAfter_(sheet, headers, 'フォームの問い合わせ内容', '最新の受信メール');
+  headers = boardInsertColumnAfter_(sheet, headers, '最新の受信メール', '最新の送信メール');
   headers = boardInsertColumnAfter_(sheet, headers, '請求書送付日', 'Square請求書ID');
   headers = boardInsertColumnAfter_(sheet, headers, '追跡番号', '作業チーム共有');
 
@@ -540,7 +542,7 @@ function boardApplyCaseFormatting_(sheet) {
   });
 
   // 問い合わせ内容は折り返して読めるようにする
-  sheet.getRange(2, BOARD_COL.formInquiry, maxRows, 2).setWrap(true).setVerticalAlignment('top');
+  sheet.getRange(2, BOARD_COL.formInquiry, maxRows, 3).setWrap(true).setVerticalAlignment('top');
   sheet.getRange(2, BOARD_COL.teamNote, maxRows, 1).setWrap(true).setVerticalAlignment('top');
 }
 
@@ -1399,23 +1401,58 @@ function boardRefreshInquiries_(ss) {
   const byEmail = {};
   customers.forEach(function (c) { byEmail[c.email.toLowerCase()] = c.customerId; });
 
-  const query = 'newer_than:' + BOARD_INQUIRY_LOOKBACK_DAYS + 'd {' +
-    customers.map(function (c) { return 'from:' + c.email; }).join(' ') + '}';
+  const inbound = boardLatestMails_(byEmail, 'from', customers);
+  const outbound = boardLatestMails_(byEmail, 'to', customers);
+
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  Object.keys(byEmail).forEach(function (email) {
+    const customerId = byEmail[email];
+    const row = boardFindLatestCaseRow_(ss, customerId);
+    if (!row) return;
+
+    if (boardWriteMailCell_(sheet, row, BOARD_COL.lastInbound, inbound[customerId])) updated++;
+    if (boardWriteMailCell_(sheet, row, BOARD_COL.lastOutbound, outbound[customerId])) updated++;
+
+    // 最終連絡日は、受信・送信のうち新しいほうに合わせる
+    const dates = [inbound[customerId], outbound[customerId]]
+      .filter(function (m) { return m; }).map(function (m) { return m.date; });
+    if (dates.length === 0) return;
+    const newest = new Date(Math.max.apply(null, dates));
+    const current = sheet.getRange(row, BOARD_COL.lastContact).getValue();
+    if (!(current instanceof Date) || newest > current) {
+      sheet.getRange(row, BOARD_COL.lastContact).setValue(newest);
+    }
+  });
+
+  if (updated > 0) boardLog_('取込', '最新のメール内容を ' + updated + ' 件更新しました');
+  return updated;
+}
+
+/**
+ * 顧客ごとの最新メールを1回の検索でまとめて取る。
+ * direction が 'from' なら受信、'to' なら送信を対象にする。
+ */
+function boardLatestMails_(byEmail, direction, customers) {
+  const scope = direction === 'to' ? 'in:sent ' : '';
+  const query = scope + 'newer_than:' + BOARD_INQUIRY_LOOKBACK_DAYS + 'd {' +
+    customers.map(function (c) { return direction + ':' + c.email; }).join(' ') + '}';
 
   let threads;
   try {
     threads = GmailApp.search(query, 0, 50);
   } catch (err) {
-    boardLog_('取込', '問い合わせ内容の検索に失敗: ' + err.message);
-    return updated;
+    boardLog_('取込', 'メールの検索に失敗: ' + err.message);
+    return {};
   }
 
-  // 顧客ごとに、いちばん新しいメールだけを残す
   const latest = {};
   threads.forEach(function (thread) {
     thread.getMessages().forEach(function (message) {
-      const from = String(message.getFrom() || '').toLowerCase();
-      const hit = Object.keys(byEmail).filter(function (email) { return from.indexOf(email) >= 0; })[0];
+      const target = direction === 'to'
+        ? String(message.getTo() || '') + ' ' + String(message.getCc() || '')
+        : String(message.getFrom() || '');
+      const hay = target.toLowerCase();
+      const hit = Object.keys(byEmail).filter(function (email) { return hay.indexOf(email) >= 0; })[0];
       if (!hit) return;
       const id = byEmail[hit];
       if (!latest[id] || message.getDate() > latest[id].date) {
@@ -1423,25 +1460,18 @@ function boardRefreshInquiries_(ss) {
       }
     });
   });
+  return latest;
+}
 
-  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-  Object.keys(latest).forEach(function (customerId) {
-    const row = boardFindLatestCaseRow_(ss, customerId);
-    if (!row) return;
-    const text = boardTrimInquiry_(latest[customerId].body);
-    if (!text) return;
-    if (String(sheet.getRange(row, BOARD_COL.lastMail).getValue() || '') === text) return;
-
-    sheet.getRange(row, BOARD_COL.lastMail).setValue(text);
-    const current = sheet.getRange(row, BOARD_COL.lastContact).getValue();
-    if (!(current instanceof Date) || latest[customerId].date > current) {
-      sheet.getRange(row, BOARD_COL.lastContact).setValue(latest[customerId].date);
-    }
-    updated++;
-  });
-
-  if (updated > 0) boardLog_('取込', '最新のお問い合わせ内容を ' + updated + ' 件更新しました');
-  return updated;
+/** 日時と本文をまとめてセルへ書く。内容が同じなら書き換えない。 */
+function boardWriteMailCell_(sheet, row, col, mail) {
+  if (!mail) return false;
+  const when = Utilities.formatDate(mail.date, Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm');
+  const text = boardTrimInquiry_(when + String.fromCharCode(10) + mail.body);
+  if (!text) return false;
+  if (String(sheet.getRange(row, col).getValue() || '') === text) return false;
+  sheet.getRange(row, col).setValue(text);
+  return true;
 }
 
 /** まだ問い合わせ内容が空の案件を、フォームの回答で埋める。 */

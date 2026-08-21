@@ -287,6 +287,7 @@
   function updateApprove() {
     var type = findType(el('rtype') ? el('rtype').value : '');
     var btn = el('btnApprove');
+    var sendBtn = el('btnSend');
     if (!btn || !type) return;
     var missing = [];
     (type.requireKeys || []).forEach(function (key) {
@@ -294,6 +295,7 @@
       if (!input || !input.value) missing.push(key);
     });
     btn.disabled = missing.length > 0;
+    if (sendBtn) sendBtn.disabled = missing.length > 0;
     var hint = el('approveHint');
     if (hint) {
       hint.textContent = missing.length > 0
@@ -333,7 +335,7 @@
   }
 
   function busy(state) {
-    ['btnAi', 'btnRegen', 'btnSave', 'btnApprove', 'btnSkip'].forEach(function (id) {
+    ['btnAi', 'btnRegen', 'btnSave', 'btnApprove', 'btnSend', 'btnSkip'].forEach(function (id) {
       var b = el(id);
       if (b) b.disabled = state;
     });
@@ -373,7 +375,8 @@
       '<div class="card"><label>返信案（そのまま編集できます）</label>' +
       '<textarea id="editor"></textarea>' +
       '<div class="btns">' +
-      '<button class="b-main" id="btnApprove">この内容で下書きに保存</button>' +
+      '<button class="b-main" id="btnSend">この内容で送信する</button>' +
+      '<button class="b-sub" id="btnApprove">下書きに保存する</button>' +
       '<button class="b-sub" id="btnOpenThread">Gmailで開く</button>' +
       '<button class="b-sub" id="btnSave">編集内容だけ保存</button>' +
       '<button class="b-sub" id="btnSkip">対応不要</button>' +
@@ -457,6 +460,17 @@
         reload(false);
       }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
         .mailApproveToDraft(current.row, el('editor').value);
+    });
+
+    el('btnSend').addEventListener('click', function () {
+      var to = current.email || '（宛先不明）';
+      if (!confirm('この内容で ' + to + ' へ送信します。
+送信後は取り消せません。よろしいですか？')) return;
+      busy(true);
+      showBusy('送信しています...');
+      google.script.run.withSuccessHandler(function (r) { show('ok', r.message); busy(false); reload(false); })
+        .withFailureHandler(function (e) { show('err', e.message); busy(false); })
+        .mailSendNow(current.row, el('editor').value);
     });
 
     el('btnOpenThread').addEventListener('click', function () {

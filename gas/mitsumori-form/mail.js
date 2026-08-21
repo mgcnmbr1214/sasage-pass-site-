@@ -736,6 +736,15 @@ function mailReviseText(row, text, instruction) {
 
 /** 承認して Gmail の下書きに保存する。ここで学習用の記録も残す。 */
 function mailApproveToDraft(row, text) {
+  return mailFinalize_(row, text, false);
+}
+
+/** 下書きにせず、そのままお客様へ送信する。 */
+function mailSendNow(row, text) {
+  return mailFinalize_(row, text, true);
+}
+
+function mailFinalize_(row, text, send) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   const r = Number(row);
@@ -751,18 +760,21 @@ function mailApproveToDraft(row, text) {
   if (threadId) {
     const thread = GmailApp.getThreadById(threadId);
     if (!thread) throw new Error('元のメールスレッドが見つかりません。');
-    thread.createDraftReply(text, options);
+    if (send) thread.reply(text, options);
+    else thread.createDraftReply(text, options);
   } else {
     // フォーム回答が起点の場合は返信先のスレッドが無いため、新規メールとして作る
     const customer = boardFindCustomer_(ss, values[BOARD_MAIL_COL.customerId - 1]);
     const to = customer && boardIsEmail_(customer.email)
       ? customer.email : String(values[BOARD_MAIL_COL.from - 1] || '').trim();
     if (!boardIsEmail_(to)) throw new Error('送信先のメールアドレスが分かりません。「顧客」タブをご確認ください。');
-    GmailApp.createDraft(to, mailSubjectFor_(ss, values), text, options);
+    const subject = mailSubjectFor_(ss, values);
+    if (send) GmailApp.sendEmail(to, subject, text, options);
+    else GmailApp.createDraft(to, subject, text, options);
   }
 
   sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(text);
-  sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SAVED);
+  sheet.getRange(r, BOARD_MAIL_COL.status).setValue(send ? MAIL_STATUS_SENT : MAIL_STATUS_SAVED);
   sheet.getRange(r, BOARD_MAIL_COL.savedAt).setValue(new Date());
 
   mailRecordExample_(ss, {
