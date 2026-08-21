@@ -509,7 +509,7 @@ function boardSetupSheet_(ss, name, headers, widths) {
 
 /** 長文が入る列。折り返さず1行に収めて、一覧を見やすく保つ。 */
 const BOARD_CLIPPED_COLS = ['detail', 'formInquiry', 'lastInbound', 'lastOutbound', 'teamNote', 'memo'];
-const BOARD_ROW_HEIGHT = 30;
+const BOARD_ROW_HEIGHT = 50;
 
 /** 列の幅。並べ替えても効くよう、位置ではなく列の意味で指定する。 */
 const BOARD_CASE_WIDTHS = {
@@ -578,10 +578,22 @@ function boardApplyCaseFormatting_(sheet) {
       .setVerticalAlignment('middle');
   });
 
-  const rows = Math.max(sheet.getLastRow() - 1, 1);
-  sheet.setRowHeights(2, rows, BOARD_ROW_HEIGHT);
+  // setRowHeights は「データに合わせる」の指定を解除しない。
+  // Forced のほうを使わないと、自動調整の行だけ中身に合わせて伸びたままになる
+  boardForceRowHeight_(sheet, 2, Math.max(sheet.getMaxRows() - 1, 1));
 
   boardApplyCaseFilter_(sheet);
+}
+
+/** 行の高さを固定する。自動調整が効いている行も含めて揃える。 */
+function boardForceRowHeight_(sheet, startRow, numRows) {
+  if (numRows < 1) return;
+  try {
+    sheet.setRowHeightsForced(startRow, numRows, BOARD_ROW_HEIGHT);
+  } catch (err) {
+    // 古い実行環境向けの控え。自動調整は解除できない
+    sheet.setRowHeights(startRow, numRows, BOARD_ROW_HEIGHT);
+  }
 }
 
 /** 見出し行に絞り込みを付ける。ステータス順や担当順に並べ替えて見られるようにする。 */
@@ -1378,7 +1390,7 @@ function boardImportResponses_(ss) {
     cases.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).setValues([values]);
     boardSetTodoFormula_(cases, caseRow);
     boardSetOwnerFormula_(cases, caseRow);
-    cases.setRowHeight(caseRow, BOARD_ROW_HEIGHT);
+    boardForceRowHeight_(cases, caseRow, 1);
 
     // フォームに回答があった時点で「対応を選ぶ」の一覧にも載せる。
     // お客様からメールが届くまで待っていると、初回の返信が漏れるため。
