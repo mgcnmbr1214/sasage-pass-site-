@@ -10,6 +10,7 @@
   .list-item:hover { background: #F4F7FF; }
   .list-item.active { background: #EEF2FF; border-left: 3px solid #3B6EF8; padding-left: 10px; }
   .li-from { font-weight: 700; font-size: 12.5px; }
+  .li-mail { font-size: 11.5px; color: #5A6A8A; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .li-sub { font-size: 11.5px; color: #5A6A8A; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .li-date { font-size: 11px; color: #8A97B8; margin-top: 3px; }
   .main { flex: 1; display: flex; flex-direction: column; padding: 14px; overflow-y: auto; }
@@ -351,10 +352,12 @@
     items.forEach(function (item, i) {
       var div = document.createElement('div');
       div.className = 'list-item' + (current && current.row === item.row ? ' active' : '');
-      div.innerHTML = '<div class="li-from"></div><div class="li-sub"></div><div class="li-date"></div>';
-      div.children[0].textContent = item.from;
-      div.children[1].textContent = item.subject || '(件名なし)';
-      div.children[2].textContent = item.date + '　' + item.status;
+      div.innerHTML = '<div class="li-from"></div><div class="li-mail"></div>'
+        + '<div class="li-sub"></div><div class="li-date"></div>';
+      div.children[0].textContent = item.customer || item.from;
+      div.children[1].textContent = item.from;
+      div.children[2].textContent = item.subject || '(件名なし)';
+      div.children[3].textContent = item.date + '　' + item.status;
       div.addEventListener('click', function () { select(i); });
       list.appendChild(div);
     });

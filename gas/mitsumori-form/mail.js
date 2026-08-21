@@ -353,6 +353,7 @@ function mailGetPendingList() {
     shown[customerId] = true;
     out.push({
       row: i + 2,
+      customer: active[customerId].customer,
       date: boardFormatDate_(rows[i][BOARD_MAIL_COL.date - 1]),
       from: rows[i][BOARD_MAIL_COL.from - 1],
       subject: rows[i][BOARD_MAIL_COL.subject - 1],
@@ -449,6 +450,10 @@ function mailGetCustomerMessage(row) {
  * 進行中の案件が1件でもある方だけを対象にする。
  * 見送りだけの方や、案件が1件も無い方は出さない。
  */
+/**
+ * 見送り以外の案件を、顧客IDで引ける形にして返す。
+ * 一覧にお客様の名前を出すため、案件IDとお客様名も一緒に持たせる。
+ */
 function mailActiveCustomers_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const active = {};
@@ -459,7 +464,7 @@ function mailActiveCustomers_(ss) {
       const id = String(row[BOARD_COL.customerId - 1] || '').trim();
       if (!id) return;
       if (String(row[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_CLOSED) return;
-      active[id] = true;
+      active[id] = { customer: String(row[BOARD_COL.customer - 1] || '').trim() };
     });
   return active;
 }
