@@ -330,6 +330,7 @@ function mailScan_(options) {
   }
 
   if (found > 0) boardLog_('②新着メール', found + ' 件の新着メールを記録しました');
+  boardRefreshUnreplied_(ss);
   return { found: found, note: '' };
 }
 
@@ -426,6 +427,8 @@ function mailGetPendingList() {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   mailRefreshSentStatus_(ss);
+  // 画面は操作のたびに一覧を読み直すため、ここで案件ボードの未返信も合わせておく
+  boardRefreshUnreplied_(ss);
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   if (!sheet || sheet.getLastRow() < 2) return [];
   const active = mailActiveCustomers_(ss);

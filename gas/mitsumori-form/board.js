@@ -242,6 +242,7 @@ function onEdit(e) {
   if (!checked && current !== MAIL_STATUS_SKIP) return;
 
   sheet.getRange(row, BOARD_MAIL_COL.status).setValue(checked ? MAIL_STATUS_SKIP : MAIL_STATUS_PENDING);
+  boardRefreshUnreplied_(SpreadsheetApp.getActiveSpreadsheet());
   boardLog_('未返信', sheet.getRange(row, BOARD_MAIL_COL.subject).getValue() +
     '：' + (checked ? '対応不要にしました' : '返信前に戻しました'));
 }
@@ -627,7 +628,7 @@ function boardApplyCaseFormatting_(sheet) {
   // Forced のほうを使わないと、自動調整の行だけ中身に合わせて伸びたままになる
   boardForceRowHeight_(sheet, 2, Math.max(sheet.getMaxRows() - 1, 1));
 
-  for (let row = 2; row <= sheet.getLastRow(); row++) boardSetUnrepliedFormula_(sheet, row);
+  boardRefreshUnreplied_(sheet.getParent());
 
   boardApplyGroups_(sheet, BOARD_DETAIL_COLS.map(function (key) { return BOARD_COL[key]; }));
   boardApplyCaseFilter_(sheet);
@@ -1608,7 +1609,6 @@ function boardImportResponses_(ss) {
     cases.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).setValues([values]);
     boardSetTodoFormula_(cases, caseRow);
     boardSetOwnerFormula_(cases, caseRow);
-    boardSetUnrepliedFormula_(cases, caseRow);
     boardForceRowHeight_(cases, caseRow, 1);
 
     // フォームに回答があった時点で「対応を選ぶ」の一覧にも載せる。
@@ -2066,8 +2066,8 @@ function boardRefreshFormulas_(sheet) {
     if (!String(sheet.getRange(row, BOARD_COL.caseId).getValue() || '').trim()) continue;
     boardSetTodoFormula_(sheet, row);
     boardSetOwnerFormula_(sheet, row);
-    boardSetUnrepliedFormula_(sheet, row);
   }
+  boardRefreshUnreplied_(sheet.getParent());
 }
 
 /**
@@ -2216,33 +2216,50 @@ function boardSetOwnerFormula_(sheet, row) {
 }
 
 /**
- * 「未返信」列。メール履歴に対応中の行が残っていれば件数を出し、
- * クリックするとメール履歴の該当行（いちばん新しいもの）へ飛ぶリンクにする。
+ * 「未返信」列を全案件ぶん書き直す。
  *
- * 数式なので、下書きを送ったり対応不要にすれば、その場で消える。
+ * ここは数式にしない。件数と飛び先の行を1つの数式で求めようとすると、
+ * 開いた範囲（A2:A）の長さの扱いがスプレッドシート側の判断に左右され、
+ * 件数が0になったり飛び先が別の行になったりした。
+ * メール履歴を読んで数えるだけなので、こちらで計算して書くほうが確実。
+ *
+ * メール履歴に動きがあるところから毎回呼ぶ。
+ * 10分ごとの自動チェックでも通るため、ずれても次の実行で直る。
  */
-function boardSetUnrepliedFormula_(sheet, row) {
-  const mails = sheet.getParent().getSheetByName(BOARD_SHEET_MAILS);
-  const gid = mails ? mails.getSheetId() : 0;
-  const mailCol = function (col) {
-    const letter = boardColLetter_(col);
-    return "'" + BOARD_SHEET_MAILS + "'!$" + letter + '$2:$' + letter;
-  };
-  const open = MAIL_OPEN_STATUSES.map(function (status) {
-    return '(s="' + status + '")';
-  }).join('+');
+function boardRefreshUnreplied_(ss) {
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!cases || cases.getLastRow() < 2) return;
 
-  sheet.getRange(row, BOARD_COL.unreplied).setFormula(
-    '=LET(' +
-    'id,$' + boardColLetter_(BOARD_COL.customerId) + row + ',' +
-    'ids,' + mailCol(BOARD_MAIL_COL.customerId) + ',' +
-    's,' + mailCol(BOARD_MAIL_COL.status) + ',' +
-    'hit,(ids=id)*(' + open + '),' +
-    'n,SUMPRODUCT(hit),' +
-    // 配列の中の位置から行番号を逆算すると1行ずれる。ROW() で実際の行番号を直接取る
-    'r,SUMPRODUCT(MAX(hit*ROW(ids))),' +
-    'IF(OR($' + boardColLetter_(BOARD_COL.caseId) + row + '="",id="",n=0),"",' +
-    'HYPERLINK("#gid=' + gid + '&range=A"&r,"● "&n&"件")))'
+  // 顧客ごとに、対応中のメールの件数と、いちばん下（＝新しい）の行番号
+  const open = {};
+  const mails = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (mails && mails.getLastRow() > 1) {
+    mails.getRange(2, 1, mails.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues()
+      .forEach(function (row, i) {
+        const id = String(row[BOARD_MAIL_COL.customerId - 1] || '').trim();
+        if (!id) return;
+        if (MAIL_OPEN_STATUSES.indexOf(String(row[BOARD_MAIL_COL.status - 1] || '').trim()) < 0) return;
+        if (!open[id]) open[id] = { count: 0, row: 0 };
+        open[id].count++;
+        open[id].row = i + 2;
+      });
+  }
+
+  const gid = mails ? mails.getSheetId() : 0;
+  const rows = cases.getLastRow() - 1;
+  const caseIds = cases.getRange(2, BOARD_COL.caseId, rows, 1).getValues();
+  const customerIds = cases.getRange(2, BOARD_COL.customerId, rows, 1).getValues();
+  const statuses = cases.getRange(2, BOARD_COL.status, rows, 1).getValues();
+
+  cases.getRange(2, BOARD_COL.unreplied, rows, 1).setValues(
+    caseIds.map(function (row, i) {
+      if (!String(row[0] || '').trim()) return [''];
+      // 見送りの案件は出さない。「対応を選ぶ」の一覧と同じ扱いにする
+      if (String(statuses[i][0] || '').trim() === BOARD_STATUS_CLOSED) return [''];
+      const hit = open[String(customerIds[i][0] || '').trim()];
+      if (!hit) return [''];
+      return ['=HYPERLINK("#gid=' + gid + '&range=A' + hit.row + '","● ' + hit.count + '件")'];
+    })
   );
 }
 
