@@ -41,26 +41,13 @@ const BOARD_STATUS_OWNER = {
   '見送り': '完了'
 };
 
-const BOARD_STATUS_COLORS = {
-  '問合せ': '#FAEEDA',
-  '返信済': '#FAEEDA',
-  '情報不足': '#FCEBEB',
-  '依頼確定前': '#EEEDFE',
-  '依頼確定': '#EEEDFE',
-  '支払い情報登録・契約書署名待ち': '#E6F1FB',
-  '発送待ち': '#E1F5EE',
-  '発送済み': '#EAF3DE',
-  '作業中': '#F1EFE8',
-  '返送済': '#F1EFE8',
-  '見送り': '#F1EFE8'
-};
-
 /** 旧名称 → 新名称。セットアップ時に既存の値を書き換える。 */
 const BOARD_STATUS_RENAMES = { '手続き待ち': BOARD_STATUS_SIGNING };
 
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
   '案件ID', 'ステータス', '対応者', 'お客様', '予定点数', '初回ご依頼予定数', '初回ご依頼予定日', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
+  '未返信', '対応不要',
   '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール', '単価',
   '請求書送付日', 'Square請求書ID', '署名・支払確認日',
   '追跡番号', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
@@ -69,10 +56,17 @@ const BOARD_CASE_HEADERS = [
 const BOARD_COL = {
   caseId: 1, status: 2, owner: 3, customer: 4, qty: 5, firstQty: 6, firstDate: 7,
   startDate: 8, dueFrom: 9, dueTo: 10, todo: 11,
-  customerId: 12, detail: 13, formInquiry: 14, lastInbound: 15, lastOutbound: 16, unitPrice: 17,
-  invoiceSent: 18, invoiceId: 19, signedAt: 20,
-  tracking: 21, teamNote: 22, guideDraftAt: 23, lastContact: 24, memo: 25, sourceRow: 26
+  unreplied: 12, dismiss: 13,
+  customerId: 14, detail: 15, formInquiry: 16, lastInbound: 17, lastOutbound: 18, unitPrice: 19,
+  invoiceSent: 20, invoiceId: 21, signedAt: 22,
+  tracking: 23, teamNote: 24, guideDraftAt: 25, lastContact: 26, memo: 27, sourceRow: 28
 };
+
+/** 折りたたみグループにまとめる列。並びが変わっても、隣り合っている範囲ごとにまとめる。 */
+const BOARD_DETAIL_COLS = [
+  'firstQty', 'firstDate', 'customerId', 'detail', 'formInquiry', 'unitPrice',
+  'invoiceSent', 'invoiceId', 'signedAt', 'teamNote', 'guideDraftAt', 'lastContact', 'memo', 'sourceRow'
+];
 
 /** 案件ボードに載せる問い合わせ内容の最大文字数。全文はメール履歴で見る。 */
 const BOARD_INQUIRY_MAX = 400;
@@ -222,6 +216,46 @@ const BOARD_SOURCE_FIELDS = {
   inquiry: ['問い合わせ内容', 'お問い合わせ・ご要望', 'お問い合わせ内容・補足', 'ご要望', '備考']
 };
 
+/**
+ * 案件ボードの「対応不要」にチェックが入ったら、その案件の未返信メールをまとめて対応不要にする。
+ * 返信が要らないメール（続けて2通届いた場合など）を、シートを離れずに片付けるための入口。
+ */
+function onEdit(e) {
+  if (!e || !e.range) return;
+  const sheet = e.range.getSheet();
+  if (sheet.getName() !== BOARD_SHEET_CASES) return;
+  if (e.range.getRow() < 2 || e.range.getNumRows() !== 1) return;
+
+  boardUseCurrentColumns_();
+  if (e.range.getColumn() !== BOARD_COL.dismiss) return;
+  if (e.range.getValue() !== true) return;
+
+  e.range.setValue(false);
+  const row = e.range.getRow();
+  const customerId = String(sheet.getRange(row, BOARD_COL.customerId).getValue() || '').trim();
+  if (!customerId) return;
+
+  const dismissed = boardDismissMails_(SpreadsheetApp.getActiveSpreadsheet(), customerId);
+  boardLog_('未返信', sheet.getRange(row, BOARD_COL.caseId).getValue() +
+    '：' + dismissed + ' 件のメールを対応不要にしました');
+}
+
+/** そのお客様の対応中のメールを、まとめて対応不要にする。 */
+function boardDismissMails_(ss, customerId) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
+  let count = 0;
+  rows.forEach(function (row, i) {
+    if (String(row[BOARD_MAIL_COL.customerId - 1] || '').trim() !== customerId) return;
+    if (MAIL_OPEN_STATUSES.indexOf(String(row[BOARD_MAIL_COL.status - 1] || '').trim()) < 0) return;
+    sheet.getRange(i + 2, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SKIP);
+    count++;
+  });
+  return count;
+}
+
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('ササゲパス')
@@ -344,6 +378,8 @@ function boardMigrateCases_(ss) {
   }
 
   headers = boardInsertColumnAfter_(sheet, headers, 'ステータス', '対応者');
+  headers = boardInsertColumnAfter_(sheet, headers, '次にやること', '未返信');
+  headers = boardInsertColumnAfter_(sheet, headers, '未返信', '対応不要');
   headers = boardInsertColumnAfter_(sheet, headers, '予定点数', '初回ご依頼予定数');
   headers = boardInsertColumnAfter_(sheet, headers, '初回ご依頼予定数', '初回ご依頼予定日');
   headers = boardRenameColumn_(sheet, headers, '最新のお問い合わせ内容', 'フォームの問い合わせ内容');
@@ -516,7 +552,7 @@ const BOARD_ROW_HEIGHT = 50;
 /** 列の幅。並べ替えても効くよう、位置ではなく列の意味で指定する。 */
 const BOARD_CASE_WIDTHS = {
   caseId: 80, status: 190, owner: 70, customer: 150, qty: 70, firstQty: 100, firstDate: 95,
-  startDate: 95, dueFrom: 95, dueTo: 95, todo: 230,
+  startDate: 95, dueFrom: 95, dueTo: 95, todo: 230, unreplied: 70, dismiss: 80,
   customerId: 70, detail: 160, formInquiry: 160, lastInbound: 200, lastOutbound: 200, unitPrice: 70,
   invoiceSent: 95, invoiceId: 110, signedAt: 95,
   tracking: 130, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
@@ -538,14 +574,14 @@ function boardApplyCaseFormatting_(sheet) {
     .setAllowInvalid(false)
     .build());
 
+  // 未返信のある案件は行ごと薄く色を付ける。ステータスと対応者には色を付けない
   const rules = [];
-  BOARD_STATUSES.forEach(function (status) {
-    rules.push(SpreadsheetApp.newConditionalFormatRule()
-      .whenTextEqualTo(status)
-      .setBackground(BOARD_STATUS_COLORS[status])
-      .setRanges([statusRange])
-      .build());
-  });
+  const width = Math.max(sheet.getLastColumn(), BOARD_CASE_HEADERS.length);
+  rules.push(SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied('=$' + boardColLetter_(BOARD_COL.unreplied) + '2<>""')
+    .setBackground('#FDF3E3')
+    .setRanges([sheet.getRange(2, 1, maxRows, width)])
+    .build());
 
   const todoRange = sheet.getRange(2, BOARD_COL.todo, maxRows, 1);
   ['確認して返信', '日付を入れて', '経過', '作業チームへ共有', '不足している情報', '依頼確定メール'].forEach(function (word) {
@@ -555,14 +591,18 @@ function boardApplyCaseFormatting_(sheet) {
       .setRanges([todoRange])
       .build());
   });
-  const ownerRange = sheet.getRange(2, BOARD_COL.owner, maxRows, 1);
-  rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo('自分').setBackground('#FFE3D3').setFontColor('#C24A18')
-    .setRanges([ownerRange]).build());
-  rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo('お客様').setBackground('#F1EFE8').setFontColor('#5F5E5A')
-    .setRanges([ownerRange]).build());
-  sheet.getRange(2, BOARD_COL.owner, maxRows, 1).setHorizontalAlignment('center');
+  sheet.getRange(2, BOARD_COL.owner, maxRows, 1)
+    .setHorizontalAlignment('center').setBackground(null).setFontColor(null);
+  sheet.getRange(2, BOARD_COL.status, maxRows, 1).setBackground(null).setFontColor(null);
+
+  sheet.getRange(2, BOARD_COL.unreplied, maxRows, 1)
+    .setHorizontalAlignment('center').setFontColor('#C24A18');
+  // チェックボックスは案件のある行だけに置く
+  const dataRows = Math.max(sheet.getLastRow() - 1, 0);
+  if (dataRows > 0) {
+    sheet.getRange(2, BOARD_COL.dismiss, dataRows, 1)
+      .insertCheckboxes().setHorizontalAlignment('center');
+  }
 
   sheet.setConditionalFormatRules(rules);
 
@@ -584,7 +624,49 @@ function boardApplyCaseFormatting_(sheet) {
   // Forced のほうを使わないと、自動調整の行だけ中身に合わせて伸びたままになる
   boardForceRowHeight_(sheet, 2, Math.max(sheet.getMaxRows() - 1, 1));
 
+  for (let row = 2; row <= sheet.getLastRow(); row++) boardSetUnrepliedFormula_(sheet, row);
+
+  boardApplyColumnGroups_(sheet);
   boardApplyCaseFilter_(sheet);
+}
+
+/**
+ * 詳細列を折りたたみグループにまとめる。
+ *
+ * グループは位置でしか作れないため、いま隣り合っている詳細列の範囲ごとに作る。
+ * 列を並べ替えたあとに初期セットアップを実行すれば、新しい並びで作り直される。
+ */
+function boardApplyColumnGroups_(sheet) {
+  const width = Math.max(sheet.getLastColumn(), BOARD_CASE_HEADERS.length);
+
+  // 前回のグループを一度ほどく。深さが残っていると入れ子になっていく
+  for (let i = 0; i < 3; i++) {
+    try {
+      sheet.getRange(1, 1, 1, width).shiftColumnGroupDepth(-1);
+    } catch (err) {
+      break;
+    }
+  }
+
+  const detail = {};
+  BOARD_DETAIL_COLS.forEach(function (key) { detail[BOARD_COL[key]] = true; });
+
+  let start = 0;
+  for (let col = 1; col <= width + 1; col++) {
+    if (detail[col]) {
+      if (!start) start = col;
+      continue;
+    }
+    if (start && col - start >= 2) {
+      try {
+        sheet.getRange(1, start, 1, col - start).shiftColumnGroupDepth(1);
+        sheet.getColumnGroup(start, 1).collapse();
+      } catch (err) {
+        boardLog_('表示', '列のグループ化に失敗: ' + err.message);
+      }
+    }
+    start = 0;
+  }
 }
 
 /** 行の高さを固定する。自動調整が効いている行も含めて揃える。 */
@@ -1397,6 +1479,8 @@ function boardImportResponses_(ss) {
     cases.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).setValues([values]);
     boardSetTodoFormula_(cases, caseRow);
     boardSetOwnerFormula_(cases, caseRow);
+    boardSetUnrepliedFormula_(cases, caseRow);
+    cases.getRange(caseRow, BOARD_COL.dismiss).insertCheckboxes();
     boardForceRowHeight_(cases, caseRow, 1);
 
     // フォームに回答があった時点で「対応を選ぶ」の一覧にも載せる。
@@ -1999,6 +2083,26 @@ function boardSetOwnerFormula_(sheet, row) {
   }).join(',');
   sheet.getRange(row, BOARD_COL.owner).setFormula(
     '=IF($' + boardColLetter_(BOARD_COL.caseId) + row + '="","",IFS(' + cases + ',TRUE,""))'
+  );
+}
+
+/**
+ * 「未返信」列。メール履歴に対応中の行が残っていれば件数を出す。
+ * 数式にしてあるので、下書きを送ったり対応不要にすれば、その場で消える。
+ */
+function boardSetUnrepliedFormula_(sheet, row) {
+  const id = '$' + boardColLetter_(BOARD_COL.customerId) + row;
+  const mailId = "'" + BOARD_SHEET_MAILS + "'!$" + boardColLetter_(BOARD_MAIL_COL.customerId) + ':$'
+    + boardColLetter_(BOARD_MAIL_COL.customerId);
+  const mailStatus = "'" + BOARD_SHEET_MAILS + "'!$" + boardColLetter_(BOARD_MAIL_COL.status) + ':$'
+    + boardColLetter_(BOARD_MAIL_COL.status);
+  const counts = MAIL_OPEN_STATUSES.map(function (status) {
+    return 'COUNTIFS(' + mailId + ',' + id + ',' + mailStatus + ',"' + status + '")';
+  }).join('+');
+
+  sheet.getRange(row, BOARD_COL.unreplied).setFormula(
+    '=IF(OR($' + boardColLetter_(BOARD_COL.caseId) + row + '="",' + id + '=""),"",' +
+    'LET(n,' + counts + ',IF(n=0,"","● "&n&"件")))'
   );
 }
 
