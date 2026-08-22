@@ -560,10 +560,14 @@ function boardSetupSheet_(ss, name, headers, widths) {
 const BOARD_CLIPPED_COLS = ['detail', 'formInquiry', 'lastInbound', 'lastOutbound', 'teamNote', 'memo'];
 const BOARD_ROW_HEIGHT = 50;
 
+/** 「未返信」列に並べるリンクの数。これを超えた分は「+3」のようにまとめる。 */
+const BOARD_UNREPLIED_MAX_LINKS = 4;
+const BOARD_UNREPLIED_SEPARATOR = ' ・ ';
+
 /** 列の幅。並べ替えても効くよう、位置ではなく列の意味で指定する。 */
 const BOARD_CASE_WIDTHS = {
   caseId: 80, status: 190, owner: 70, customer: 150, qty: 70, firstQty: 100, firstDate: 95,
-  startDate: 95, dueFrom: 95, dueTo: 95, todo: 230, unreplied: 80,
+  startDate: 95, dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130,
   customerId: 70, detail: 160, formInquiry: 160, lastInbound: 200, lastOutbound: 200, unitPrice: 70,
   invoiceSent: 95, invoiceId: 110, signedAt: 95,
   tracking: 130, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
@@ -673,6 +677,7 @@ function boardApplyMailFormatting_(sheet) {
   const dataRows = Math.max(sheet.getLastRow() - 1, 0);
   if (dataRows > 0) {
     boardMigrateMailStatuses_(sheet);
+    boardBackfillMailDates_(sheet);
     for (let row = 2; row <= sheet.getLastRow(); row++) boardSetMailCustomerFormula_(sheet, row);
 
     // 状態は決まった言葉だけにする。意味は入力時の説明で出す
@@ -725,6 +730,33 @@ function boardSetMailCustomerFormula_(sheet, row) {
     '=IF(' + id + '="","",LET(c,' + lookup(BOARD_CUSTOMER_COL.company) +
     ',IF(c<>"",c,' + lookup(BOARD_CUSTOMER_COL.name) + ')))'
   );
+}
+
+/**
+ * 日時を「記録した時刻」から「メールが届いた日時」に直す。
+ * 同じスレッドに複数のメールがあるとき、どれがどれか見分けるための手がかりになる。
+ */
+function boardBackfillMailDates_(sheet) {
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
+  let fixed = 0;
+
+  rows.forEach(function (row, i) {
+    const messageId = String(row[BOARD_MAIL_COL.messageId - 1] || '').trim();
+    if (!messageId) return;
+    try {
+      const message = GmailApp.getMessageById(messageId);
+      if (!message) return;
+      const when = message.getDate();
+      const now = row[BOARD_MAIL_COL.date - 1];
+      if (now instanceof Date && Math.abs(now.getTime() - when.getTime()) < 60000) return;
+      sheet.getRange(i + 2, BOARD_MAIL_COL.date).setValue(when);
+      fixed++;
+    } catch (err) {
+      // 消されたメールなどは記録した時刻のままにしておく
+    }
+  });
+
+  if (fixed > 0) boardLog_('移行', 'メール履歴の日時 ' + fixed + ' 件を受信日時に直しました');
 }
 
 /** 状態の言い回しを新しいものに揃える。 */
@@ -1427,12 +1459,17 @@ function boardDedupeMails_(ss) {
   };
 
   rows.forEach(function (row, i) {
-    const key = [
+    // メール1通ずつが1行なので、同じ通かどうかはメッセージIDで見る。
+    // 顧客・件名・スレッドで見ると、同じスレッドに届いた別のメールまで
+    // 重複とみなして消してしまい、次の新着チェックで作り直される堂々巡りになる
+    const messageId = String(row[BOARD_MAIL_COL.messageId - 1] || '').trim();
+    const key = messageId ? 'M\t' + messageId : [
+      'K',
       String(row[BOARD_MAIL_COL.customerId - 1] || '').trim(),
       String(row[BOARD_MAIL_COL.subject - 1] || '').trim(),
       String(row[BOARD_MAIL_COL.threadId - 1] || '').trim()
     ].join('\t');
-    if (key === '\t\t') return;
+    if (key === 'K\t\t\t') return;
 
     const current = { row: i + 2, score: score(row) };
     const kept = best[key];
@@ -2230,7 +2267,7 @@ function boardRefreshUnreplied_(ss) {
   const cases = ss.getSheetByName(BOARD_SHEET_CASES);
   if (!cases || cases.getLastRow() < 2) return;
 
-  // 顧客ごとに、対応中のメールの件数と、いちばん下（＝新しい）の行番号
+  // 顧客ごとに、対応中のメールの行番号と受信日を集める
   const open = {};
   const mails = ss.getSheetByName(BOARD_SHEET_MAILS);
   if (mails && mails.getLastRow() > 1) {
@@ -2239,26 +2276,48 @@ function boardRefreshUnreplied_(ss) {
         const id = String(row[BOARD_MAIL_COL.customerId - 1] || '').trim();
         if (!id) return;
         if (MAIL_OPEN_STATUSES.indexOf(String(row[BOARD_MAIL_COL.status - 1] || '').trim()) < 0) return;
-        if (!open[id]) open[id] = { count: 0, row: 0 };
-        open[id].count++;
-        open[id].row = i + 2;
+        const when = row[BOARD_MAIL_COL.date - 1];
+        if (!open[id]) open[id] = [];
+        open[id].push({
+          row: i + 2,
+          at: when instanceof Date ? when.getTime() : 0,
+          label: when instanceof Date
+            ? Utilities.formatDate(when, Session.getScriptTimeZone(), 'M/d')
+            : '?'
+        });
       });
   }
 
-  const gid = mails ? mails.getSheetId() : 0;
+  const base = ss.getUrl().split('#')[0] + '#gid=' + (mails ? mails.getSheetId() : 0) + '&range=A';
   const rows = cases.getLastRow() - 1;
   const caseIds = cases.getRange(2, BOARD_COL.caseId, rows, 1).getValues();
   const customerIds = cases.getRange(2, BOARD_COL.customerId, rows, 1).getValues();
   const statuses = cases.getRange(2, BOARD_COL.status, rows, 1).getValues();
+  const blank = SpreadsheetApp.newRichTextValue().setText('').build();
 
-  cases.getRange(2, BOARD_COL.unreplied, rows, 1).setValues(
+  cases.getRange(2, BOARD_COL.unreplied, rows, 1).setRichTextValues(
     caseIds.map(function (row, i) {
-      if (!String(row[0] || '').trim()) return [''];
+      if (!String(row[0] || '').trim()) return [blank];
       // 見送りの案件は出さない。「対応を選ぶ」の一覧と同じ扱いにする
-      if (String(statuses[i][0] || '').trim() === BOARD_STATUS_CLOSED) return [''];
-      const hit = open[String(customerIds[i][0] || '').trim()];
-      if (!hit) return [''];
-      return ['=HYPERLINK("#gid=' + gid + '&range=A' + hit.row + '","● ' + hit.count + '件")'];
+      if (String(statuses[i][0] || '').trim() === BOARD_STATUS_CLOSED) return [blank];
+      const hits = open[String(customerIds[i][0] || '').trim()];
+      if (!hits || hits.length === 0) return [blank];
+
+      // 届いた日の新しいものから並べ、1通ずつ別のリンクにする
+      const shown = hits.slice()
+        .sort(function (a, b) { return b.at - a.at; })
+        .slice(0, BOARD_UNREPLIED_MAX_LINKS);
+      const rest = hits.length - shown.length;
+      const labels = shown.map(function (h) { return h.label; });
+      const value = SpreadsheetApp.newRichTextValue()
+        .setText(labels.join(BOARD_UNREPLIED_SEPARATOR) + (rest > 0 ? ' +' + rest : ''));
+
+      let at = 0;
+      shown.forEach(function (h, n) {
+        value.setLinkUrl(at, at + labels[n].length, base + h.row);
+        at += labels[n].length + BOARD_UNREPLIED_SEPARATOR.length;
+      });
+      return [value.build()];
     })
   );
 }

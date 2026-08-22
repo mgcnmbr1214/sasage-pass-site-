@@ -307,6 +307,7 @@ function mailScan_(options) {
 
         // 返信案はここでは作らない。「対応を選ぶ」で対応種別を選んでから作る
         mailAppendHistory_(ss, {
+          date: message.getDate(),
           customerId: customer.customerId,
           from: customer.email,
           subject: message.getSubject() || thread.getFirstMessageSubject(),
@@ -1216,8 +1217,10 @@ function mailFirstLines_(text, count) {
 function mailAppendHistory_(ss, data) {
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   if (!sheet) return;
+  // 日時は「メールが届いた日時」。記録した時刻を入れると、
+  // 同じスレッドの何通目なのかが見分けられなくなる
   sheet.appendRow([
-    new Date(), data.customerId, '', data.from, data.subject, data.summary,
+    data.date || new Date(), data.customerId, '', data.from, data.subject, data.summary,
     data.aiFirst || '', '', data.finalText || '', data.status, false, data.threadId, '',
     data.responseType || '', '', data.messageId || ''
   ]);
