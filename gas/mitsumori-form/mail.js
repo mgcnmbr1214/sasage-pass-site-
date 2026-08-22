@@ -351,6 +351,7 @@ function mailScan_(options) {
   }
 
   if (found > 0) boardLog_('②新着メール', found + ' 件の新着メールを記録しました');
+  mailSyncSentReplies_(ss);
   boardRefreshUnreplied_(ss);
   return { found: found, note: '' };
 }
@@ -512,6 +513,72 @@ function mailRefreshSentStatus_(ss) {
       boardLog_('②状態確認', threadId + ': ' + err.message);
     }
   });
+}
+
+/**
+ * 各行の「返信文面」を、実際に送ったメールに合わせる。
+ *
+ * その受信メールの**次にこちらが送った**メールを同じスレッドから探して入れる。
+ * 以前は1スレッド1行だったため、画面に出ていた最新メールへの返信が、
+ * 別の受信メールの行に保存されていた。その食い違いをここで直す。
+ * Gmailから直接返信した場合も、これで記録に載る。
+ *
+ * 作りかけ（返信案あり・下書きあり）と対応不要の行には触らない。
+ */
+function mailSyncSentReplies_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const ours = mailOwnAddresses_(ss);
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
+  const cache = {};
+  let filled = 0;
+
+  const sentByUs = function (message) {
+    const from = String(message.getFrom() || '').toLowerCase();
+    return ours.some(function (address) { return address && from.indexOf(address) >= 0; });
+  };
+
+  rows.forEach(function (row, i) {
+    const status = String(row[BOARD_MAIL_COL.status - 1] || '').trim();
+    if (status !== MAIL_STATUS_PENDING && status !== MAIL_STATUS_SENT) return;
+
+    const threadId = String(row[BOARD_MAIL_COL.threadId - 1] || '').trim();
+    const messageId = String(row[BOARD_MAIL_COL.messageId - 1] || '').trim();
+    if (!threadId || !messageId) return;
+
+    if (!cache[threadId]) {
+      try {
+        const thread = GmailApp.getThreadById(threadId);
+        cache[threadId] = thread ? thread.getMessages() : [];
+      } catch (err) {
+        cache[threadId] = [];
+      }
+    }
+    const messages = cache[threadId];
+
+    let at = -1;
+    for (let m = 0; m < messages.length; m++) {
+      if (messages[m].getId() === messageId) { at = m; break; }
+    }
+    if (at < 0) return;
+
+    let reply = null;
+    for (let m = at + 1; m < messages.length; m++) {
+      if (sentByUs(messages[m])) { reply = messages[m]; break; }
+    }
+    if (!reply) return;
+
+    const text = mailStamp_(reply.getDate(), mailPlainBody_(reply).slice(0, MAIL_MAX_BODY_CHARS));
+    if (text === String(row[BOARD_MAIL_COL.finalText - 1] || '')) return;
+
+    sheet.getRange(i + 2, BOARD_MAIL_COL.finalText).setValue(text);
+    sheet.getRange(i + 2, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SENT);
+    filled++;
+  });
+
+  if (filled > 0) boardLog_('②返信の記録', filled + ' 件の返信文面を実際に送ったメールに合わせました');
+  return filled;
 }
 
 function mailOwnAddresses_(ss) {

@@ -332,7 +332,13 @@ function boardSetup() {
     boardLog_('②エラー', 'ステータスの見直しに失敗: ' + err.message);
   }
   try {
-    // 並べ替えを伴うため、行の増減がすべて終わったあとに実行する
+    // 実際に送ったメールを見て、返信文面の食い違いを直す
+    mailSyncSentReplies_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '返信文面の照合に失敗: ' + err.message);
+  }
+  try {
+    // 行の増減がすべて終わったあとに実行する
     boardApplyMailFormatting_(ss.getSheetByName(BOARD_SHEET_MAILS));
   } catch (err) {
     boardLog_('②エラー', 'メール履歴の整形に失敗: ' + err.message);
