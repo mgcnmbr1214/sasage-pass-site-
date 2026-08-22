@@ -281,6 +281,8 @@ function boardSetup() {
 
   boardMigrateCases_(ss);
   boardMigrateCustomers_(ss);
+  // 移行で列が動いている可能性があるため、必ず読み直してから先へ進む
+  boardSyncColumns_(ss.getSheetByName(BOARD_SHEET_CASES));
 
   boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS);
   boardSetupSheet_(ss, BOARD_SHEET_CUSTOMERS, BOARD_CUSTOMER_HEADERS, [80, 170, 120, 220, 130]);
@@ -402,6 +404,10 @@ function boardMigrateCases_(ss) {
   }
 
   boardRenameStatuses_(sheet);
+
+  // 列を足し引きしたので、BOARD_COL を実際の並びに引き直す。
+  // これを忘れると、以降の処理がすべて1列ずれた場所を読み書きする
+  boardSyncColumns_(sheet);
 }
 
 /** 見出しの名前を変える。変更後の見出し配列を返す。 */
@@ -1361,11 +1367,21 @@ function boardRepairBrokenCases_(ss) {
     broken.push({ row: i + 2, caseId: caseId });
   });
 
+  // 全部または大半が「壊れている」と出たときは、壊れているのは判定のほう。
+  // 列の位置を取り違えたまま消すと、案件が丸ごと失われる
+  if (broken.length > 0 && broken.length >= Math.ceil(rows.length / 2)) {
+    boardLog_('整理', '案件 ' + broken.length + '/' + rows.length +
+      ' 件が壊れていると判定されたため、削除を中止しました。列の構成を確認してください');
+    return 0;
+  }
+
   broken.slice().reverse().forEach(function (item) { sheet.deleteRow(item.row); });
 
-  // ずれた値が右側の余った列に残っていれば、その列ごと取り除く
-  if (sheet.getLastColumn() > BOARD_CASE_HEADERS.length) {
-    sheet.deleteColumns(BOARD_CASE_HEADERS.length + 1, sheet.getLastColumn() - BOARD_CASE_HEADERS.length);
+  // ずれた値が右側の余った列に残っていれば取り除く。
+  // ただし見出しの付いた列は消さない。並べ替えで右端に来ただけの本来の列を失うため
+  for (let col = sheet.getLastColumn(); col > BOARD_CASE_HEADERS.length; col--) {
+    if (String(sheet.getRange(1, col).getValue() || '').trim()) continue;
+    sheet.deleteColumn(col);
   }
 
   if (broken.length > 0) {
@@ -1376,12 +1392,14 @@ function boardRepairBrokenCases_(ss) {
 }
 
 /** 作業がどこまで進んだか。重複したメール履歴のうち、どれを残すかの判断に使う。 */
-const BOARD_MAIL_PROGRESS = (function () {
-  const order = {};
-  [MAIL_STATUS_SKIP, MAIL_STATUS_PENDING, MAIL_STATUS_EDITING, MAIL_STATUS_SAVED, MAIL_STATUS_SENT]
-    .forEach(function (status, i) { order[status] = i + 1; });
-  return order;
-})();
+function boardMailProgress_(status) {
+  // 読み込み時ではなく呼ばれた時に組み立てる。
+  // トップレベルで他のファイルの定数を参照すると、読み込み順によっては
+  // スクリプト全体が起動に失敗し、メニューごと出なくなる
+  const order = [MAIL_STATUS_SKIP, MAIL_STATUS_PENDING, MAIL_STATUS_EDITING, MAIL_STATUS_SAVED, MAIL_STATUS_SENT];
+  const index = order.indexOf(String(status || '').trim());
+  return index < 0 ? 0 : index + 1;
+}
 
 /**
  * 重複したメール履歴を1件にまとめる。
@@ -1400,7 +1418,7 @@ function boardDedupeMails_(ss) {
 
   const score = function (row) {
     const status = String(row[BOARD_MAIL_COL.status - 1] || '').trim();
-    let value = BOARD_MAIL_PROGRESS[status] || 0;
+    let value = boardMailProgress_(status);
     if (String(row[BOARD_MAIL_COL.finalText - 1] || '').trim()) value += 10;
     if (String(row[BOARD_MAIL_COL.instructions - 1] || '').trim()) value += 5;
     if (String(row[BOARD_MAIL_COL.responseType - 1] || '').trim()) value += 5;
