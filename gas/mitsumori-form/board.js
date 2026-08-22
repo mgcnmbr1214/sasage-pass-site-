@@ -2066,6 +2066,7 @@ function boardRefreshFormulas_(sheet) {
     if (!String(sheet.getRange(row, BOARD_COL.caseId).getValue() || '').trim()) continue;
     boardSetTodoFormula_(sheet, row);
     boardSetOwnerFormula_(sheet, row);
+    boardSetUnrepliedFormula_(sheet, row);
   }
 }
 
@@ -2234,11 +2235,14 @@ function boardSetUnrepliedFormula_(sheet, row) {
   sheet.getRange(row, BOARD_COL.unreplied).setFormula(
     '=LET(' +
     'id,$' + boardColLetter_(BOARD_COL.customerId) + row + ',' +
+    'ids,' + mailCol(BOARD_MAIL_COL.customerId) + ',' +
     's,' + mailCol(BOARD_MAIL_COL.status) + ',' +
-    'hit,(' + mailCol(BOARD_MAIL_COL.customerId) + '=id)*(' + open + '),' +
+    'hit,(ids=id)*(' + open + '),' +
     'n,SUMPRODUCT(hit),' +
+    // 配列の中の位置から行番号を逆算すると1行ずれる。ROW() で実際の行番号を直接取る
+    'r,SUMPRODUCT(MAX(hit*ROW(ids))),' +
     'IF(OR($' + boardColLetter_(BOARD_COL.caseId) + row + '="",id="",n=0),"",' +
-    'HYPERLINK("#gid=' + gid + '&range=A"&(XMATCH(1,hit,0,-1)+1),"● "&n&"件")))'
+    'HYPERLINK("#gid=' + gid + '&range=A"&r,"● "&n&"件")))'
   );
 }
 
