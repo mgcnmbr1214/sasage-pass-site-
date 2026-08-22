@@ -513,7 +513,7 @@ function squareSendCompletionMail_(ss, settings, caseRow, customer) {
     summary: '支払いと署名の確認後、自動で送信しました。',
     aiFirst: built.body,
     finalText: built.body,
-    status: '送信済',
+    status: MAIL_STATUS_SENT,
     threadId: ''
   });
   boardLog_('Square', customer.email + ' へ手続き完了のご連絡を送信しました');

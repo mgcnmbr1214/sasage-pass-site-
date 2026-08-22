@@ -21,11 +21,36 @@ const MAIL_MAX_BODY_CHARS = 4000;
 const MAIL_TRIGGER_MINUTES = 10;
 const MAIL_EXAMPLE_COUNT = 3;
 
-const MAIL_STATUS_PENDING = '未確認';
-const MAIL_STATUS_EDITING = '修正中';
-const MAIL_STATUS_SAVED = '下書き保存済';
-const MAIL_STATUS_SENT = '送信済';
+/**
+ * 状態は「そのメールに、こちらがどこまで返したか」を表す。
+ * Gmailの開封状況とは無関係。
+ */
+const MAIL_STATUS_PENDING = '返信前';
+const MAIL_STATUS_EDITING = '返信案あり';
+const MAIL_STATUS_SAVED = '下書きあり';
+const MAIL_STATUS_SENT = '返信済み';
 const MAIL_STATUS_SKIP = '対応不要';
+
+/** 状態の説明。プルダウンの説明文と設計ドキュメントで使う。 */
+const MAIL_STATUS_HELP = [
+  MAIL_STATUS_PENDING + '：まだ何もしていない',
+  MAIL_STATUS_EDITING + '：返信案をシートに作った。Gmailにはまだ無い',
+  MAIL_STATUS_SAVED + '：Gmailの下書きに入れた。まだ送っていない',
+  MAIL_STATUS_SENT + '：返信を送った',
+  MAIL_STATUS_SKIP + '：返信しないと決めた'
+].join('\n');
+
+/** 旧名称 → 新名称。初期セットアップで既存の値を書き換える。 */
+const MAIL_STATUS_RENAMES = {
+  '未確認': MAIL_STATUS_PENDING,
+  '修正中': MAIL_STATUS_EDITING,
+  '下書き保存済': MAIL_STATUS_SAVED,
+  '送信済': MAIL_STATUS_SENT
+};
+
+const MAIL_STATUSES = [
+  MAIL_STATUS_PENDING, MAIL_STATUS_EDITING, MAIL_STATUS_SAVED, MAIL_STATUS_SENT, MAIL_STATUS_SKIP
+];
 
 /** 確認画面に出し続ける状態。実際に送信するまでは一覧から消さない。 */
 const MAIL_OPEN_STATUSES = [MAIL_STATUS_PENDING, MAIL_STATUS_EDITING, MAIL_STATUS_SAVED];
@@ -165,7 +190,7 @@ function mailStartAutoCheck() {
   boardLog_('②自動チェック', MAIL_TRIGGER_MINUTES + '分ごとの自動チェックを開始しました');
   SpreadsheetApp.getUi().alert(
     MAIL_TRIGGER_MINUTES + '分ごとに新着メールを自動で確認します。\n' +
-    '返信案ができたら通知メールが届きます。'
+    'メールが届いたら、その中身が通知メールで届きます。'
   );
 }
 
@@ -434,8 +459,8 @@ function mailGetPendingList() {
 }
 
 /**
- * 「下書き保存済」の行について、実際に返信が送られたかを Gmail 側で確認する。
- * スレッドの最新メールが自分から送られていれば送信済とみなす。
+ * 「下書きあり」の行について、実際に返信が送られたかを Gmail 側で確認する。
+ * スレッドの最新メールが自分から送られていれば返信済みとみなす。
  * 下書きを消しただけの場合は状態を変えないため、一覧から消えない。
  */
 function mailRefreshSentStatus_(ss) {
@@ -1189,12 +1214,15 @@ function mailAppendHistory_(ss, data) {
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   if (!sheet) return;
   sheet.appendRow([
-    new Date(), data.customerId, data.from, data.subject, data.summary,
+    new Date(), data.customerId, '', data.from, data.subject, data.summary,
     data.aiFirst || '', '', data.finalText || '', data.status, false, data.threadId, '',
     data.responseType || '', '', data.messageId || ''
   ]);
-  sheet.getRange(sheet.getLastRow(), BOARD_MAIL_COL.dismiss)
+  const row = sheet.getLastRow();
+  boardSetMailCustomerFormula_(sheet, row);
+  sheet.getRange(row, BOARD_MAIL_COL.dismiss)
     .insertCheckboxes().setValue(data.status === MAIL_STATUS_SKIP);
+  boardForceRowHeight_(sheet, row, 1);
 }
 
 // ------------------------------------------------------------
