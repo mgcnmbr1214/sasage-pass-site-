@@ -901,6 +901,30 @@ function boardOrderSheets_(ss) {
 // 初期データ
 // ------------------------------------------------------------
 
+/**
+ * 設定シートに残す「記録」。切り替えるための値ではなく、読むためのもの。
+ * 項目名を（記録）で始めてあり、初期セットアップで灰色にして設定と見分ける。
+ */
+const BOARD_SETTING_NOTE_PREFIX = '（記録）';
+const BOARD_SETTING_NOTES = [
+  [BOARD_SETTING_NOTE_PREFIX + '案件が作られる条件',
+   'Responses に未取込の行があり、メールアドレスが妥当なとき',
+   'フォーム回答1件＝案件1件。同じお客様が2回答えれば案件は2件になる。'
+   + '取り込み済みかどうかは案件ボードの「元回答行」列で判断するため、何度実行しても重複しない。'],
+  [BOARD_SETTING_NOTE_PREFIX + '取り込み元① 見積もりフォーム',
+   'https://sites.google.com/view/sasagepass-estimate/概算見積もり',
+   '選択内容・月間予定数・概算単価まで埋まる。このスプレッドシートのスクリプト（gas/mitsumori-form）が '
+   + 'Responses タブへ追記する。'],
+  [BOARD_SETTING_NOTE_PREFIX + '取り込み元② お問い合わせフォーム',
+   'https://sasagepass.com/ の最下部',
+   '案件ボードの「依頼内容」が「お問い合わせフォームより：〇〇」で始まる。点数と単価は空になる。'
+   + '別プロジェクト（gas/contact-form）が同じ Responses タブへ追記する。'],
+  [BOARD_SETTING_NOTE_PREFIX + '案件が作られない経路',
+   'メール受信・対応を選ぶ・Squareの操作・顧客タブへの手入力',
+   'いずれも案件は増えない。新着メールの読み取りは顧客タブに登録済みのアドレスしか見ないため、'
+   + '未登録の相手から届いたメールは検知もしない。']
+];
+
 const BOARD_DEFAULT_SETTINGS = [
   ['通知先メールアドレス', 'sasagepass@gmail.com', '②の返信案ができたときの通知先'],
   ['送信元エイリアス', 'info@sasagepass.com', 'メール下書きの差出人。Gmailにエイリアス登録が必要'],
@@ -915,7 +939,7 @@ const BOARD_DEFAULT_SETTINGS = [
   ['新着メールの読み取り', 'オン', 'オフにすると定期チェックで新着メールを読み取らない'],
   ['手続き完了の自動送信', 'オン', '支払いと署名の確認後、テンプレT4をお客様へ自動送信する。オフで停止'],
   ['請求書送信の手順', boardDefaultInvoiceSteps_(), 'Square手続き画面に表示される手順。実際の操作に合わせて自由に書き換えてください']
-];
+].concat(BOARD_SETTING_NOTES);
 
 function boardDefaultInvoiceSteps_() {
   return [
@@ -958,13 +982,35 @@ function boardSeedSettings_(sheet) {
     });
   }
   BOARD_DEFAULT_SETTINGS.forEach(function (item) {
+    const note = item[0].indexOf(BOARD_SETTING_NOTE_PREFIX) === 0;
     const hit = existing[item[0]];
     if (!hit) {
       sheet.appendRow(item);
+    } else if (note) {
+      // 記録は切り替えるための値ではないので、常に最新の内容にしておく
+      sheet.getRange(hit.row, 2, 1, 2).setValues([[item[1], item[2]]]);
     } else if (hit.value === '' || hit.value === null) {
       sheet.getRange(hit.row, 2).setValue(item[1]);
     }
   });
+  boardStyleSettingNotes_(sheet);
+}
+
+/** 記録の行は灰色にして、切り替える設定と見分けられるようにする。 */
+function boardStyleSettingNotes_(sheet) {
+  if (sheet.getLastRow() < 2) return;
+  const rows = sheet.getLastRow() - 1;
+  const names = sheet.getRange(2, 1, rows, 1).getValues();
+
+  names.forEach(function (row, i) {
+    const note = String(row[0] || '').indexOf(BOARD_SETTING_NOTE_PREFIX) === 0;
+    sheet.getRange(i + 2, 1, 1, BOARD_SETTINGS_HEADERS.length)
+      .setBackground(note ? '#F1EFE8' : null)
+      .setFontColor(note ? '#5F5E5A' : null);
+  });
+  sheet.getRange(2, 1, rows, BOARD_SETTINGS_HEADERS.length)
+    .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+    .setVerticalAlignment('top');
 }
 
 function boardSeedKnowledge_(sheet) {
