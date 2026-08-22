@@ -1067,8 +1067,6 @@ function mailDismiss(row) {
   boardUseCurrentColumns_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
   sheet.getRange(Number(row), BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SKIP);
-  // メール履歴のチェックボックスと食い違わないようにする
-  sheet.getRange(Number(row), BOARD_MAIL_COL.dismiss).insertCheckboxes().setValue(true);
   return { message: '対応不要にしました。' };
 }
 
@@ -1309,13 +1307,11 @@ function mailAppendHistory_(ss, data) {
   const when = data.date || new Date();
   sheet.appendRow([
     when, data.customerId, '', data.from, data.subject, mailStamp_(when, data.summary),
-    data.aiFirst || '', '', mailStamp_(new Date(), data.finalText), data.status, false,
+    data.aiFirst || '', '', mailStamp_(new Date(), data.finalText), data.status,
     data.threadId, '', data.responseType || '', '', data.messageId || ''
   ]);
   const row = sheet.getLastRow();
   boardSetMailCustomerFormula_(sheet, row);
-  sheet.getRange(row, BOARD_MAIL_COL.dismiss)
-    .insertCheckboxes().setValue(data.status === MAIL_STATUS_SKIP);
   boardForceRowHeight_(sheet, row, 1);
 }
 

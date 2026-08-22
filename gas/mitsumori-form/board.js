@@ -109,7 +109,7 @@ const BOARD_CASE_INTAKE = [
 
 const BOARD_MAIL_HEADERS = [
   '日時', '顧客ID', 'お客様', '差出人', '件名', '受信本文',
-  'AI初回案', '修正指示ログ', '返信文面', '状態', '対応不要', 'GmailスレッドID', '下書き保存日時', '対応種別', '下書きID',
+  'AI初回案', '修正指示ログ', '返信文面', '状態', 'GmailスレッドID', '下書き保存日時', '対応種別', '下書きID',
   'GmailメッセージID'
 ];
 
@@ -121,8 +121,8 @@ const BOARD_MAIL_DETAIL_COLS = ['aiFirst', 'instructions', 'threadId', 'savedAt'
 
 const BOARD_MAIL_COL = {
   date: 1, customerId: 2, customerName: 3, from: 4, subject: 5, summary: 6,
-  aiFirst: 7, instructions: 8, finalText: 9, status: 10, dismiss: 11,
-  threadId: 12, savedAt: 13, responseType: 14, draftId: 15, messageId: 16
+  aiFirst: 7, instructions: 8, finalText: 9, status: 10,
+  threadId: 11, savedAt: 12, responseType: 13, draftId: 14, messageId: 15
 };
 
 /**
@@ -223,28 +223,35 @@ const BOARD_SOURCE_FIELDS = {
 };
 
 /**
- * メール履歴の「対応不要」チェックで、そのメール1通の状態を切り替える。
+ * メール履歴の「状態」を手で変えたら、案件ボードの未返信をすぐ合わせる。
  *
- * 返信が要らないメール（続けて2通届いた場合など）を、
- * ダイアログを開かずにその場で片付けるための入口。外すと返信前に戻る。
+ * インストール型のトリガーから呼ぶ（`boardEnsureEditTrigger_`）。
+ * 簡易トリガーの `onEdit` は権限が限られていて静かに失敗することがあるため、使わない。
  */
-function onEdit(e) {
+function boardOnEditInstalled_(e) {
   if (!e || !e.range) return;
   const sheet = e.range.getSheet();
   if (sheet.getName() !== BOARD_SHEET_MAILS) return;
-  if (e.range.getRow() < 2 || e.range.getNumRows() !== 1) return;
-  if (e.range.getColumn() !== BOARD_MAIL_COL.dismiss) return;
+  if (e.range.getRow() < 2) return;
 
-  const checked = e.range.getValue() === true;
-  const row = e.range.getRow();
-  const current = String(sheet.getRange(row, BOARD_MAIL_COL.status).getValue() || '').trim();
-  if (checked && current === MAIL_STATUS_SKIP) return;
-  if (!checked && current !== MAIL_STATUS_SKIP) return;
+  const first = e.range.getColumn();
+  const last = first + e.range.getNumColumns() - 1;
+  if (BOARD_MAIL_COL.status < first || BOARD_MAIL_COL.status > last) return;
 
-  sheet.getRange(row, BOARD_MAIL_COL.status).setValue(checked ? MAIL_STATUS_SKIP : MAIL_STATUS_PENDING);
   boardRefreshUnreplied_(SpreadsheetApp.getActiveSpreadsheet());
-  boardLog_('未返信', sheet.getRange(row, BOARD_MAIL_COL.subject).getValue() +
-    '：' + (checked ? '対応不要にしました' : '返信前に戻しました'));
+}
+
+/** 編集を検知するトリガーを1つだけ用意する。 */
+function boardEnsureEditTrigger_(ss) {
+  let found = false;
+  ScriptApp.getProjectTriggers().forEach(function (trigger) {
+    if (trigger.getHandlerFunction() !== 'boardOnEditInstalled_') return;
+    if (found) { ScriptApp.deleteTrigger(trigger); return; }
+    found = true;
+  });
+  if (found) return;
+  ScriptApp.newTrigger('boardOnEditInstalled_').forSpreadsheet(ss).onEdit().create();
+  boardLog_('セットアップ', 'メール履歴の編集を検知するトリガーを登録しました');
 }
 
 function onOpen() {
@@ -302,6 +309,11 @@ function boardSetup() {
 
   boardOrderSheets_(ss);
   boardHideSourceSheets_(ss);
+  try {
+    boardEnsureEditTrigger_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '編集トリガーの登録に失敗: ' + err.message);
+  }
 
   const brokenFixed = boardRepairBrokenCases_(ss);
   const deduped = boardDedupeCases_(ss);
@@ -647,7 +659,7 @@ function boardApplyCaseFormatting_(sheet) {
 /** メール履歴の幅。確認に使う列を広く、内部用の列を狭く。 */
 const BOARD_MAIL_WIDTHS = {
   date: 130, customerId: 70, customerName: 150, from: 200, subject: 230, summary: 400,
-  finalText: 400, status: 100, dismiss: 80, responseType: 200,
+  finalText: 400, status: 110, responseType: 200,
   aiFirst: 160, instructions: 160,
   threadId: 120, savedAt: 120, draftId: 120, messageId: 120
 };
@@ -695,14 +707,6 @@ function boardApplyMailFormatting_(sheet) {
         .setAllowInvalid(false)
         .build());
 
-    // チェックの入り／切りは状態列に合わせる。ダイアログ側で変えた分もここで揃う
-    const status = sheet.getRange(2, BOARD_MAIL_COL.status, dataRows, 1).getValues();
-    sheet.getRange(2, BOARD_MAIL_COL.dismiss, dataRows, 1)
-      .insertCheckboxes()
-      .setHorizontalAlignment('center')
-      .setValues(status.map(function (row) {
-        return [String(row[0] || '').trim() === MAIL_STATUS_SKIP];
-      }));
   }
 
   // 対応中のメールは背景を付けて、案件ボードの色と対応させる
@@ -2747,6 +2751,15 @@ function boardEnsureMailColumns_(ss) {
   Object.keys(BOARD_MAIL_RENAMES).forEach(function (from) {
     headers = boardRenameColumn_(sheet, headers, from, BOARD_MAIL_RENAMES[from]);
   });
+
+  // 対応不要は状態列に一本化した
+  const dismiss = headers.indexOf('対応不要');
+  if (dismiss >= 0) {
+    sheet.deleteColumn(dismiss + 1);
+    headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+      .map(function (h) { return String(h || '').trim(); });
+    boardLog_('移行', 'メール履歴の 対応不要 列を削除しました（状態列に一本化）');
+  }
 
   // 途中に足す列は、名前で位置を決めて挿入する。そうしないと右側の中身がずれる
   BOARD_MAIL_HEADERS.forEach(function (name, i) {
