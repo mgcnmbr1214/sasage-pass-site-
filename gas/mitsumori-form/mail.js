@@ -52,6 +52,26 @@ const MAIL_STATUSES = [
   MAIL_STATUS_PENDING, MAIL_STATUS_EDITING, MAIL_STATUS_SAVED, MAIL_STATUS_SENT, MAIL_STATUS_SKIP
 ];
 
+/**
+ * 受信本文・返信文面の先頭に付ける日時。
+ *
+ * 同じスレッドのメールは件名で見分けられないため、シート上で日時を添える。
+ * ただしこの1行はメールの中身ではないので、
+ * 画面へ渡すときと下書きを作るときは必ず mailUnstamp_ で外す。
+ */
+const MAIL_STAMP_PATTERN = /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}\r?\n/;
+
+function mailStamp_(when, text) {
+  const body = mailUnstamp_(text);
+  if (!body) return '';
+  const at = when instanceof Date ? when : new Date();
+  return Utilities.formatDate(at, Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm') + '\n' + body;
+}
+
+function mailUnstamp_(text) {
+  return String(text || '').replace(MAIL_STAMP_PATTERN, '');
+}
+
 /** 確認画面に出し続ける状態。実際に送信するまでは一覧から消さない。 */
 const MAIL_OPEN_STATUSES = [MAIL_STATUS_PENDING, MAIL_STATUS_EDITING, MAIL_STATUS_SAVED];
 
@@ -451,8 +471,8 @@ function mailGetPendingList() {
       date: boardFormatDate_(rows[i][BOARD_MAIL_COL.date - 1]),
       from: rows[i][BOARD_MAIL_COL.from - 1],
       subject: rows[i][BOARD_MAIL_COL.subject - 1],
-      summary: rows[i][BOARD_MAIL_COL.summary - 1],
-      text: rows[i][BOARD_MAIL_COL.finalText - 1] || rows[i][BOARD_MAIL_COL.aiFirst - 1],
+      summary: mailUnstamp_(rows[i][BOARD_MAIL_COL.summary - 1]),
+      text: mailUnstamp_(rows[i][BOARD_MAIL_COL.finalText - 1]) || rows[i][BOARD_MAIL_COL.aiFirst - 1],
       instructions: rows[i][BOARD_MAIL_COL.instructions - 1],
       threadId: rows[i][BOARD_MAIL_COL.threadId - 1],
       responseType: rows[i][BOARD_MAIL_COL.responseType - 1],
@@ -517,7 +537,7 @@ function mailGetCustomerMessage(row) {
   boardUseCurrentColumns_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
   const values = sheet.getRange(Number(row), 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
-  const fallback = String(values[BOARD_MAIL_COL.summary - 1] || '(本文を取得できませんでした)');
+  const fallback = mailUnstamp_(values[BOARD_MAIL_COL.summary - 1]) || '(本文を取得できませんでした)';
   const from = String(values[BOARD_MAIL_COL.from - 1] || '').trim();
   if (!from) return { text: fallback };
 
@@ -755,7 +775,7 @@ function mailComposeWithType(row, typeId, fields) {
   if (!String(values[BOARD_MAIL_COL.aiFirst - 1] || '').trim()) {
     sheet.getRange(r, BOARD_MAIL_COL.aiFirst).setValue(reply);
   }
-  sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(reply);
+  sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(mailStamp_(new Date(), reply));
   sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_EDITING);
   boardLog_('②返信案', values[BOARD_MAIL_COL.subject - 1] + '：' + type.name + ' の返信案を作成しました');
 
@@ -802,14 +822,14 @@ function mailContextText_(values) {
       boardLog_('②エラー', 'スレッドの取得に失敗: ' + err.message);
     }
   }
-  return String(values[BOARD_MAIL_COL.summary - 1] || '');
+  return mailUnstamp_(values[BOARD_MAIL_COL.summary - 1]);
 }
 
 /** 画面で編集した本文をシートに保存する（下書きにはしない）。 */
 function mailSaveText(row, text) {
   boardUseCurrentColumns_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
-  sheet.getRange(Number(row), BOARD_MAIL_COL.finalText).setValue(text);
+  sheet.getRange(Number(row), BOARD_MAIL_COL.finalText).setValue(mailStamp_(new Date(), text));
   sheet.getRange(Number(row), BOARD_MAIL_COL.status).setValue(MAIL_STATUS_EDITING);
   return { message: '保存しました。' };
 }
@@ -851,7 +871,7 @@ function mailRegenerate(row) {
   });
 
   sheet.getRange(r, BOARD_MAIL_COL.aiFirst).setValue(reply);
-  sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(reply);
+  sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(mailStamp_(new Date(), reply));
   sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_PENDING);
   sheet.getRange(r, BOARD_MAIL_COL.savedAt).setValue('');
   boardLog_('②再生成', values[BOARD_MAIL_COL.subject - 1] + ' の返信案を作り直しました');
@@ -890,7 +910,7 @@ function mailReviseText(row, text, instruction) {
   const log = String(cell.getValue() || '');
   cell.setValue((log ? log + '\n' : '') +
     Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MM/dd HH:mm') + ' ' + trimmed);
-  sheet.getRange(Number(row), BOARD_MAIL_COL.finalText).setValue(revised);
+  sheet.getRange(Number(row), BOARD_MAIL_COL.finalText).setValue(mailStamp_(new Date(), revised));
   sheet.getRange(Number(row), BOARD_MAIL_COL.status).setValue(MAIL_STATUS_EDITING);
   boardLog_('②修正依頼', trimmed);
 
@@ -934,7 +954,7 @@ function mailApproveToDraft(row, text) {
     draftId = GmailApp.createDraft(to, subject, text, options).getId();
   }
 
-  sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(text);
+  sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(mailStamp_(new Date(), text));
   sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SAVED);
   sheet.getRange(r, BOARD_MAIL_COL.savedAt).setValue(new Date());
   sheet.getRange(r, BOARD_MAIL_COL.draftId).setValue(draftId);
@@ -1219,10 +1239,11 @@ function mailAppendHistory_(ss, data) {
   if (!sheet) return;
   // 日時は「メールが届いた日時」。記録した時刻を入れると、
   // 同じスレッドの何通目なのかが見分けられなくなる
+  const when = data.date || new Date();
   sheet.appendRow([
-    data.date || new Date(), data.customerId, '', data.from, data.subject, data.summary,
-    data.aiFirst || '', '', data.finalText || '', data.status, false, data.threadId, '',
-    data.responseType || '', '', data.messageId || ''
+    when, data.customerId, '', data.from, data.subject, mailStamp_(when, data.summary),
+    data.aiFirst || '', '', mailStamp_(new Date(), data.finalText), data.status, false,
+    data.threadId, '', data.responseType || '', '', data.messageId || ''
   ]);
   const row = sheet.getLastRow();
   boardSetMailCustomerFormula_(sheet, row);

@@ -678,6 +678,7 @@ function boardApplyMailFormatting_(sheet) {
   if (dataRows > 0) {
     boardMigrateMailStatuses_(sheet);
     boardBackfillMailDates_(sheet);
+    boardStampMailBodies_(sheet);
     for (let row = 2; row <= sheet.getLastRow(); row++) boardSetMailCustomerFormula_(sheet, row);
 
     // 状態は決まった言葉だけにする。意味は入力時の説明で出す
@@ -757,6 +758,35 @@ function boardBackfillMailDates_(sheet) {
   });
 
   if (fixed > 0) boardLog_('移行', 'メール履歴の日時 ' + fixed + ' 件を受信日時に直しました');
+}
+
+/**
+ * 受信本文と返信文面の先頭に日時を付ける。
+ * 受信本文は受信日時、返信文面は下書きを保存した日時（無ければ受信日時）。
+ */
+function boardStampMailBodies_(sheet) {
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
+  const received = [];
+  const replied = [];
+  let stamped = 0;
+
+  rows.forEach(function (row) {
+    const at = row[BOARD_MAIL_COL.date - 1];
+    const savedAt = row[BOARD_MAIL_COL.savedAt - 1];
+    const before = [row[BOARD_MAIL_COL.summary - 1], row[BOARD_MAIL_COL.finalText - 1]];
+    const after = [
+      mailStamp_(at, before[0]),
+      mailStamp_(savedAt instanceof Date ? savedAt : at, before[1])
+    ];
+    if (after[0] !== String(before[0] || '') || after[1] !== String(before[1] || '')) stamped++;
+    received.push([after[0]]);
+    replied.push([after[1]]);
+  });
+
+  if (stamped === 0) return;
+  sheet.getRange(2, BOARD_MAIL_COL.summary, received.length, 1).setValues(received);
+  sheet.getRange(2, BOARD_MAIL_COL.finalText, replied.length, 1).setValues(replied);
+  boardLog_('移行', 'メール履歴 ' + stamped + ' 件の本文に日時を付けました');
 }
 
 /** 状態の言い回しを新しいものに揃える。 */
