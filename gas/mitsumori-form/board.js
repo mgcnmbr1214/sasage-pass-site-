@@ -24,7 +24,12 @@ const BOARD_STATUS_SHORT = '情報不足';
 const BOARD_STATUS_READY = '依頼確定前';
 const BOARD_STATUS_CLOSED = '見送り';
 
-const BOARD_STATUSES = ['問合せ', '返信済', BOARD_STATUS_SHORT, BOARD_STATUS_READY, '依頼確定', BOARD_STATUS_SIGNING, '発送待ち', BOARD_STATUS_SHIPPED, '作業中', '返送済', BOARD_STATUS_CLOSED];
+const BOARD_STATUS_DONE = '返送済';
+
+const BOARD_STATUSES = ['問合せ', '返信済', BOARD_STATUS_SHORT, BOARD_STATUS_READY, '依頼確定', BOARD_STATUS_SIGNING, '発送待ち', BOARD_STATUS_SHIPPED, '作業中', BOARD_STATUS_DONE, BOARD_STATUS_CLOSED];
+
+/** 終わった案件。「対応を選ぶ」にも出さず、未返信も数えない。 */
+const BOARD_FINISHED_STATUSES = [BOARD_STATUS_DONE, BOARD_STATUS_CLOSED];
 
 /** そのステータスで次に動くのは誰か。案件ボードの「対応者」列に出す。 */
 const BOARD_STATUS_OWNER = {
@@ -2384,8 +2389,8 @@ function boardRefreshUnreplied_(ss) {
   cases.getRange(2, BOARD_COL.unreplied, rows, 1).setRichTextValues(
     caseIds.map(function (row, i) {
       if (!String(row[0] || '').trim()) return [blank];
-      // 見送りの案件は出さない。「対応を選ぶ」の一覧と同じ扱いにする
-      if (String(statuses[i][0] || '').trim() === BOARD_STATUS_CLOSED) return [blank];
+      // 終わった案件には出さない。「対応を選ぶ」の一覧と同じ扱いにする
+      if (BOARD_FINISHED_STATUSES.indexOf(String(statuses[i][0] || '').trim()) >= 0) return [blank];
       const hits = open[String(customerIds[i][0] || '').trim()];
       if (!hits || hits.length === 0) return [blank];
 

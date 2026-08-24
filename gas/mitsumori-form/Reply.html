@@ -350,8 +350,8 @@
   function renderList() {
     var list = el('list');
     if (items.length === 0) {
-      list.innerHTML = '<div class="empty">確認待ちの返信案はありません。</div>';
-      el('main').innerHTML = '<div class="empty">確認待ちの返信案はありません。</div>';
+      list.innerHTML = '<div class="empty">進行中の案件はありません。</div>';
+      el('main').innerHTML = '<div class="empty">進行中の案件はありません。</div>';
       return;
     }
     list.innerHTML = '';

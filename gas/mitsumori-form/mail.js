@@ -455,32 +455,45 @@ function mailGetPendingList() {
   if (!sheet || sheet.getLastRow() < 2) return [];
   const active = mailActiveCustomers_(ss);
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
-  const out = [];
-  const shown = {};
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const status = String(rows[i][BOARD_MAIL_COL.status - 1] || '').trim();
-    if (MAIL_OPEN_STATUSES.indexOf(status) < 0) continue;
 
-    const customerId = String(rows[i][BOARD_MAIL_COL.customerId - 1] || '').trim();
-    if (!active[customerId]) continue;
-    // 返信するのは最新のやりとりに対してなので、お客様ごとに1件だけ出す
-    if (shown[customerId]) continue;
-    shown[customerId] = true;
-    out.push({
+  // 進行中の案件があるお客様は、返信待ちが無くても全員出す。
+  // こちらから続けて連絡する用があるため、一覧に居ないと開けない
+  const best = {};
+  rows.forEach(function (row, i) {
+    const customerId = String(row[BOARD_MAIL_COL.customerId - 1] || '').trim();
+    if (!active[customerId]) return;
+
+    const status = String(row[BOARD_MAIL_COL.status - 1] || '').trim();
+    const when = row[BOARD_MAIL_COL.date - 1];
+    const item = {
       row: i + 2,
+      open: MAIL_OPEN_STATUSES.indexOf(status) >= 0,
+      at: when instanceof Date ? when.getTime() : 0,
       customer: active[customerId].customer,
-      date: boardFormatDate_(rows[i][BOARD_MAIL_COL.date - 1]),
-      from: rows[i][BOARD_MAIL_COL.from - 1],
-      subject: rows[i][BOARD_MAIL_COL.subject - 1],
-      summary: mailUnstamp_(rows[i][BOARD_MAIL_COL.summary - 1]),
-      text: mailUnstamp_(rows[i][BOARD_MAIL_COL.finalText - 1]) || rows[i][BOARD_MAIL_COL.aiFirst - 1],
-      instructions: rows[i][BOARD_MAIL_COL.instructions - 1],
-      threadId: rows[i][BOARD_MAIL_COL.threadId - 1],
-      responseType: rows[i][BOARD_MAIL_COL.responseType - 1],
+      date: boardFormatDate_(when),
+      from: row[BOARD_MAIL_COL.from - 1],
+      subject: row[BOARD_MAIL_COL.subject - 1],
+      summary: mailUnstamp_(row[BOARD_MAIL_COL.summary - 1]),
+      text: mailUnstamp_(row[BOARD_MAIL_COL.finalText - 1]) || row[BOARD_MAIL_COL.aiFirst - 1],
+      instructions: row[BOARD_MAIL_COL.instructions - 1],
+      threadId: row[BOARD_MAIL_COL.threadId - 1],
+      responseType: row[BOARD_MAIL_COL.responseType - 1],
       status: status
+    };
+
+    // お客様ごとに1件。返信待ちのものを優先し、その中では新しいもの
+    const kept = best[customerId];
+    if (!kept) { best[customerId] = item; return; }
+    if (item.open && !kept.open) { best[customerId] = item; return; }
+    if (item.open === kept.open && item.at >= kept.at) best[customerId] = item;
+  });
+
+  // 返信待ちを上に、そのあとは新しい順
+  return Object.keys(best).map(function (id) { return best[id]; })
+    .sort(function (a, b) {
+      if (a.open !== b.open) return a.open ? -1 : 1;
+      return b.at - a.at;
     });
-  }
-  return out;
 }
 
 /**
@@ -700,7 +713,7 @@ function mailGetCustomerMessage(row) {
  * 見送りだけの方や、案件が1件も無い方は出さない。
  */
 /**
- * 見送り以外の案件を、顧客IDで引ける形にして返す。
+ * 終わっていない案件を、顧客IDで引ける形にして返す。
  * 一覧にお客様の名前を出すため、案件IDとお客様名も一緒に持たせる。
  */
 function mailActiveCustomers_(ss) {
@@ -712,7 +725,7 @@ function mailActiveCustomers_(ss) {
     .forEach(function (row) {
       const id = String(row[BOARD_COL.customerId - 1] || '').trim();
       if (!id) return;
-      if (String(row[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_CLOSED) return;
+      if (BOARD_FINISHED_STATUSES.indexOf(String(row[BOARD_COL.status - 1] || '').trim()) >= 0) return;
       active[id] = { customer: String(row[BOARD_COL.customer - 1] || '').trim() };
     });
   return active;
