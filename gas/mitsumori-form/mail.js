@@ -500,9 +500,11 @@ function mailRefreshSentStatus_(ss) {
     const threadId = String(row[BOARD_MAIL_COL.threadId - 1] || '');
 
     // フォームの回答から作られた行にはスレッドが無い。
-    // この場合は新規メールとして下書きを作っているため、送信済みフォルダで確かめる
+    // この場合は新規メールとして下書きを作っているため、下書きの行方で判断する
     if (!threadId) {
-      if (mailSentAfter_(row[BOARD_MAIL_COL.from - 1], row[BOARD_MAIL_COL.savedAt - 1])) {
+      if (mailDraftWasSent_(row[BOARD_MAIL_COL.draftId - 1],
+                            row[BOARD_MAIL_COL.from - 1],
+                            row[BOARD_MAIL_COL.savedAt - 1])) {
         sheet.getRange(i + 2, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SENT);
       }
       return;
@@ -513,6 +515,8 @@ function mailRefreshSentStatus_(ss) {
       if (!thread) return;
       const messages = thread.getMessages();
       const last = messages[messages.length - 1];
+      // 下書きもスレッドの一員として返ってくる。まだ送っていないので進めない
+      if (last.isDraft()) return;
       const from = String(last.getFrom() || '').toLowerCase();
       const sentByUs = ours.some(function (address) { return address && from.indexOf(address) >= 0; });
       if (sentByUs) {
@@ -591,8 +595,27 @@ function mailSyncSentReplies_(ss) {
 }
 
 /**
+ * スレッドが無い行（フォームの回答から作った行）の下書きが、送られたかどうか。
+ *
+ * **まず下書きがGmailに残っているかを見る。** 残っていれば、まだ送っていない。
+ * 送信済みフォルダだけで判断すると、下書き保存後にそのお客様へ送った
+ * 別件のメールを拾ってしまい、送っていない下書きまで送信済みになる。
+ */
+function mailDraftWasSent_(draftId, email, savedAt) {
+  const id = String(draftId || '').trim();
+  if (!id) return false;
+
+  try {
+    if (GmailApp.getDraft(id)) return false;
+  } catch (err) {
+    // 見つからない＝送られたか、手で消されたか
+  }
+  return mailSentAfter_(email, savedAt);
+}
+
+/**
  * その日以降に、そのアドレスへ送ったメールがあるか。
- * 下書きが消えただけと区別するため、送った証拠があるときだけ true を返す。
+ * 下書きを手で消しただけの場合と区別するため、送った証拠があるときだけ true を返す。
  */
 function mailSentAfter_(email, savedAt) {
   const to = String(email || '').trim();
