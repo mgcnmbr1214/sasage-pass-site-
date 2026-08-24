@@ -498,7 +498,16 @@ function mailRefreshSentStatus_(ss) {
   rows.forEach(function (row, i) {
     if (String(row[BOARD_MAIL_COL.status - 1] || '').trim() !== MAIL_STATUS_SAVED) return;
     const threadId = String(row[BOARD_MAIL_COL.threadId - 1] || '');
-    if (!threadId) return;
+
+    // フォームの回答から作られた行にはスレッドが無い。
+    // この場合は新規メールとして下書きを作っているため、送信済みフォルダで確かめる
+    if (!threadId) {
+      if (mailSentAfter_(row[BOARD_MAIL_COL.from - 1], row[BOARD_MAIL_COL.savedAt - 1])) {
+        sheet.getRange(i + 2, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SENT);
+      }
+      return;
+    }
+
     try {
       const thread = GmailApp.getThreadById(threadId);
       if (!thread) return;
@@ -581,6 +590,33 @@ function mailSyncSentReplies_(ss) {
   return filled;
 }
 
+/**
+ * その日以降に、そのアドレスへ送ったメールがあるか。
+ * 下書きが消えただけと区別するため、送った証拠があるときだけ true を返す。
+ */
+function mailSentAfter_(email, savedAt) {
+  const to = String(email || '').trim();
+  if (!to || !(savedAt instanceof Date)) return false;
+
+  // Gmail の after: は日付単位。前日から探して取りこぼしを防ぐ
+  const from = new Date(savedAt.getTime() - 24 * 3600 * 1000);
+  const query = 'in:sent to:' + to + ' after:' +
+    Utilities.formatDate(from, Session.getScriptTimeZone(), 'yyyy/MM/dd');
+  try {
+    const threads = GmailApp.search(query, 0, 10);
+    for (let t = 0; t < threads.length; t++) {
+      const messages = threads[t].getMessages();
+      for (let m = 0; m < messages.length; m++) {
+        if (String(messages[m].getTo() || '').indexOf(to) < 0) continue;
+        if (messages[m].getDate() >= savedAt) return true;
+      }
+    }
+  } catch (err) {
+    boardLog_('②状態確認', '送信済みの確認に失敗: ' + err.message);
+  }
+  return false;
+}
+
 function mailOwnAddresses_(ss) {
   const settings = boardGetSettings_(ss);
   const list = [String(settings['送信元エイリアス'] || '').trim().toLowerCase()];
@@ -604,35 +640,35 @@ function mailGetCustomerMessage(row) {
   boardUseCurrentColumns_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
   const values = sheet.getRange(Number(row), 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
-  const fallback = mailUnstamp_(values[BOARD_MAIL_COL.summary - 1]) || '(本文を取得できませんでした)';
-  const from = String(values[BOARD_MAIL_COL.from - 1] || '').trim();
-  if (!from) return { text: fallback };
+  const stored = mailUnstamp_(values[BOARD_MAIL_COL.summary - 1]);
+  const when = values[BOARD_MAIL_COL.date - 1];
+  const messageId = String(values[BOARD_MAIL_COL.messageId - 1] || '').trim();
+
+  // メールではなくフォームの回答から作られた行。シートの内容がすべて
+  if (!messageId) {
+    const at = when instanceof Date
+      ? Utilities.formatDate(when, Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm')
+      : '';
+    return {
+      text: (at ? at + '　' : '') + 'フォームからの回答\n' +
+        '件名: ' + String(values[BOARD_MAIL_COL.subject - 1] || '') + '\n' +
+        '────────────────────\n' +
+        (stored || '(本文を取得できませんでした)')
+    };
+  }
 
   try {
-    const latest = mailLatestFrom_(from);
-    if (!latest) return { text: fallback };
+    const message = GmailApp.getMessageById(messageId);
+    if (!message) return { text: stored || '(本文を取得できませんでした)' };
 
-    const body = latest.getPlainBody().replace(/\n{3,}/g, '\n\n').trim();
-    const header = Utilities.formatDate(latest.getDate(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm') +
-      '　' + latest.getFrom() + '\n' + '件名: ' + latest.getSubject() + '\n' +
+    const body = message.getPlainBody().replace(/\n{3,}/g, '\n\n').trim();
+    const header = Utilities.formatDate(message.getDate(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm') +
+      '　' + message.getFrom() + '\n' + '件名: ' + message.getSubject() + '\n' +
       '────────────────────\n';
     return { text: header + body };
   } catch (err) {
-    return { text: fallback };
+    return { text: stored || '(本文を取得できませんでした)' };
   }
-}
-
-/** そのアドレスから届いた最新のメール。 */
-function mailLatestFrom_(email) {
-  const threads = GmailApp.search('from:' + email + ' newer_than:' + MAIL_HISTORY_DAYS + 'd', 0, 20);
-  let latest = null;
-  threads.forEach(function (thread) {
-    thread.getMessages().forEach(function (message) {
-      if (String(message.getFrom() || '').indexOf(email) < 0) return;
-      if (!latest || message.getDate() > latest.getDate()) latest = message;
-    });
-  });
-  return latest;
 }
 
 /**
@@ -703,6 +739,26 @@ function mailGetHistory(row) {
       });
     });
   });
+
+  // フォームの回答はメールではないため Gmail には無い。メール履歴から拾う
+  const customerId = String(values[BOARD_MAIL_COL.customerId - 1] || '').trim();
+  if (customerId) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues()
+      .forEach(function (r) {
+        if (String(r[BOARD_MAIL_COL.customerId - 1] || '').trim() !== customerId) return;
+        if (String(r[BOARD_MAIL_COL.messageId - 1] || '').trim()) return;
+        const when = r[BOARD_MAIL_COL.date - 1];
+        if (!(when instanceof Date)) return;
+        out.push({
+          at: when.getTime(),
+          date: Utilities.formatDate(when, Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm'),
+          direction: 'フォーム',
+          incoming: true,
+          subject: String(r[BOARD_MAIL_COL.subject - 1] || ''),
+          text: mailUnstamp_(r[BOARD_MAIL_COL.summary - 1])
+        });
+      });
+  }
 
   out.sort(function (a, b) { return b.at - a.at; });
   return out;

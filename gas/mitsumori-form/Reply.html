@@ -73,6 +73,7 @@
   .hist-dir { display: inline-block; min-width: 30px; margin-right: 6px; padding: 1px 5px; border-radius: 3px;
     font-size: 10.5px; text-align: center; background: #E9F0FF; color: #3B6EF8; }
   .hist-item.out .hist-dir { background: #F1EFE8; color: #8A7B55; }
+  .hist-item.form .hist-dir { background: #EFE9FB; color: #6B4FBB; }
   .hist-body { font-size: 12px; color: #5A6A8A; line-height: 1.8; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
 </style>
 </head>
@@ -135,7 +136,8 @@
     if (!list || list.length === 0) { box.innerHTML = ''; return; }
     var html = '<details class="hist"><summary>過去のやりとり（' + list.length + '件）</summary>';
     list.forEach(function (h) {
-      html += '<div class="hist-item ' + (h.incoming ? 'in' : 'out') + '">' +
+      var kind = h.direction === 'フォーム' ? 'form' : (h.incoming ? 'in' : 'out');
+      html += '<div class="hist-item ' + kind + '">' +
         '<div class="hist-head"><span class="hist-dir">' + esc(h.direction) + '</span>' +
         esc(h.date) + '　' + esc(h.subject) + '</div>' +
         '<div class="hist-body">' + esc(h.text) + '</div></div>';
