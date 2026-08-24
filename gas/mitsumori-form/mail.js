@@ -1088,6 +1088,12 @@ function mailApproveToDraft(row, text) {
   const values = sheet.getRange(r, 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
   if (!String(text || '').trim()) throw new Error('本文が空です。先に返信案を作成してください。');
 
+  // 差し込みでは埋められない箇所が残ったまま送られるのを防ぐ
+  const blank = String(text).match(BOARD_TEMPLATE_PLACEHOLDER);
+  if (blank) {
+    throw new Error('本文に「' + blank[0] + '」が残っています。\n書き換えてから保存してください。');
+  }
+
   const settings = boardGetSettings_(ss);
   const options = { name: 'ササゲパス' };
   const alias = settings['送信元エイリアス'];
