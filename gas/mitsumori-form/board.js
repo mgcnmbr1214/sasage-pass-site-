@@ -359,6 +359,15 @@ function boardSetup() {
     boardLog_('②エラー', '案内メール作成日の補完に失敗: ' + err.message);
   }
 
+  try {
+    // 読み取りの条件を直しても、記録済みのメールには反映されない。ここで見直す。
+    // **ステータスの見直しより先に行う。** 顧客情報が埋まる前に判定すると、
+    // 情報がそろっているのに「情報不足」のまま残る
+    boardBackfillIntake_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '顧客情報の補完に失敗: ' + err.message);
+  }
+
   let restated = 0;
   try {
     restated = boardReevaluateStatuses_(ss);
@@ -371,12 +380,6 @@ function boardSetup() {
     mailSyncSentReplies_(ss);
   } catch (err) {
     boardLog_('②エラー', '返信文面の照合に失敗: ' + err.message);
-  }
-  try {
-    // 読み取りの条件を直しても、記録済みのメールには反映されない。ここで見直す
-    boardBackfillIntake_(ss);
-  } catch (err) {
-    boardLog_('②エラー', '顧客情報の補完に失敗: ' + err.message);
   }
   try {
     // 行の増減がすべて終わったあとに実行する

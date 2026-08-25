@@ -357,6 +357,13 @@ function mailScan_(options) {
   // ここを通さないと「対応を選ぶ」を開くまで「返信前」のまま残る
   mailRefreshSentStatus_(ss);
   mailSyncSentReplies_(ss);
+  // 顧客情報がそろったのに「情報不足」のまま残らないよう、毎回見直す。
+  // 取り込みは新着のときしか走らないため、あとから埋めた分をここで拾う
+  try {
+    boardReevaluateStatuses_(ss);
+  } catch (err) {
+    boardLog_('②エラー', 'ステータスの見直しに失敗: ' + err.message);
+  }
   boardRefreshUnreplied_(ss);
   return { found: found, note: '' };
 }
