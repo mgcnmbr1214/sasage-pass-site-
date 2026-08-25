@@ -488,7 +488,8 @@
         busy(false);
         reload(false);
       }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
-        .mailApproveToDraft(current.row, el('editor').value);
+        .mailApproveToDraft(current.row, el('editor').value,
+                            collectFields(findType(el('rtype').value)));
     });
 
     el('btnOpenThread').addEventListener('click', function () {

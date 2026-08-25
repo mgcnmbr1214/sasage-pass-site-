@@ -176,6 +176,13 @@ const BOARD_RESPONSE_TYPES = [
   {
     id: 'T8', name: '作業完了・データ納品（納品リンクを共有し、返送とデータ保管についてお伝えします）',
     template: 'T8', status: '', fields: [], invoice: false, requires: []
+  },
+  {
+    id: 'T9', name: '返送開始のお知らせ（返送の連絡。この送信が月々のご請求の対象になります）',
+    template: 'T9', status: BOARD_STATUS_DONE,
+    fields: ['shipQty', 'shipTracking'], invoice: false,
+    requires: ['shipQty', 'shipTracking'],
+    shipment: true
   }
 ];
 
@@ -191,7 +198,11 @@ const BOARD_CASE_FIELDS = {
   dueFrom: { label: '納期予定（自）', type: 'date', col: 'dueFrom' },
   dueTo: { label: '納期予定（至）', type: 'date', col: 'dueTo' },
   qty: { label: '予定点数', type: 'number', col: 'qty' },
-  signedAt: { label: '署名・支払確認日', type: 'date', col: 'signedAt' }
+  signedAt: { label: '署名・支払確認日', type: 'date', col: 'signedAt' },
+  // 返送のときだけ使う。案件ボードには書かず、返送履歴に残す。
+  // 案件ボードの「追跡番号」はお客様から弊社への発送のものなので、上書きしない
+  shipQty: { label: '返送した点数', type: 'number', col: '' },
+  shipTracking: { label: '返送の追跡番号', type: 'text', col: '' }
 };
 
 function boardFindResponseTypeByName_(name) {
@@ -209,6 +220,42 @@ function boardFindResponseType_(id) {
   }
   return null;
 }
+
+/**
+ * 返送履歴。「返送開始のお知らせ」を送るたびに1行増える、**請求の根拠になる台帳**。
+ *
+ * 案件行は次の依頼で使い回すため、依頼内容・単価・納期はいずれ上書きされる。
+ * 請求の根拠が消えないよう、**返送した時点の値をここに凍結する**。
+ */
+const BOARD_SHEET_SHIPMENTS = '返送履歴';
+const BOARD_SHIPMENT_HEADERS = [
+  '送信日時', '案件ID', '顧客ID', 'お客様', '点数', '単価', '金額（税抜）', '返送追跡番号',
+  '状態', '請求月', 'Square請求書ID', '依頼内容', '受付開始日', '納期予定', '件名', '本文',
+  'GmailスレッドID', 'GmailメッセージID'
+];
+const BOARD_SHIPMENT_COL = {
+  date: 1, caseId: 2, customerId: 3, customer: 4, qty: 5, unitPrice: 6, amount: 7, tracking: 8,
+  status: 9, billingMonth: 10, invoiceId: 11, detail: 12, startDate: 13, due: 14,
+  subject: 15, body: 16, threadId: 17, messageId: 18
+};
+const BOARD_SHIPMENT_WIDTHS = {
+  date: 130, caseId: 80, customerId: 70, customer: 150, qty: 70, unitPrice: 80, amount: 100,
+  tracking: 140, status: 110, billingMonth: 90, invoiceId: 120, detail: 200, startDate: 95,
+  due: 130, subject: 220, body: 320, threadId: 120, messageId: 120
+};
+/** 普段は畳んでおく列。 */
+const BOARD_SHIPMENT_DETAIL_COLS = ['detail', 'startDate', 'due', 'threadId', 'messageId'];
+
+/** 返送1件の請求の進み具合。 */
+const SHIP_STATUS_DRAFT = '下書き';
+const SHIP_STATUS_SENT = '送信済';
+const SHIP_STATUS_INVOICED = '請求書作成済';
+const SHIP_STATUS_BILLED = '請求済';
+const SHIP_STATUS_PAID = '支払い済';
+/** 請求の対象になる状態。送っていない返送は請求しない。 */
+const BOARD_SHIPMENT_BILLABLE = [SHIP_STATUS_SENT];
+/** 案件ボードの「未請求の返送」に出す状態。 */
+const BOARD_SHIPMENT_UNBILLED = [SHIP_STATUS_SENT, SHIP_STATUS_INVOICED];
 
 const BOARD_SHEET_EXAMPLES = '返信実例';
 const BOARD_EXAMPLE_HEADERS = ['日時', '顧客', '件名', 'AI初回案', '修正指示', '最終文面', '抽出した方針'];
@@ -318,6 +365,7 @@ function boardSetup() {
   boardSetupSheet_(ss, BOARD_SHEET_CUSTOMERS, BOARD_CUSTOMER_HEADERS, [80, 170, 120, 220, 130]);
   boardSetupSheet_(ss, BOARD_SHEET_MAILS, BOARD_MAIL_HEADERS);
   boardSetupSheet_(ss, BOARD_SHEET_EXAMPLES, BOARD_EXAMPLE_HEADERS, [140, 150, 240, 300, 260, 300, 320]);
+  boardSetupSheet_(ss, BOARD_SHEET_SHIPMENTS, BOARD_SHIPMENT_HEADERS);
   boardSetupTemplates_(ss);
   boardSetupSheet_(ss, BOARD_SHEET_KNOWLEDGE, BOARD_KNOWLEDGE_HEADERS, [140, 560, 100]);
   boardSetupSheet_(ss, BOARD_SHEET_SETTINGS, BOARD_SETTINGS_HEADERS, [220, 300, 340]);
@@ -1005,6 +1053,7 @@ function boardHideSourceSheets_(ss) {
 
 function boardOrderSheets_(ss) {
   const order = [BOARD_SHEET_CASES, BOARD_SHEET_CUSTOMERS, BOARD_SHEET_MAILS,
+    BOARD_SHEET_SHIPMENTS,
     BOARD_SHEET_TEMPLATES, BOARD_SHEET_KNOWLEDGE, BOARD_SHEET_EXAMPLES,
     BOARD_SHEET_SETTINGS, BOARD_SHEET_LOGS];
   order.forEach(function (name, index) {
@@ -1161,6 +1210,7 @@ function boardSetupTemplates_(ss) {
 
   boardSeedTemplates_(sheet);
   boardMigrateTemplateNames_(sheet);
+  boardMigrateQuoteTax_(sheet);
   boardMigrateTemplateNotes_(sheet);
   boardMigrateQuoteTemplate_(sheet);
 
@@ -1227,6 +1277,36 @@ function boardMigrateTemplateNames_(sheet) {
       return;
     }
   });
+}
+
+/**
+ * T1 の金額表記に「税抜」を明記する。
+ * 単価は税抜で、請求時に消費税を加算する。以前の文面は税込と読めてしまっていた。
+ */
+function boardMigrateQuoteTax_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return;
+
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
+  const note = '※表示の金額はすべて税抜です。ご請求時に消費税を加算いたします。';
+
+  for (let c = 1; c < ids.length; c++) {
+    if (String(ids[c] || '').trim() !== 'T1') continue;
+    const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
+    let body = String(cell.getValue() || '');
+    if (!body) return;
+
+    const before = body;
+    if (body.indexOf('／点（税抜）') < 0) body = body.replace('／点', '／点（税抜）');
+    if (body.indexOf(note) < 0 && body.indexOf('※数量割引') >= 0) {
+      body = body.replace('※数量割引', note + '\n※数量割引');
+    }
+    if (body === before) return;
+
+    cell.setValue(body);
+    boardLog_('移行', 'テンプレ T1 の金額表記に「税抜」を明記しました');
+    return;
+  }
 }
 
 function boardMigrateTemplateNotes_(sheet) {
@@ -1329,6 +1409,7 @@ function boardSeedTemplates_(sheet) {
     ['T6', 'リマインド（追跡番号未着）', '【ササゲパス】ご発送状況のご確認', boardDefaultRemindShippingBody_(), '発送の連絡も荷物の到着もないとき'],
     ['T7', 'お預かり完了のご連絡', '【ササゲパス】商品をお預かりいたしました', boardDefaultReceivedBody_(), '商品が到着したとき'],
     ['T8', '作業完了・データ納品のご連絡', '【ササゲパス】作業が完了いたしました（データ納品のご案内）', boardDefaultDeliveryBody_(), '作業が完了し、納品データを共有するとき。**納品URLは手入力**。入れないと下書きにできない'],
+    ['T9', '返送開始のお知らせ', '【ササゲパス】商品の返送を開始いたしました', boardDefaultShipBackBody_(), '**この送信が月々のご請求の対象になる**。点数と追跡番号は画面で入力し、返送履歴にも残る'],
     ['S1', 'Square請求書（登録手数料220円）', SQUARE_INVOICE_TITLE, squareInvoiceDescription_(), '過去の請求書と同一の文面。Squareの請求書メッセージ欄に入る']
   ];
   let col = Math.max(sheet.getLastColumn(), 1);
@@ -1415,8 +1496,9 @@ function boardDefaultQuoteBody_() {
     '■ お見積もり内容',
     '━━━━━━━━━━━━━━━━━━━━',
     '{{依頼内容}}',
-    '　概算単価　{{単価}}／点',
+    '　概算単価　{{単価}}／点（税抜）',
     '',
+    '※表示の金額はすべて税抜です。ご請求時に消費税を加算いたします。',
     '※数量割引は月間50点以上のご依頼が対象です。',
     '　月間の点数が50点に満たない場合は、割引前の単価でのご案内となります。',
     '',
@@ -1515,6 +1597,44 @@ function boardDefaultReceivedBody_() {
     '{{納期予定}}を目安に作業を進め、完了次第あらためてご連絡いたします。',
     '',
     'どうぞよろしくお願い申し上げます。'
+  ].join('\n');
+}
+
+/**
+ * 返送開始のお知らせ。**この送信が月々のご請求の対象になる。**
+ * 点数と追跡番号は画面で入力していただき、返送履歴にも残す。
+ */
+function boardDefaultShipBackBody_() {
+  return [
+    '{{会社名}}',
+    '{{担当者名}} 様',
+    '',
+    'お世話になっております。ササゲパス運営事務局です。',
+    '',
+    'お預かりしておりました商品の返送を開始いたしましたので、ご連絡いたします。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ 返送の内容',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '　点　　数：{{返送点数}}点',
+    '　追跡番号：{{返送追跡番号}}',
+    '',
+    '　ご依頼内容：',
+    '{{依頼内容}}',
+    '',
+    '　{{メモ}}',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ ご請求について',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '本月分のご請求は、月末にSquareより請求書をお送りいたします。',
+    'ご登録いただいているカードより自動でお支払いいただきますので、',
+    'お客様にてお手続きいただく必要はございません。',
+    '',
+    'お手元に届きましたら、内容をご確認いただけますと幸いです。',
+    '不足や不備がございましたら、本メールへのご返信にてお知らせください。',
+    '',
+    '引き続きどうぞよろしくお願い申し上げます。'
   ].join('\n');
 }
 
@@ -2798,7 +2918,7 @@ function boardSaveCase(data) {
  * 案件の情報でテンプレートの変数を埋めた件名と本文を返す。
  * 予定点数が空欄のときは、その行ごと削除する（点数が空のまま送られないようにするため）。
  */
-function boardBuildTemplateText_(ss, caseRow, templateId) {
+function boardBuildTemplateText_(ss, caseRow, templateId, extra) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const v = sheet.getRange(Number(caseRow), 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
   const customerId = v[BOARD_COL.customerId - 1];
@@ -2823,13 +2943,22 @@ function boardBuildTemplateText_(ss, caseRow, templateId) {
     '発送先郵便番号': settings['発送先郵便番号'],
     '発送先宛名': settings['発送先宛名'],
     '発送先TEL': settings['発送先TEL'],
-    '品名': settings['品名']
+    '品名': settings['品名'],
+    'メモ': v[BOARD_COL.memo - 1]
   };
+
+  // 返送の点数や追跡番号など、案件ボードに列が無い値は画面から渡してもらう
+  Object.keys(extra || {}).forEach(function (key) { vars[key] = extra[key]; });
 
   // 変数名を変える前に作られたテンプレートも動くよう、古い名前も受け付ける
   vars['点数'] = vars['予定点数'];
 
   let body = String(tpl.body || '');
+  // 中身が無い項目は、見出しごと行を消す
+  Object.keys(vars).forEach(function (key) {
+    if (String(vars[key] == null ? '' : vars[key]).trim()) return;
+    body = boardDropLinesWith_(body, '{{' + key + '}}');
+  });
   if (qty === '' || qty === null || qty === undefined) {
     ['{{予定点数}}', '{{点数}}'].forEach(function (needle) {
       body = boardDropLinesWith_(body, needle);
@@ -2842,6 +2971,100 @@ function boardBuildTemplateText_(ss, caseRow, templateId) {
     customer: customer,
     values: v
   };
+}
+
+/**
+ * 返送1回ぶんを返送履歴に記録する。
+ *
+ * 案件行は次の依頼で使い回すため、依頼内容・単価・納期はいずれ上書きされる。
+ * **請求の根拠が消えないよう、返送した時点の値をここで凍結する。**
+ *
+ * 同じ下書きから二度呼ばれても増えないよう、下書きIDで重複を避ける。
+ */
+function boardRecordShipment_(ss, caseRow, fields, mail) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!sheet) return 0;
+
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  const v = cases.getRange(Number(caseRow), 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
+  const customerId = String(v[BOARD_COL.customerId - 1] || '').trim();
+  const customer = boardFindCustomer_(ss, customerId);
+
+  const qty = boardExtractCount_((fields || {}).shipQty);
+  const unitPrice = Number(v[BOARD_COL.unitPrice - 1] || (customer ? customer.unitPrice : 0) || 0);
+  const draftId = String((mail || {}).draftId || '').trim();
+
+  if (draftId && sheet.getLastRow() > 1) {
+    const seen = sheet.getRange(2, BOARD_SHIPMENT_COL.messageId, sheet.getLastRow() - 1, 1).getValues();
+    for (let i = 0; i < seen.length; i++) {
+      if (String(seen[i][0] || '').trim() === draftId) return 0;
+    }
+  }
+
+  const values = new Array(BOARD_SHIPMENT_HEADERS.length).fill('');
+  values[BOARD_SHIPMENT_COL.date - 1] = new Date();
+  values[BOARD_SHIPMENT_COL.caseId - 1] = v[BOARD_COL.caseId - 1];
+  values[BOARD_SHIPMENT_COL.customerId - 1] = customerId;
+  values[BOARD_SHIPMENT_COL.customer - 1] = v[BOARD_COL.customer - 1];
+  values[BOARD_SHIPMENT_COL.qty - 1] = qty === '' ? '' : Number(qty);
+  values[BOARD_SHIPMENT_COL.unitPrice - 1] = unitPrice || '';
+  values[BOARD_SHIPMENT_COL.amount - 1] = qty === '' || !unitPrice ? '' : Number(qty) * unitPrice;
+  values[BOARD_SHIPMENT_COL.tracking - 1] = String((fields || {}).shipTracking || '').trim();
+  values[BOARD_SHIPMENT_COL.status - 1] = SHIP_STATUS_DRAFT;
+  values[BOARD_SHIPMENT_COL.detail - 1] = v[BOARD_COL.detail - 1];
+  values[BOARD_SHIPMENT_COL.startDate - 1] = v[BOARD_COL.startDate - 1];
+  values[BOARD_SHIPMENT_COL.due - 1] = boardFormatDateRange_(v[BOARD_COL.dueFrom - 1], v[BOARD_COL.dueTo - 1]);
+  values[BOARD_SHIPMENT_COL.subject - 1] = (mail || {}).subject || '';
+  values[BOARD_SHIPMENT_COL.body - 1] = (mail || {}).body || '';
+  values[BOARD_SHIPMENT_COL.threadId - 1] = (mail || {}).threadId || '';
+  values[BOARD_SHIPMENT_COL.messageId - 1] = draftId;
+
+  sheet.appendRow(values);
+  boardForceRowHeight_(sheet, sheet.getLastRow(), 1);
+  boardLog_('返送', v[BOARD_COL.caseId - 1] + '：返送履歴に記録しました（' +
+    (qty === '' ? '点数未入力' : qty + '点') + '）');
+  return 1;
+}
+
+/**
+ * 返送履歴の「下書き」が実際に送られたかを確かめ、「送信済」に進める。
+ *
+ * **送られていない返送は請求しない。** 下書きのままでは請求の対象にならない。
+ * 下書きがGmailから消えていれば送られたとみなし、そのメッセージIDを控える。
+ */
+function boardRefreshShipments_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_SHIPMENT_HEADERS.length).getValues();
+  const sent = [];
+
+  rows.forEach(function (row, i) {
+    if (String(row[BOARD_SHIPMENT_COL.status - 1] || '').trim() !== SHIP_STATUS_DRAFT) return;
+    const draftId = String(row[BOARD_SHIPMENT_COL.messageId - 1] || '').trim();
+    if (!draftId) return;
+
+    try {
+      if (GmailApp.getDraft(draftId)) return;   // まだ下書きのまま
+    } catch (err) {
+      // 見つからない＝送られたか、手で消されたか
+    }
+
+    const customer = boardFindCustomer_(ss, row[BOARD_SHIPMENT_COL.customerId - 1]);
+    const when = row[BOARD_SHIPMENT_COL.date - 1];
+    const message = customer ? mailFirstSentAfter_(customer.email, when) : null;
+    if (!message) return;   // 送った証拠が無ければ動かさない
+
+    sheet.getRange(i + 2, BOARD_SHIPMENT_COL.status).setValue(SHIP_STATUS_SENT);
+    sheet.getRange(i + 2, BOARD_SHIPMENT_COL.messageId).setValue(message.getId());
+    sheet.getRange(i + 2, BOARD_SHIPMENT_COL.date).setValue(message.getDate());
+    sent.push(row[BOARD_SHIPMENT_COL.caseId - 1]);
+  });
+
+  if (sent.length > 0) {
+    boardLog_('返送', sent.length + ' 件の返送を送信済みにしました（' + sent.join('、') + '）');
+  }
+  return sent.length;
 }
 
 /** 顧客IDに紐づく最新の案件の行番号。完了・失注は除く。 */
@@ -2929,6 +3152,7 @@ function boardFindCustomer_(ss, customerId) {
         returnAddress: text('returnAddress'),
         returnName: text('returnName'),
         returnTel: text('returnTel'),
+        unitPrice: rows[i][BOARD_CUSTOMER_COL.unitPrice - 1],
         squareId: text('squareId')
       };
     }

@@ -357,6 +357,11 @@ function mailScan_(options) {
   // ここを通さないと「対応を選ぶ」を開くまで「返信前」のまま残る
   mailRefreshSentStatus_(ss);
   mailSyncSentReplies_(ss);
+  try {
+    boardRefreshShipments_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '返送の送信確認に失敗: ' + err.message);
+  }
   // 顧客情報がそろったのに「情報不足」のまま残らないよう、毎回見直す。
   // 取り込みは新着のときしか走らないため、あとから埋めた分をここで拾う
   try {
@@ -932,19 +937,31 @@ function mailSaveCaseFields(caseRow, data) {
 
   Object.keys(data || {}).forEach(function (key) {
     const field = BOARD_CASE_FIELDS[key];
-    if (!field) return;
+    if (!field || !field.col) return;   // 案件ボードに列が無い項目（返送の点数など）は保存しない
     const col = BOARD_COL[field.col];
+    if (!col) return;
     const value = data[key];
     if (field.type === 'number') {
       sheet.getRange(row, col).setValue(value === '' ? '' : Number(value));
-    } else {
+    } else if (field.type === 'date') {
       sheet.getRange(row, col).setValue(boardFromInputDate_(value));
+    } else {
+      sheet.getRange(row, col).setValue(value);
     }
   });
 
   boardSetTodoFormula_(sheet, row);
   boardLog_('保存', '案件 ' + sheet.getRange(row, BOARD_COL.caseId).getValue() + ' を更新しました');
   return { message: '案件の内容を保存しました。' };
+}
+
+/** 返送の入力欄を、テンプレートの差し込み名に置き換える。 */
+function mailShipmentVars_(fields) {
+  const data = fields || {};
+  return {
+    '返送点数': data.shipQty == null ? '' : data.shipQty,
+    '返送追跡番号': data.shipTracking == null ? '' : data.shipTracking
+  };
 }
 
 /** 対応種別を記録するだけ。文面は「この対応で返信案を作る」で生成する。 */
@@ -981,7 +998,7 @@ function mailComposeWithType(row, typeId, fields) {
     if (!caseRow) throw new Error('このお客様の案件が案件ボードに見つかりません。');
     // 画面で入力した内容を先に保存し、そのうえで文面へ差し込む
     if (fields && Object.keys(fields).length > 0) mailSaveCaseFields(caseRow, fields);
-    template = boardBuildTemplateText_(ss, caseRow, type.template).body;
+    template = boardBuildTemplateText_(ss, caseRow, type.template, mailShipmentVars_(fields)).body;
   }
 
   const found = boardFindCustomer_(ss, customerId);
@@ -1147,7 +1164,7 @@ function mailReviseText(row, text, instruction) {
  * 承認して Gmail の下書きに保存する。ここで学習用の記録も残す。
  * 送信はGmail側で人が行う。実際に送られたかは「最新の送信メール」で分かる。
  */
-function mailApproveToDraft(row, text) {
+function mailApproveToDraft(row, text, fields) {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
@@ -1217,6 +1234,17 @@ function mailApproveToDraft(row, text) {
       cases.getRange(caseRow, BOARD_COL.lastContact).setValue(new Date());
       boardSetTodoFormula_(cases, caseRow);
       boardSetOwnerFormula_(cases, caseRow);
+
+      // 返送のお知らせは、請求の根拠として返送履歴に残す。
+      // 案件行は次の依頼で使い回すため、いまの依頼内容と単価をここで凍結する
+      if (type.shipment) {
+        boardRecordShipment_(ss, caseRow, fields, {
+          subject: values[BOARD_MAIL_COL.subject - 1],
+          body: text,
+          threadId: threadId,
+          draftId: draftId
+        });
+      }
     }
   }
 
