@@ -211,9 +211,14 @@
       return;
     }
     if (!ctx || !ctx.caseRow) {
-      box.innerHTML = '<div class="tasks"><div class="tasks-title">案件が見つかりません</div>' +
-        '<div style="font-size:12.5px;color:#5A6A8A">このお客様の案件が案件ボードにないため、日程の入力や請求書の作成ができません。</div></div>' +
-        composeBlock(type);
+      var why = ctx && ctx.stale
+        ? '<div class="tasks-title">一覧が古くなっています</div>' +
+          '<div style="font-size:12.5px;color:#5A6A8A">開いている間にメール履歴の行が増減しました。' +
+          'この画面を閉じて、もう一度「対応を選ぶ」を開いてください。</div>'
+        : '<div class="tasks-title">案件が見つかりません</div>' +
+          '<div style="font-size:12.5px;color:#5A6A8A">このお客様（' + esc((ctx && ctx.customerId) || '不明') + '）の案件が' +
+          '案件ボードにないため、日程の入力や請求書の作成ができません。</div>';
+      box.innerHTML = '<div class="tasks">' + why + '</div>' + composeBlock(type);
       bindCompose();
       updateApprove();
       return;
@@ -315,7 +320,7 @@
       renderTasks(type);
       renderExtras(type);
     }).withFailureHandler(function (e) { show('err', e.message); })
-      .mailGetCaseContext(current.row);
+      .mailGetCaseContext(current.row, current.customerId);
   }
 
   function show(kind, text) {

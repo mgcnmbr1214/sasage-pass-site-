@@ -480,6 +480,7 @@ function mailGetPendingList() {
     const when = row[BOARD_MAIL_COL.date - 1];
     const item = {
       row: i + 2,
+      customerId: customerId,
       open: MAIL_OPEN_STATUSES.indexOf(status) >= 0,
       at: when instanceof Date ? when.getTime() : 0,
       customer: active[customerId].customer,
@@ -830,13 +831,27 @@ function mailGetResponseTypes() {
 }
 
 /** この返信に紐づく案件の、入力欄とSquare請求書の状態。 */
-function mailGetCaseContext(row) {
+function mailGetCaseContext(row, expectedCustomerId) {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   const values = sheet.getRange(Number(row), 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
-  const caseRow = boardFindLatestCaseRow_(ss, values[BOARD_MAIL_COL.customerId - 1]);
-  if (!caseRow) return { caseRow: 0 };
+  const customerId = String(values[BOARD_MAIL_COL.customerId - 1] || '').trim();
+
+  // 画面は開いたときの行番号を持ち続ける。その間にメール履歴の行が増減すると、
+  // 同じ行番号が別のお客様の行を指してしまう
+  const expected = String(expectedCustomerId || '').trim();
+  if (expected && expected !== customerId) {
+    boardLog_('②画面', '一覧が古くなっています（' + expected + ' のはずが ' +
+      (customerId || '空') + ' でした）');
+    return { caseRow: 0, stale: true };
+  }
+
+  const caseRow = boardFindLatestCaseRow_(ss, customerId);
+  if (!caseRow) {
+    boardLog_('②画面', '案件が見つかりません（顧客ID ' + (customerId || '空') + '）');
+    return { caseRow: 0, customerId: customerId };
+  }
 
   const cases = ss.getSheetByName(BOARD_SHEET_CASES);
   const v = cases.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
