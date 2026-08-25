@@ -216,6 +216,9 @@
         ? '<div class="tasks-title">案件情報を受け取れませんでした</div>' +
           '<div style="font-size:12.5px;color:#5A6A8A">シートからの応答がありません。' +
           'この画面を閉じて開き直しても直らない場合は、ログの「②画面」を確認してください。</div>'
+        : ctx.reason
+        ? '<div class="tasks-title">案件情報を作れませんでした</div>' +
+          '<div style="font-size:12.5px;color:#5A6A8A">' + esc(ctx.reason) + '</div>'
         : ctx.stale
         ? '<div class="tasks-title">一覧が古くなっています</div>' +
           '<div style="font-size:12.5px;color:#5A6A8A">開いている間にメール履歴の行が増減しました。' +

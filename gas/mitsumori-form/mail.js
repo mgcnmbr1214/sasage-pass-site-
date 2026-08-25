@@ -831,7 +831,23 @@ function mailGetResponseTypes() {
 }
 
 /** この返信に紐づく案件の、入力欄とSquare請求書の状態。 */
+/**
+ * 画面へ返す案件情報。
+ *
+ * **返り値はすべて文字列・数値・真偽値にそろえる。** セルの生の値をそのまま返すと、
+ * 画面まで届かないことがある（画面には「応答がありません」としか出ず、原因が追えない）。
+ * 何が起きても必ずオブジェクトを返し、失敗した理由は reason に入れて画面とログに出す。
+ */
 function mailGetCaseContext(row, expectedCustomerId) {
+  try {
+    return mailBuildCaseContext_(row, expectedCustomerId);
+  } catch (err) {
+    boardLog_('②画面', '案件情報の作成に失敗しました: ' + err.message);
+    return { caseRow: 0, reason: err.message };
+  }
+}
+
+function mailBuildCaseContext_(row, expectedCustomerId) {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
@@ -870,30 +886,34 @@ function mailGetCaseContext(row, expectedCustomerId) {
     boardLog_('②画面', 'Square の確認に失敗しました: ' + err.message);
   }
 
+  // セルの生の値は返さない。日付や数値のまま返すと画面まで届かないことがある
+  const text = function (value) { return String(value == null ? '' : value); };
+  const missing = boardEvaluateReadiness_(ss, customerId).missing || [];
+
   return {
     caseRow: caseRow,
-    caseId: v[BOARD_COL.caseId - 1],
-    caseStatus: v[BOARD_COL.status - 1],
+    caseId: text(v[BOARD_COL.caseId - 1]),
+    caseStatus: text(v[BOARD_COL.status - 1]),
     // 受付開始日が未入力なら、お客様が答えた初回ご依頼予定日を初期値にする
-    startDate: v[BOARD_COL.startDate - 1]
+    startDate: text(v[BOARD_COL.startDate - 1]
       ? boardToInputDate_(v[BOARD_COL.startDate - 1])
-      : boardToInputDate_(boardParseDate_(v[BOARD_COL.firstDate - 1])),
-    firstDate: v[BOARD_COL.firstDate - 1],
-    dueFrom: boardToInputDate_(v[BOARD_COL.dueFrom - 1]),
-    dueTo: boardToInputDate_(v[BOARD_COL.dueTo - 1]),
+      : boardToInputDate_(boardParseDate_(v[BOARD_COL.firstDate - 1]))),
+    firstDate: text(boardFormatDate_(v[BOARD_COL.firstDate - 1]) || v[BOARD_COL.firstDate - 1]),
+    dueFrom: text(boardToInputDate_(v[BOARD_COL.dueFrom - 1])),
+    dueTo: text(boardToInputDate_(v[BOARD_COL.dueTo - 1])),
     // 予定点数が未入力なら、お客様が答えた初回ご依頼予定数を初期値にする
-    qty: v[BOARD_COL.qty - 1] === '' || v[BOARD_COL.qty - 1] === null
+    qty: text(v[BOARD_COL.qty - 1] === '' || v[BOARD_COL.qty - 1] === null
       ? boardExtractCount_(v[BOARD_COL.firstQty - 1])
-      : v[BOARD_COL.qty - 1],
-    firstQty: v[BOARD_COL.firstQty - 1],
-    missing: boardEvaluateReadiness_(ss, values[BOARD_MAIL_COL.customerId - 1]).missing,
-    signedAt: boardToInputDate_(v[BOARD_COL.signedAt - 1]),
-    invoiceId: invoiceId,
-    invoiceStatus: invoice ? invoice.status : '',
-    invoiceUrl: invoiceId ? squareDashboardUrl_(invoiceId) : '',
-    invoiceSteps: String(settings['請求書送信の手順'] || ''),
-    squareError: squareError,
-    sentAt: boardFormatDate_(v[BOARD_COL.invoiceSent - 1])
+      : v[BOARD_COL.qty - 1]),
+    firstQty: text(v[BOARD_COL.firstQty - 1]),
+    missing: missing.map(function (m) { return String(m); }),
+    signedAt: text(boardToInputDate_(v[BOARD_COL.signedAt - 1])),
+    invoiceId: text(invoiceId),
+    invoiceStatus: text(invoice ? invoice.status : ''),
+    invoiceUrl: text(invoiceId ? squareDashboardUrl_(invoiceId) : ''),
+    invoiceSteps: text(settings['請求書送信の手順']),
+    squareError: text(squareError),
+    sentAt: text(boardFormatDate_(v[BOARD_COL.invoiceSent - 1]))
   };
 }
 
