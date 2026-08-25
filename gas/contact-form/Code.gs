@@ -1,5 +1,5 @@
 /**
- * ササゲパス サイト お問い合わせフォーム受信スクリプト
+ * ササゲパス サイト 問い合わせ窓口 受信スクリプト
  *
  * index.html の .contact-form から fetch(..., {mode:'no-cors'}) で送信された内容を受け取り、
  * ① 業務ボードのスプレッドシートの「Responses」シートに1行追記する（既存の取込み処理に自動で乗る）
@@ -85,7 +85,7 @@ function appendToResponses_(name, company, email, service, message) {
   if (col.email >= 0) row[col.email] = email;
   if (col.detail >= 0) {
     var label = SERVICE_LABELS[service] || service || '（未選択）';
-    row[col.detail] = 'お問い合わせフォームより：' + label;
+    row[col.detail] = '問い合わせ窓口より：' + label;
   }
   if (col.inquiry >= 0) row[col.inquiry] = message;
 
@@ -123,7 +123,7 @@ function normalizeHeader_(text) {
 function sendNotifyMail_(name, company, email, service, message) {
   var label = SERVICE_LABELS[service] || service || '（未選択）';
   var body = [
-    'サイトのお問い合わせフォームから送信がありました。',
+    'サイトの問い合わせ窓口から送信がありました。',
     '（内容は業務ボードのResponsesシートにも追記済みです）',
     '',
     'お名前　　　　：' + name,
@@ -138,7 +138,7 @@ function sendNotifyMail_(name, company, email, service, message) {
   MailApp.sendEmail({
     to: NOTIFY_TO,
     replyTo: email,
-    name: 'ササゲパス お問い合わせフォーム',
+    name: 'ササゲパス 問い合わせ窓口',
     subject: 'サイトからのお問い合わせ（' + name + '様）',
     body: body
   });
@@ -148,7 +148,7 @@ function notifyInternalError_(label, err) {
   try {
     MailApp.sendEmail({
       to: NOTIFY_TO,
-      subject: '【要確認】お問い合わせフォームでエラー: ' + label,
+      subject: '【要確認】問い合わせ窓口でエラー: ' + label,
       body: (err && err.message ? err.message : String(err))
     });
   } catch (e2) {

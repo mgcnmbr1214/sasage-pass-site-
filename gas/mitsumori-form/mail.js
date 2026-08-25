@@ -472,6 +472,7 @@ function mailGetPendingList() {
   // 進行中の案件があるお客様は、返信待ちが無くても全員出す。
   // こちらから続けて連絡する用があるため、一覧に居ないと開けない
   const best = {};
+  const waiting = {};   // 返信待ちの行を1つでも持つお客様。並び順にだけ使う
   rows.forEach(function (row, i) {
     const customerId = String(row[BOARD_MAIL_COL.customerId - 1] || '').trim();
     if (!active[customerId]) return;
@@ -495,19 +496,21 @@ function mailGetPendingList() {
       status: status
     };
 
-    // お客様ごとに1件。返信待ちのものを優先し、その中では新しいもの
+    if (item.open) waiting[customerId] = true;
+
+    // お客様ごとに1件。**いちばん新しいものを出す。**
+    // 返信待ちを優先すると、もっと新しいメールがあるのに古いフォーム回答が出てしまう
     const kept = best[customerId];
-    if (!kept) { best[customerId] = item; return; }
-    if (item.open && !kept.open) { best[customerId] = item; return; }
-    if (item.open === kept.open && item.at >= kept.at) best[customerId] = item;
+    if (!kept || item.at >= kept.at) best[customerId] = item;
   });
 
-  // 返信待ちを上に、そのあとは新しい順
-  return Object.keys(best).map(function (id) { return best[id]; })
-    .sort(function (a, b) {
-      if (a.open !== b.open) return a.open ? -1 : 1;
-      return b.at - a.at;
-    });
+  // 一覧の並びは、返信待ちのあるお客様を上に、そのあとは新しい順
+  return Object.keys(best).map(function (id) {
+    return Object.assign({}, best[id], { waiting: !!waiting[id] });
+  }).sort(function (a, b) {
+    if (a.waiting !== b.waiting) return a.waiting ? -1 : 1;
+    return b.at - a.at;
+  });
 }
 
 /**

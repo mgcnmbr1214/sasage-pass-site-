@@ -360,6 +360,11 @@ function boardSetup() {
   }
 
   try {
+    boardMigrateIntakeLabels_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '依頼内容の呼び方の統一に失敗: ' + err.message);
+  }
+  try {
     // 読み取りの条件を直しても、記録済みのメールには反映されない。ここで見直す。
     // **ステータスの見直しより先に行う。** 顧客情報が埋まる前に判定すると、
     // 情報がそろっているのに「情報不足」のまま残る
@@ -800,6 +805,61 @@ function boardBackfillMailDates_(sheet) {
   });
 
   if (fixed > 0) boardLog_('移行', 'メール履歴の日時 ' + fixed + ' 件を受信日時に直しました');
+  boardBackfillFormDates_(sheet);
+}
+
+/**
+ * フォーム回答の行の日時を、記録した時刻から**フォームが送信された日時**に直す。
+ *
+ * 記録時刻のままだと、あとから読み込んだ古い回答が最新のメールより新しく見え、
+ * 「対応を選ぶ」に本当の最新メールではなくフォーム回答が出てしまう。
+ *
+ * 案件の「元回答行」から `Responses` の送信日時を引く。
+ * どの回答に対応するか一意に決まる場合（そのお客様のフォーム行も案件も1つ）だけ直す。
+ */
+function boardBackfillFormDates_(sheet) {
+  const ss = sheet.getParent();
+  const source = ss.getSheetByName(BOARD_SOURCE_SHEET);
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!source || source.getLastRow() < 2 || !cases || cases.getLastRow() < 2) return;
+
+  const col = boardResolveSourceColumns_(source);
+  if (col.date < 0) return;
+
+  // 顧客ごとの案件の元回答行
+  const sourceRows = {};
+  cases.getRange(2, 1, cases.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues()
+    .forEach(function (row) {
+      const id = String(row[BOARD_COL.customerId - 1] || '').trim();
+      const at = Number(row[BOARD_COL.sourceRow - 1] || 0);
+      if (!id || at < 2) return;
+      if (!sourceRows[id]) sourceRows[id] = [];
+      sourceRows[id].push(at);
+    });
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
+  const formRows = {};
+  rows.forEach(function (row, i) {
+    if (String(row[BOARD_MAIL_COL.messageId - 1] || '').trim()) return;
+    const id = String(row[BOARD_MAIL_COL.customerId - 1] || '').trim();
+    if (!id) return;
+    if (!formRows[id]) formRows[id] = [];
+    formRows[id].push(i + 2);
+  });
+
+  let fixed = 0;
+  Object.keys(formRows).forEach(function (id) {
+    if (formRows[id].length !== 1) return;
+    if (!sourceRows[id] || sourceRows[id].length !== 1) return;
+    const at = sourceRows[id][0];
+    if (at > source.getLastRow()) return;
+    const when = boardParseDate_(source.getRange(at, col.date + 1).getValue());
+    if (!(when instanceof Date)) return;
+    sheet.getRange(formRows[id][0], BOARD_MAIL_COL.date).setValue(when);
+    fixed++;
+  });
+
+  if (fixed > 0) boardLog_('移行', 'フォーム回答 ' + fixed + ' 件の日時を送信日時に直しました');
 }
 
 /**
@@ -829,6 +889,33 @@ function boardStampMailBodies_(sheet) {
   sheet.getRange(2, BOARD_MAIL_COL.summary, received.length, 1).setValues(received);
   sheet.getRange(2, BOARD_MAIL_COL.finalText, replied.length, 1).setValues(replied);
   boardLog_('移行', 'メール履歴 ' + stamped + ' 件の本文に日時を付けました');
+}
+
+/** サイトの窓口の呼び方を「問い合わせ窓口」にそろえる。既存の依頼内容も書き換える。 */
+const BOARD_INTAKE_RENAMES = [{ from: 'お問い合わせフォームより：', to: '問い合わせ窓口より：' }];
+
+function boardMigrateIntakeLabels_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const range = sheet.getRange(2, BOARD_COL.detail, sheet.getLastRow() - 1, 1);
+  const values = range.getValues();
+  let changed = 0;
+
+  const next = values.map(function (row) {
+    let text = String(row[0] || '');
+    BOARD_INTAKE_RENAMES.forEach(function (item) {
+      if (text.indexOf(item.from) < 0) return;
+      text = text.split(item.from).join(item.to);
+      changed++;
+    });
+    return [text];
+  });
+
+  if (changed === 0) return 0;
+  range.setValues(next);
+  boardLog_('移行', '依頼内容 ' + changed + ' 件の「お問い合わせフォーム」を「問い合わせ窓口」に直しました');
+  return changed;
 }
 
 /** 状態の言い回しを新しいものに揃える。 */
@@ -947,9 +1034,9 @@ const BOARD_SETTING_NOTES = [
    'https://sites.google.com/view/sasagepass-estimate/概算見積もり',
    '選択内容・月間予定数・概算単価まで埋まる。このスプレッドシートのスクリプト（gas/mitsumori-form）が '
    + 'Responses タブへ追記する。'],
-  [BOARD_SETTING_NOTE_PREFIX + '取り込み元② お問い合わせフォーム',
+  [BOARD_SETTING_NOTE_PREFIX + '取り込み元② 問い合わせ窓口',
    'https://sasagepass.com/ の最下部',
-   '案件ボードの「依頼内容」が「お問い合わせフォームより：〇〇」で始まる。点数と単価は空になる。'
+   '案件ボードの「依頼内容」が「問い合わせ窓口より：〇〇」で始まる。点数と単価は空になる。'
    + '別プロジェクト（gas/contact-form）が同じ Responses タブへ追記する。'],
   [BOARD_SETTING_NOTE_PREFIX + '案件が作られない経路',
    'メール受信・対応を選ぶ・Squareの操作・顧客タブへの手入力',
@@ -1838,6 +1925,9 @@ function boardImportResponses_(ss) {
     // フォームに回答があった時点で「対応を選ぶ」の一覧にも載せる。
     // お客様からメールが届くまで待っていると、初回の返信が漏れるため。
     mailAppendHistory_(ss, {
+      // 記録した時刻ではなく、フォームが送信された日時を入れる。
+      // 記録時刻にすると、あとから読み込んだ回答が最新のメールより新しく見えてしまう
+      date: boardParseDate_(pick('date')) || pick('date') || new Date(),
       customerId: customerId,
       from: email,
       subject: 'フォームからのお問い合わせ',
@@ -1887,13 +1977,16 @@ function boardBackfillInquiryMails_(ss, source, col) {
 
     const sourceRow = Number(row[BOARD_COL.sourceRow - 1] || 0);
     let summary = '見積もりフォームに回答がありました。';
+    let formDate = null;
     if (sourceRow >= 2 && sourceRow <= source.getLastRow()) {
       const values = source.getRange(sourceRow, 1, 1, source.getLastColumn()).getValues()[0];
       const pick = function (key) { return col[key] >= 0 ? values[col[key]] : ''; };
       summary = boardFormatInquiry_(pick, String(pick('detail') || '').trim());
+      formDate = boardParseDate_(pick('date')) || pick('date') || null;
     }
 
     mailAppendHistory_(ss, {
+      date: formDate || new Date(),
       customerId: customerId,
       from: customer.email,
       subject: 'フォームからのお問い合わせ',
