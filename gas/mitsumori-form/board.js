@@ -1073,6 +1073,7 @@ function boardSetupTemplates_(ss) {
   sheet.setColumnWidth(1, 90);
 
   boardSeedTemplates_(sheet);
+  boardMigrateTemplateNames_(sheet);
   boardMigrateTemplateNotes_(sheet);
   boardMigrateQuoteTemplate_(sheet);
 
@@ -1113,6 +1114,34 @@ const BOARD_NOTE_OLD = '※納期は商品到着後の状況により前後す�
  * すでに作成済みのテンプレートに、納期に関する注意書きを差し込む。
  * 既存の本文を尊重し、注意書きが無い場合だけ納期行の直後に追加する。
  */
+/**
+ * テンプレの「名称」を新しい呼び方に合わせる。
+ *
+ * 名称はコードから読んでいない（読むのは 項目・件名・本文 だけ）ので、
+ * 中身の動きには影響しない。呼び方をそろえるためだけの書き換え。
+ * **元の名称と一致するときだけ**変えるので、手で付けた名前は残る。
+ */
+const BOARD_TEMPLATE_RENAMES = [
+  { id: 'T2', from: '案内メール（依頼確定時）', to: '依頼確定' }
+];
+
+function boardMigrateTemplateNames_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return;
+
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
+  BOARD_TEMPLATE_RENAMES.forEach(function (item) {
+    for (let c = 1; c < ids.length; c++) {
+      if (String(ids[c] || '').trim() !== item.id) continue;
+      const cell = sheet.getRange(BOARD_TEMPLATE_ROW.name, c + 1);
+      if (String(cell.getValue() || '').trim() !== item.from) return;
+      cell.setValue(item.to);
+      boardLog_('移行', 'テンプレ ' + item.id + ' の名称を「' + item.to + '」に変更しました');
+      return;
+    }
+  });
+}
+
 function boardMigrateTemplateNotes_(sheet) {
   const last = sheet.getLastColumn();
   if (last < 2) return;
@@ -1207,7 +1236,7 @@ function boardSeedTemplates_(sheet) {
 
   const seeds = [
     ['T1', '見積もり回答', '【ササゲパス】お見積もりのご案内', boardDefaultQuoteBody_(), 'フォーム回答への初回返信'],
-    ['T2', '案内メール（依頼確定時）', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定（自）が未入力なら下書きを作成しない。予定点数が空なら該当行が自動で消える'],
+    ['T2', '依頼確定', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定（自）が未入力なら下書きを作成しない。予定点数が空なら該当行が自動で消える'],
     ['T4', '手続き完了のご連絡', '【ササゲパス】お手続きを確認いたしました', boardDefaultDoneBody_(), '署名・カード登録の確認後に送る'],
     ['T5', 'リマインド（手続き未完了）', '【ササゲパス】お手続きのご確認', boardDefaultRemindPaymentBody_(), '請求書を送ってから一定日数が経っても署名・支払いが確認できないとき'],
     ['T6', 'リマインド（追跡番号未着）', '【ササゲパス】ご発送状況のご確認', boardDefaultRemindShippingBody_(), '発送の連絡も荷物の到着もないとき'],
