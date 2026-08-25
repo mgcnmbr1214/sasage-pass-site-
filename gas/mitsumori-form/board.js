@@ -359,7 +359,8 @@ function boardSetup() {
     boardLog_('②エラー', 'ステータスの見直しに失敗: ' + err.message);
   }
   try {
-    // 実際に送ったメールを見て、返信文面の食い違いを直す
+    // 送った下書きを見つけて状態を進め、返信文面の食い違いも直す
+    mailRefreshSentStatus_(ss);
     mailSyncSentReplies_(ss);
   } catch (err) {
     boardLog_('②エラー', '返信文面の照合に失敗: ' + err.message);

@@ -351,6 +351,9 @@ function mailScan_(options) {
   }
 
   if (found > 0) boardLog_('②新着メール', found + ' 件の新着メールを記録しました');
+  // 下書きを送ったかどうかは、画面を開かなくても分かるようにする。
+  // ここを通さないと「対応を選ぶ」を開くまで「下書きあり」のまま残る
+  mailRefreshSentStatus_(ss);
   mailSyncSentReplies_(ss);
   boardRefreshUnreplied_(ss);
   return { found: found, note: '' };
@@ -507,6 +510,7 @@ function mailRefreshSentStatus_(ss) {
 
   const ours = mailOwnAddresses_(ss);
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
+  const advanced = [];
 
   rows.forEach(function (row, i) {
     if (String(row[BOARD_MAIL_COL.status - 1] || '').trim() !== MAIL_STATUS_SAVED) return;
@@ -519,6 +523,7 @@ function mailRefreshSentStatus_(ss) {
                             row[BOARD_MAIL_COL.from - 1],
                             row[BOARD_MAIL_COL.savedAt - 1])) {
         sheet.getRange(i + 2, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SENT);
+        advanced.push(String(row[BOARD_MAIL_COL.from - 1] || ''));
       }
       return;
     }
@@ -534,11 +539,16 @@ function mailRefreshSentStatus_(ss) {
       const sentByUs = ours.some(function (address) { return address && from.indexOf(address) >= 0; });
       if (sentByUs) {
         sheet.getRange(i + 2, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SENT);
+        advanced.push(String(row[BOARD_MAIL_COL.from - 1] || ''));
       }
     } catch (err) {
       boardLog_('②状態確認', threadId + ': ' + err.message);
     }
   });
+
+  if (advanced.length > 0) {
+    boardLog_('②状態確認', advanced.length + ' 件を返信済みにしました（' + advanced.join('、') + '）');
+  }
 }
 
 /**
