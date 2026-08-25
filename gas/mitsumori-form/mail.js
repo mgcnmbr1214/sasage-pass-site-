@@ -454,6 +454,7 @@ function mailGetPendingList() {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   mailRefreshSentStatus_(ss);
+  mailSyncSentReplies_(ss);
   // 画面は操作のたびに一覧を読み直すため、ここで案件ボードの未返信も合わせておく
   boardRefreshUnreplied_(ss);
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
@@ -518,17 +519,9 @@ function mailRefreshSentStatus_(ss) {
     if (String(row[BOARD_MAIL_COL.status - 1] || '').trim() !== MAIL_STATUS_PENDING) return;
     const threadId = String(row[BOARD_MAIL_COL.threadId - 1] || '');
 
-    // フォームの回答から作られた行にはスレッドが無い。
-    // この場合は新規メールとして下書きを作っているため、下書きの行方で判断する
-    if (!threadId) {
-      if (mailDraftWasSent_(row[BOARD_MAIL_COL.draftId - 1],
-                            row[BOARD_MAIL_COL.from - 1],
-                            row[BOARD_MAIL_COL.savedAt - 1])) {
-        sheet.getRange(i + 2, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SENT);
-        advanced.push(String(row[BOARD_MAIL_COL.from - 1] || ''));
-      }
-      return;
-    }
+    // スレッドが無い行（フォームの回答）は mailSyncSentReplies_ が受け持つ。
+    // 送信済みフォルダから返信を探し、文面と状態をまとめて入れる
+    if (!threadId) return;
 
     try {
       const thread = GmailApp.getThreadById(threadId);
@@ -583,7 +576,21 @@ function mailSyncSentReplies_(ss) {
 
     const threadId = String(row[BOARD_MAIL_COL.threadId - 1] || '').trim();
     const messageId = String(row[BOARD_MAIL_COL.messageId - 1] || '').trim();
-    if (!threadId || !messageId) return;
+
+    // フォームの回答から作られた行。届いたのはメールではないのでスレッドが無く、
+    // こちらの返信も「返信」ではなく新規メールとして送っている。
+    // そのお客様へ、この回答が入ったあとに送ったメールを探す
+    if (!messageId) {
+      const sent = mailFirstSentAfter_(row[BOARD_MAIL_COL.from - 1], row[BOARD_MAIL_COL.date - 1]);
+      if (!sent) return;
+      const body = mailStamp_(sent.getDate(), mailPlainBody_(sent).slice(0, MAIL_MAX_BODY_CHARS));
+      if (body === String(row[BOARD_MAIL_COL.finalText - 1] || '') && status === MAIL_STATUS_SENT) return;
+      sheet.getRange(i + 2, BOARD_MAIL_COL.finalText).setValue(body);
+      sheet.getRange(i + 2, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SENT);
+      filled++;
+      return;
+    }
+    if (!threadId) return;
 
     if (!cache[threadId]) {
       try {
@@ -620,49 +627,37 @@ function mailSyncSentReplies_(ss) {
 }
 
 /**
- * スレッドが無い行（フォームの回答から作った行）の下書きが、送られたかどうか。
+ * その日時より後に、そのアドレスへ最初に送ったメール。
  *
- * **まず下書きがGmailに残っているかを見る。** 残っていれば、まだ送っていない。
- * 送信済みフォルダだけで判断すると、下書き保存後にそのお客様へ送った
- * 別件のメールを拾ってしまい、送っていない下書きまで送信済みになる。
+ * フォームの回答に対する返信は、返信ではなく新規メールとして送るため
+ * スレッドを辿れない。送信済みフォルダから探すしかない。
+ *
+ * 下書きが残っているかどうかでは判断しない。
+ * Gmailで直接書いて送った場合、こちらが作った下書きは残ったままになり、
+ * いつまでも「返信前」から進まなくなる。
  */
-function mailDraftWasSent_(draftId, email, savedAt) {
-  const id = String(draftId || '').trim();
-  if (!id) return false;
-
-  try {
-    if (GmailApp.getDraft(id)) return false;
-  } catch (err) {
-    // 見つからない＝送られたか、手で消されたか
-  }
-  return mailSentAfter_(email, savedAt);
-}
-
-/**
- * その日以降に、そのアドレスへ送ったメールがあるか。
- * 下書きを手で消しただけの場合と区別するため、送った証拠があるときだけ true を返す。
- */
-function mailSentAfter_(email, savedAt) {
+function mailFirstSentAfter_(email, since) {
   const to = String(email || '').trim();
-  if (!to || !(savedAt instanceof Date)) return false;
+  if (!to || !(since instanceof Date)) return null;
 
   // Gmail の after: は日付単位。前日から探して取りこぼしを防ぐ
-  const from = new Date(savedAt.getTime() - 24 * 3600 * 1000);
+  const from = new Date(since.getTime() - 24 * 3600 * 1000);
   const query = 'in:sent to:' + to + ' after:' +
     Utilities.formatDate(from, Session.getScriptTimeZone(), 'yyyy/MM/dd');
+
+  let found = null;
   try {
-    const threads = GmailApp.search(query, 0, 10);
-    for (let t = 0; t < threads.length; t++) {
-      const messages = threads[t].getMessages();
-      for (let m = 0; m < messages.length; m++) {
-        if (String(messages[m].getTo() || '').indexOf(to) < 0) continue;
-        if (messages[m].getDate() >= savedAt) return true;
-      }
-    }
+    GmailApp.search(query, 0, 20).forEach(function (thread) {
+      thread.getMessages().forEach(function (message) {
+        if (String(message.getTo() || '').indexOf(to) < 0) return;
+        if (message.getDate() < since) return;
+        if (!found || message.getDate() < found.getDate()) found = message;
+      });
+    });
   } catch (err) {
     boardLog_('②状態確認', '送信済みの確認に失敗: ' + err.message);
   }
-  return false;
+  return found;
 }
 
 function mailOwnAddresses_(ss) {
