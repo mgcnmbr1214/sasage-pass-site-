@@ -601,11 +601,7 @@ function squareCreateDraftForCase(caseRow) {
   const location = squareListLocations_()[0];
   if (!location) throw new Error('Squareの店舗情報を取得できませんでした。');
 
-  const customerId = customer.squareId || squareFindOrCreateCustomer_(customer);
-  if (!customer.squareId) {
-    ss.getSheetByName(BOARD_SHEET_CUSTOMERS)
-      .getRange(customer.row, BOARD_CUSTOMER_COL.squareId).setValue(customerId);
-  }
+  const customerId = squareEnsureCustomer_(ss, customer);
   const order = squareCreateFeeOrder_(location.id, customerId);
   const template = boardFindTemplate_(ss, 'S1');
   const today = new Date();
@@ -717,20 +713,108 @@ function squareVerifyInvoiceId_(ss, caseRow) {
   return '';
 }
 
+/**
+ * 顧客タブの内容を Square の顧客の形にする。
+ *
+ * 姓と名は分けて持っていないため、空白があればそこで分け、無ければ姓に入れる。
+ * 日本語の氏名は姓に入れたほうが「川越健太 様」と自然に並ぶ。
+ */
+function squareCustomerPayload_(customer) {
+  const name = String(customer.name || '').trim();
+  const parts = name.split(/[\s　]+/).filter(function (p) { return p; });
+  const payload = {
+    given_name: parts.length > 1 ? parts.slice(1).join(' ') : undefined,
+    family_name: parts.length > 1 ? parts[0] : (name || undefined),
+    company_name: String(customer.company || '').trim() || undefined,
+    email_address: customer.email,
+    phone_number: squarePhone_(customer.tel)
+  };
+
+  const address = squareAddress_(customer.billZip, customer.billAddress);
+  if (address) payload.address = address;
+  return payload;
+}
+
+/** 「2360031」「236-0031」どちらでも 236-0031 の形にそろえる。 */
+function squareZip_(value) {
+  const digits = String(value || '').replace(/[^0-9]/g, '');
+  if (digits.length !== 7) return String(value || '').trim() || undefined;
+  return digits.slice(0, 3) + '-' + digits.slice(3);
+}
+
+/** 先頭の0が落ちた電話番号を戻す。Squareは形式に厳しいため数字だけにする。 */
+function squarePhone_(value) {
+  let digits = String(value || '').replace(/[^0-9]/g, '');
+  if (!digits) return undefined;
+  // シートが数値として持つと先頭の0が消える（07012634540 → 7012634540）
+  if (digits.length === 9 || digits.length === 10) digits = '0' + digits;
+  return digits;
+}
+
+/** 「神奈川県横浜市金沢区六浦3-20-3-101」を都道府県と残りに分ける。 */
+function squareAddress_(zip, line) {
+  const text = String(line || '').trim();
+  const postal = squareZip_(zip);
+  if (!text && !postal) return null;
+
+  const m = text.match(/^(.{2,3}?[都道府県])(.*)$/);
+  return {
+    address_line_1: (m ? m[2] : text).trim() || undefined,
+    administrative_district_level_1: m ? m[1] : undefined,
+    postal_code: postal,
+    country: 'JP'
+  };
+}
+
+/**
+ * Square の顧客を用意する。
+ *
+ * **すでにある顧客も毎回更新する。** 見つかったらそのまま使う作りだと、
+ * 住所や会社名を後から聞き出しても Square 側が空のままになる。
+ */
+/**
+ * 請求書を作る前に、Square の顧客をシートの内容に合わせる。
+ *
+ * すでに顧客IDを持っていても**毎回書き戻す**。
+ * 住所や会社名はあとからお客様に伺って埋まるため、
+ * 作ったときのまま放置すると Square 側だけ古い（空の）状態で残る。
+ */
+function squareEnsureCustomer_(ss, customer) {
+  if (customer.squareId) {
+    try {
+      squareFetch_('PUT', '/customers/' + customer.squareId, squareCustomerPayload_(customer));
+    } catch (err) {
+      boardLog_('Square', customer.email + ' の顧客情報を更新できませんでした: ' + err.message);
+    }
+    return customer.squareId;
+  }
+
+  const id = squareFindOrCreateCustomer_(customer);
+  ss.getSheetByName(BOARD_SHEET_CUSTOMERS)
+    .getRange(customer.row, BOARD_CUSTOMER_COL.squareId).setValue(id);
+  return id;
+}
+
 function squareFindOrCreateCustomer_(customer) {
+  const payload = squareCustomerPayload_(customer);
   const found = squareFetch_('POST', '/customers/search', {
     query: { filter: { email_address: { exact: customer.email } } },
     limit: 1
   });
-  if (found.customers && found.customers.length > 0) return found.customers[0].id;
 
-  const created = squareFetch_('POST', '/customers', {
-    idempotency_key: Utilities.getUuid(),
-    given_name: String(customer.name || '').trim() || undefined,
-    company_name: String(customer.company || '').trim() || undefined,
-    email_address: customer.email,
-    phone_number: String(customer.tel || '').trim() || undefined
-  });
+  if (found.customers && found.customers.length > 0) {
+    const id = found.customers[0].id;
+    try {
+      squareFetch_('PUT', '/customers/' + id, payload);
+    } catch (err) {
+      boardLog_('Square', customer.email + ' の顧客情報を更新できませんでした: ' + err.message);
+    }
+    return id;
+  }
+
+  const created = squareFetch_('POST', '/customers', Object.assign(
+    { idempotency_key: Utilities.getUuid() }, payload
+  ));
   return created.customer.id;
 }
 

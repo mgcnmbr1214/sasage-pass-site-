@@ -2820,13 +2820,23 @@ function boardFindCustomer_(ss, customerId) {
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CUSTOMER_HEADERS.length).getValues();
   for (let i = 0; i < rows.length; i++) {
     if (String(rows[i][BOARD_CUSTOMER_COL.id - 1]).trim() === String(customerId).trim()) {
+      const text = function (col) { return String(rows[i][BOARD_CUSTOMER_COL[col] - 1] || '').trim(); };
       return {
         row: i + 2,
         company: rows[i][BOARD_CUSTOMER_COL.company - 1],
         name: rows[i][BOARD_CUSTOMER_COL.name - 1],
-        email: String(rows[i][BOARD_CUSTOMER_COL.email - 1] || '').trim(),
+        email: text('email'),
         tel: rows[i][BOARD_CUSTOMER_COL.tel - 1],
-        squareId: String(rows[i][BOARD_CUSTOMER_COL.squareId - 1] || '').trim()
+        // 請求書の宛先に使う。ここが欠けていると Square 側が空のまま作られる
+        storeName: text('storeName'),
+        representative: text('representative'),
+        billZip: text('billZip'),
+        billAddress: text('billAddress'),
+        returnZip: text('returnZip'),
+        returnAddress: text('returnAddress'),
+        returnName: text('returnName'),
+        returnTel: text('returnTel'),
+        squareId: text('squareId')
       };
     }
   }
