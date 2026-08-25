@@ -27,29 +27,33 @@ const MAIL_EXAMPLE_COUNT = 3;
  */
 const MAIL_STATUS_PENDING = '返信前';
 const MAIL_STATUS_EDITING = '返信案あり';
-const MAIL_STATUS_SAVED = '下書きあり';
 const MAIL_STATUS_SENT = '返信済み';
 const MAIL_STATUS_SKIP = '対応不要';
 
 /** 状態の説明。プルダウンの説明文と設計ドキュメントで使う。 */
 const MAIL_STATUS_HELP = [
   MAIL_STATUS_PENDING + '：まだ何もしていない',
-  MAIL_STATUS_EDITING + '：返信案をシートに作った。Gmailにはまだ無い',
-  MAIL_STATUS_SAVED + '：Gmailの下書きに入れた。まだ送っていない',
+  MAIL_STATUS_EDITING + '：返信の文面ができている。まだ送っていない',
   MAIL_STATUS_SENT + '：返信を送った',
   MAIL_STATUS_SKIP + '：返信しないと決めた'
 ].join('\n');
 
-/** 旧名称 → 新名称。初期セットアップで既存の値を書き換える。 */
+/**
+ * 旧名称 → 新名称。初期セットアップで既存の値を書き換える。
+ *
+ * 「下書きあり」は廃止した。Gmailの下書きにしたかどうかは、
+ * 画面に文面がある状態と区別が付かず、分けても判断の助けにならなかった。
+ */
 const MAIL_STATUS_RENAMES = {
   '未確認': MAIL_STATUS_PENDING,
   '修正中': MAIL_STATUS_EDITING,
-  '下書き保存済': MAIL_STATUS_SAVED,
+  '下書き保存済': MAIL_STATUS_EDITING,
+  '下書きあり': MAIL_STATUS_EDITING,
   '送信済': MAIL_STATUS_SENT
 };
 
 const MAIL_STATUSES = [
-  MAIL_STATUS_PENDING, MAIL_STATUS_EDITING, MAIL_STATUS_SAVED, MAIL_STATUS_SENT, MAIL_STATUS_SKIP
+  MAIL_STATUS_PENDING, MAIL_STATUS_EDITING, MAIL_STATUS_SENT, MAIL_STATUS_SKIP
 ];
 
 /**
@@ -73,7 +77,7 @@ function mailUnstamp_(text) {
 }
 
 /** 確認画面に出し続ける状態。実際に送信するまでは一覧から消さない。 */
-const MAIL_OPEN_STATUSES = [MAIL_STATUS_PENDING, MAIL_STATUS_EDITING, MAIL_STATUS_SAVED];
+const MAIL_OPEN_STATUSES = [MAIL_STATUS_PENDING, MAIL_STATUS_EDITING];
 
 // ------------------------------------------------------------
 // メニューから呼ぶ操作
@@ -352,7 +356,7 @@ function mailScan_(options) {
 
   if (found > 0) boardLog_('②新着メール', found + ' 件の新着メールを記録しました');
   // 下書きを送ったかどうかは、画面を開かなくても分かるようにする。
-  // ここを通さないと「対応を選ぶ」を開くまで「下書きあり」のまま残る
+  // ここを通さないと「対応を選ぶ」を開くまで「返信案あり」のまま残る
   mailRefreshSentStatus_(ss);
   mailSyncSentReplies_(ss);
   boardRefreshUnreplied_(ss);
@@ -500,7 +504,7 @@ function mailGetPendingList() {
 }
 
 /**
- * 「下書きあり」の行について、実際に返信が送られたかを Gmail 側で確認する。
+ * 「返信案あり」の行について、実際に返信が送られたかを Gmail 側で確認する。
  * スレッドの最新メールが自分から送られていれば返信済みとみなす。
  * 下書きを消しただけの場合は状態を変えないため、一覧から消えない。
  */
@@ -513,7 +517,7 @@ function mailRefreshSentStatus_(ss) {
   const advanced = [];
 
   rows.forEach(function (row, i) {
-    if (String(row[BOARD_MAIL_COL.status - 1] || '').trim() !== MAIL_STATUS_SAVED) return;
+    if (String(row[BOARD_MAIL_COL.status - 1] || '').trim() !== MAIL_STATUS_EDITING) return;
     const threadId = String(row[BOARD_MAIL_COL.threadId - 1] || '');
 
     // フォームの回答から作られた行にはスレッドが無い。
@@ -559,7 +563,7 @@ function mailRefreshSentStatus_(ss) {
  * 別の受信メールの行に保存されていた。その食い違いをここで直す。
  * Gmailから直接返信した場合も、これで記録に載る。
  *
- * 作りかけ（返信案あり・下書きあり）と対応不要の行には触らない。
+ * 作りかけ（返信案あり）と対応不要の行には触らない。
  */
 function mailSyncSentReplies_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
@@ -1130,7 +1134,7 @@ function mailApproveToDraft(row, text) {
   }
 
   sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(mailStamp_(new Date(), text));
-  sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SAVED);
+  sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_EDITING);
   sheet.getRange(r, BOARD_MAIL_COL.savedAt).setValue(new Date());
   sheet.getRange(r, BOARD_MAIL_COL.draftId).setValue(draftId);
 
