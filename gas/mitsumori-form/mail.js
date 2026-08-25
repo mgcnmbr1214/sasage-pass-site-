@@ -565,7 +565,8 @@ function mailRefreshSentStatus_(ss) {
  * 別の受信メールの行に保存されていた。その食い違いをここで直す。
  * Gmailから直接返信した場合も、これで記録に載る。
  *
- * 対応不要の行には触らない。
+ * 対応不要の行は、文面だけ記録して状態は動かさない。
+ * 記録しないと「実際は返信したのに返信文面が空欄」のまま残る。
  */
 function mailSyncSentReplies_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
@@ -583,7 +584,9 @@ function mailSyncSentReplies_(ss) {
 
   rows.forEach(function (row, i) {
     const status = String(row[BOARD_MAIL_COL.status - 1] || '').trim();
-    if (status !== MAIL_STATUS_PENDING && status !== MAIL_STATUS_SENT) return;
+    // 対応不要の行も、実際に返していれば文面は記録する。
+    // 記録しないと「返信したのに空欄」になる。ただし状態は動かさない
+    const keepStatus = status === MAIL_STATUS_SKIP;
 
     const threadId = String(row[BOARD_MAIL_COL.threadId - 1] || '').trim();
     const messageId = String(row[BOARD_MAIL_COL.messageId - 1] || '').trim();
@@ -595,9 +598,9 @@ function mailSyncSentReplies_(ss) {
       const sent = mailFirstSentAfter_(row[BOARD_MAIL_COL.from - 1], row[BOARD_MAIL_COL.date - 1]);
       if (!sent) return;
       const body = mailStamp_(sent.getDate(), mailPlainBody_(sent).slice(0, MAIL_MAX_BODY_CHARS));
-      if (body === String(row[BOARD_MAIL_COL.finalText - 1] || '') && status === MAIL_STATUS_SENT) return;
+      if (body === String(row[BOARD_MAIL_COL.finalText - 1] || '') && status !== MAIL_STATUS_PENDING) return;
       sheet.getRange(i + 2, BOARD_MAIL_COL.finalText).setValue(body);
-      sheet.getRange(i + 2, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SENT);
+      if (!keepStatus) sheet.getRange(i + 2, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SENT);
       filled++;
       return;
     }
@@ -629,7 +632,7 @@ function mailSyncSentReplies_(ss) {
     if (text === String(row[BOARD_MAIL_COL.finalText - 1] || '')) return;
 
     sheet.getRange(i + 2, BOARD_MAIL_COL.finalText).setValue(text);
-    sheet.getRange(i + 2, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SENT);
+    if (!keepStatus) sheet.getRange(i + 2, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SENT);
     filled++;
   });
 
