@@ -716,20 +716,29 @@ function squareVerifyInvoiceId_(ss, caseRow) {
 /**
  * 顧客タブの内容を Square の顧客の形にする。
  *
+ * **氏名は「代表者名義」を使う。** 請求と契約書の名義になるため、
+ * 窓口の担当者名ではなく代表者を載せる。空のときだけ担当者名で代用する。
+ *
  * 姓と名は分けて持っていないため、空白があればそこで分け、無ければ姓に入れる。
- * 日本語の氏名は姓に入れたほうが「川越健太 様」と自然に並ぶ。
+ * 日本語の氏名は姓に入れたほうが「川越蘭子 様」と自然に並ぶ。
  */
 function squareCustomerPayload_(customer) {
-  const name = String(customer.name || '').trim();
+  const name = String(customer.representative || '').trim() || String(customer.name || '').trim();
   const parts = name.split(/[\s　]+/).filter(function (p) { return p; });
+
+  // 姓と名は必ず両方を送る。片方を省くと Square は前の値を残すため、
+  // 「姓 川越健太／名 川越健太」のように古い名前が居座る
   const payload = {
-    given_name: parts.length > 1 ? parts.slice(1).join(' ') : undefined,
-    family_name: parts.length > 1 ? parts[0] : (name || undefined),
-    company_name: String(customer.company || '').trim() || undefined,
-    email_address: customer.email,
-    phone_number: squarePhone_(customer.tel)
+    family_name: parts.length > 1 ? parts[0] : name,
+    given_name: parts.length > 1 ? parts.slice(1).join(' ') : '',
+    email_address: customer.email
   };
 
+  // ここから下はシートが空なら送らない。Square側で手入力した値を消さないため
+  const company = String(customer.company || '').trim();
+  if (company) payload.company_name = company;
+  const phone = squarePhone_(customer.tel);
+  if (phone) payload.phone_number = phone;
   const address = squareAddress_(customer.billZip, customer.billAddress);
   if (address) payload.address = address;
   return payload;
