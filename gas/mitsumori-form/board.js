@@ -112,6 +112,13 @@ const BOARD_CASE_INTAKE = [
   { label: '初回ご依頼予定日', col: 'firstDate' }
 ];
 
+/** 取り込みで探す見出しの一覧。コロンを付け忘れた行を拾うときに使う。 */
+const BOARD_INTAKE_LABELS = (function () {
+  const set = {};
+  BOARD_CUSTOMER_INTAKE.concat(BOARD_CASE_INTAKE).forEach(function (item) { set[item.label] = true; });
+  return set;
+})();
+
 const BOARD_MAIL_HEADERS = [
   '日時', '顧客ID', 'お客様', '差出人', '件名', '受信本文',
   'AI初回案', '修正指示ログ', '返信文面', '状態', 'GmailスレッドID', '下書き保存日時', '対応種別', '下書きID',
@@ -364,6 +371,12 @@ function boardSetup() {
     mailSyncSentReplies_(ss);
   } catch (err) {
     boardLog_('②エラー', '返信文面の照合に失敗: ' + err.message);
+  }
+  try {
+    // 読み取りの条件を直しても、記録済みのメールには反映されない。ここで見直す
+    boardBackfillIntake_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '顧客情報の補完に失敗: ' + err.message);
   }
   try {
     // 行の増減がすべて終わったあとに実行する
@@ -2072,11 +2085,19 @@ function boardParseLabeledLines_(text) {
   String(text || '').split('\n').forEach(function (raw) {
     const line = raw.replace(/^[\s>＞・･]+/, '').trim();
     const match = line.match(/^([^：:]+)[：:]\s*(.*)$/);
-    if (!match) return;
+    if (match) {
+      const label = match[1].replace(/[（(].*?[)）]/g, '').replace(/\s/g, '').trim();
+      const value = match[2].trim();
+      if (label && value) found[label] = value;
+      return;
+    }
 
-    const label = match[1].replace(/[（(].*?[)）]/g, '').replace(/\s/g, '').trim();
-    const value = match[2].trim();
-    if (label && value) found[label] = value;
+    // コロンを付け忘れた行。「見出し 値」の形で、見出しが完全に一致するものだけ拾う。
+    // 知っている見出しに限るので、ふつうの文章を取り違えることはない
+    const bare = line.replace(/[（(].*?[)）]/g, '').match(/^(\S+)[\s　]+(.+)$/);
+    if (!bare) return;
+    if (!BOARD_INTAKE_LABELS[bare[1]]) return;
+    if (bare[2].trim()) found[bare[1]] = bare[2].trim();
   });
   return found;
 }
@@ -2090,7 +2111,7 @@ function boardMatchIntake_(labels, definitions) {
 }
 
 /** 抜き出した内容を案件へ書き込む。値が入っている項目だけを更新する。 */
-function boardApplyCaseIntake_(ss, customerId, values) {
+function boardApplyCaseIntake_(ss, customerId, values, onlyEmpty) {
   const keys = Object.keys(values);
   if (keys.length === 0) return 0;
 
@@ -2103,7 +2124,10 @@ function boardApplyCaseIntake_(ss, customerId, values) {
     const col = BOARD_COL[key];
     if (!col) return;
     const cell = sheet.getRange(row, col);
-    if (String(cell.getValue() || '').trim() === values[key]) return;
+    const now = String(cell.getValue() || '').trim();
+    if (now === values[key]) return;
+    // 後追いの補完では、空欄だけを埋める。手で直した値を上書きしない
+    if (onlyEmpty && now) return;
     cell.setValue(values[key]);
     changed++;
   });
@@ -2113,7 +2137,7 @@ function boardApplyCaseIntake_(ss, customerId, values) {
 }
 
 /** 抜き出した内容を顧客タブへ書き込む。値が入っている項目だけを更新する。 */
-function boardApplyCustomerIntake_(ss, email, values) {
+function boardApplyCustomerIntake_(ss, email, values, onlyEmpty) {
   const keys = Object.keys(values);
   if (keys.length === 0) return 0;
 
@@ -2126,7 +2150,10 @@ function boardApplyCustomerIntake_(ss, email, values) {
     const col = BOARD_CUSTOMER_COL[key];
     if (!col) return;
     const cell = sheet.getRange(row, col);
-    if (String(cell.getValue() || '').trim() === values[key]) return;
+    const now = String(cell.getValue() || '').trim();
+    if (now === values[key]) return;
+    // 後追いの補完では、空欄だけを埋める。手で直した値を上書きしない
+    if (onlyEmpty && now) return;
     cell.setValue(values[key]);
     changed.push(BOARD_CUSTOMER_HEADERS[col - 1]);
   });
@@ -2136,6 +2163,36 @@ function boardApplyCustomerIntake_(ss, email, values) {
     boardLog_('顧客情報', email + ' の ' + changed.join('・') + ' を更新しました');
   }
   return changed.length;
+}
+
+/**
+ * 記録済みのメールを読み直し、顧客情報の空欄だけを埋める。
+ *
+ * 取り込みは新着を記録したときにしか走らない。
+ * 読み取りの条件を直しても、すでに記録されたメールには反映されないため、
+ * 初期セットアップのたびに受信本文を見直す。**空欄だけを埋め、既存の値は触らない。**
+ */
+function boardBackfillIntake_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
+  let filled = 0;
+
+  rows.forEach(function (row) {
+    const email = String(row[BOARD_MAIL_COL.from - 1] || '').trim();
+    const body = mailUnstamp_(row[BOARD_MAIL_COL.summary - 1]);
+    if (!email || !body) return;
+    try {
+      filled += boardApplyCustomerIntake_(ss, email, boardExtractCustomerIntake_(body), true);
+      boardApplyCaseIntake_(ss, row[BOARD_MAIL_COL.customerId - 1], boardExtractCaseIntake_(body), true);
+    } catch (err) {
+      boardLog_('②エラー', '顧客情報の補完に失敗: ' + err.message);
+    }
+  });
+
+  if (filled > 0) boardLog_('顧客情報', '空欄だった ' + filled + ' 項目を過去のメールから補いました');
+  return filled;
 }
 
 function boardFindCustomerRowByEmail_(sheet, email) {
