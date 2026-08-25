@@ -211,7 +211,12 @@
       return;
     }
     if (!ctx || !ctx.caseRow) {
-      var why = ctx && ctx.stale
+      // 「応答が無い」と「案件が無い」は原因がまったく違う。必ず見分けられるようにする
+      var why = !ctx
+        ? '<div class="tasks-title">案件情報を受け取れませんでした</div>' +
+          '<div style="font-size:12.5px;color:#5A6A8A">シートからの応答がありません。' +
+          'この画面を閉じて開き直しても直らない場合は、ログの「②画面」を確認してください。</div>'
+        : ctx.stale
         ? '<div class="tasks-title">一覧が古くなっています</div>' +
           '<div style="font-size:12.5px;color:#5A6A8A">開いている間にメール履歴の行が増減しました。' +
           'この画面を閉じて、もう一度「対応を選ぶ」を開いてください。</div>'
@@ -319,8 +324,18 @@
       ctx = data;
       renderTasks(type);
       renderExtras(type);
-    }).withFailureHandler(function (e) { show('err', e.message); })
-      .mailGetCaseContext(current.row, current.customerId);
+    }).withFailureHandler(function (e) {
+      // 失敗したまま何も描かないと、原因が分からないまま画面が止まる
+      ctx = null;
+      var box = el('extras');
+      if (box) {
+        box.innerHTML = '<div class="tasks"><div class="tasks-title">案件情報を読み込めませんでした</div>' +
+          '<div style="font-size:12.5px;color:#5A6A8A">' + esc(e.message) + '</div></div>' + composeBlock(type);
+        bindCompose();
+        updateApprove();
+      }
+      show('err', e.message);
+    }).mailGetCaseContext(current.row, current.customerId);
   }
 
   function show(kind, text) {

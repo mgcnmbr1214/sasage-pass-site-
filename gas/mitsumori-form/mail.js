@@ -855,9 +855,20 @@ function mailGetCaseContext(row, expectedCustomerId) {
 
   const cases = ss.getSheetByName(BOARD_SHEET_CASES);
   const v = cases.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
-  const invoiceId = squareVerifyInvoiceId_(ss, caseRow);
-  const invoice = invoiceId ? squareGetInvoice_(invoiceId) : null;
   const settings = boardGetSettings_(ss);
+
+  // Square は外部サービス。つながらなくても、日程の入力までは使えるようにする。
+  // ここで例外が出ると画面が何も描けず、原因の分からないまま止まる
+  let invoiceId = '';
+  let invoice = null;
+  let squareError = '';
+  try {
+    invoiceId = squareVerifyInvoiceId_(ss, caseRow);
+    invoice = invoiceId ? squareGetInvoice_(invoiceId) : null;
+  } catch (err) {
+    squareError = err.message;
+    boardLog_('②画面', 'Square の確認に失敗しました: ' + err.message);
+  }
 
   return {
     caseRow: caseRow,
@@ -881,6 +892,7 @@ function mailGetCaseContext(row, expectedCustomerId) {
     invoiceStatus: invoice ? invoice.status : '',
     invoiceUrl: invoiceId ? squareDashboardUrl_(invoiceId) : '',
     invoiceSteps: String(settings['請求書送信の手順'] || ''),
+    squareError: squareError,
     sentAt: boardFormatDate_(v[BOARD_COL.invoiceSent - 1])
   };
 }
