@@ -1571,7 +1571,7 @@ function boardMailProgress_(status) {
   // 読み込み時ではなく呼ばれた時に組み立てる。
   // トップレベルで他のファイルの定数を参照すると、読み込み順によっては
   // スクリプト全体が起動に失敗し、メニューごと出なくなる
-  const order = [MAIL_STATUS_SKIP, MAIL_STATUS_PENDING, MAIL_STATUS_EDITING, MAIL_STATUS_SENT];
+  const order = [MAIL_STATUS_SKIP, MAIL_STATUS_PENDING, MAIL_STATUS_SENT];
   const index = order.indexOf(String(status || '').trim());
   return index < 0 ? 0 : index + 1;
 }
