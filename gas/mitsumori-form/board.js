@@ -52,7 +52,7 @@ const BOARD_STATUS_RENAMES = { '手続き待ち': BOARD_STATUS_SIGNING };
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
   '案件ID', 'ステータス', '対応者', 'お客様', '予定点数', '初回ご依頼予定数', '初回ご依頼予定日', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
-  '未返信',
+  '未返信', '未請求の返送',
   '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール', '単価',
   '請求書送付日', 'Square請求書ID', '署名・支払確認日',
   '追跡番号', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
@@ -61,10 +61,10 @@ const BOARD_CASE_HEADERS = [
 const BOARD_COL = {
   caseId: 1, status: 2, owner: 3, customer: 4, qty: 5, firstQty: 6, firstDate: 7,
   startDate: 8, dueFrom: 9, dueTo: 10, todo: 11,
-  unreplied: 12,
-  customerId: 13, detail: 14, formInquiry: 15, lastInbound: 16, lastOutbound: 17, unitPrice: 18,
-  invoiceSent: 19, invoiceId: 20, signedAt: 21,
-  tracking: 22, teamNote: 23, guideDraftAt: 24, lastContact: 25, memo: 26, sourceRow: 27
+  unreplied: 12, unbilled: 13,
+  customerId: 14, detail: 15, formInquiry: 16, lastInbound: 17, lastOutbound: 18, unitPrice: 19,
+  invoiceSent: 20, invoiceId: 21, signedAt: 22,
+  tracking: 23, teamNote: 24, guideDraftAt: 25, lastContact: 26, memo: 27, sourceRow: 28
 };
 
 /** 折りたたみグループにまとめる列。並びが変わっても、隣り合っている範囲ごとにまとめる。 */
@@ -481,6 +481,7 @@ function boardMigrateCases_(ss) {
 
   headers = boardInsertColumnAfter_(sheet, headers, 'ステータス', '対応者');
   headers = boardInsertColumnAfter_(sheet, headers, '次にやること', '未返信');
+  headers = boardInsertColumnAfter_(sheet, headers, '未返信', '未請求の返送');
 
   // 対応不要はメール履歴側へ移した
   const dismiss = headers.indexOf('対応不要');
@@ -666,11 +667,13 @@ const BOARD_ROW_HEIGHT = 50;
 /** 「未返信」列に並べるリンクの数。これを超えた分は「+3」のようにまとめる。 */
 const BOARD_UNREPLIED_MAX_LINKS = 4;
 const BOARD_UNREPLIED_SEPARATOR = ' ・ ';
+/** 請求書は送ったが、まだ入金が確認できていないときに出す。 */
+const BOARD_UNPAID_LABEL = '未入金あり';
 
 /** 列の幅。並べ替えても効くよう、位置ではなく列の意味で指定する。 */
 const BOARD_CASE_WIDTHS = {
   caseId: 80, status: 190, owner: 70, customer: 150, qty: 70, firstQty: 100, firstDate: 95,
-  startDate: 95, dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130,
+  startDate: 95, dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
   customerId: 70, detail: 160, formInquiry: 160, lastInbound: 200, lastOutbound: 200, unitPrice: 70,
   invoiceSent: 95, invoiceId: 110, signedAt: 95,
   tracking: 130, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
@@ -700,6 +703,12 @@ function boardApplyCaseFormatting_(sheet) {
     .setBackground('#FDF3E3')
     .setRanges([sheet.getRange(2, 1, maxRows, width)])
     .build());
+  // 未請求の返送は別の色にする。返信待ちと請求待ちは急ぎ方が違う
+  rules.push(SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied('=$' + boardColLetter_(BOARD_COL.unbilled) + '2<>""')
+    .setBackground('#E7F1E9')
+    .setRanges([sheet.getRange(2, 1, maxRows, width)])
+    .build());
 
   const todoRange = sheet.getRange(2, BOARD_COL.todo, maxRows, 1);
   ['確認して返信', '日付を入れて', '経過', '作業チームへ共有', '不足している情報', '依頼確定メール'].forEach(function (word) {
@@ -714,6 +723,8 @@ function boardApplyCaseFormatting_(sheet) {
   sheet.getRange(2, BOARD_COL.status, maxRows, 1).setBackground(null).setFontColor(null);
 
   sheet.getRange(2, BOARD_COL.unreplied, maxRows, 1).setHorizontalAlignment('center');
+  sheet.getRange(2, BOARD_COL.unbilled, maxRows, 1)
+    .setHorizontalAlignment('center').setFontColor('#2C7A46');
 
   sheet.setConditionalFormatRules(rules);
 
@@ -736,6 +747,7 @@ function boardApplyCaseFormatting_(sheet) {
   boardForceRowHeight_(sheet, 2, Math.max(sheet.getMaxRows() - 1, 1));
 
   boardRefreshUnreplied_(sheet.getParent());
+  boardRefreshUnbilled_(sheet.getParent());
 
   boardApplyGroups_(sheet, BOARD_DETAIL_COLS.map(function (key) { return BOARD_COL[key]; }));
   boardApplyCaseFilter_(sheet);
@@ -2694,6 +2706,76 @@ function boardSetOwnerFormula_(sheet, row) {
   sheet.getRange(row, BOARD_COL.owner).setFormula(
     '=IF($' + boardColLetter_(BOARD_COL.caseId) + row + '="","",IFS(' + cases + ',TRUE,""))'
   );
+}
+
+/**
+ * 「未請求の返送」列を全案件ぶん書き直す。
+ *
+ * **月で区切らない。** 請求書が送られるまで出し続けるので、
+ * 先月請求し忘れた返送も翌月以降ずっと残り、見落とさない。
+ *
+ * 終わった案件（返送済・見送り）にも出す。作業は終わっていても請求だけ残るため。
+ */
+function boardRefreshUnbilled_(ss) {
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!cases || cases.getLastRow() < 2) return;
+
+  const open = {};
+  const ships = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (ships && ships.getLastRow() > 1) {
+    ships.getRange(2, 1, ships.getLastRow() - 1, BOARD_SHIPMENT_HEADERS.length).getValues()
+      .forEach(function (row, i) {
+        const caseId = String(row[BOARD_SHIPMENT_COL.caseId - 1] || '').trim();
+        if (!caseId) return;
+        if (BOARD_SHIPMENT_UNBILLED.indexOf(String(row[BOARD_SHIPMENT_COL.status - 1] || '').trim()) < 0) return;
+        const when = row[BOARD_SHIPMENT_COL.date - 1];
+        if (!open[caseId]) open[caseId] = [];
+        open[caseId].push({
+          row: i + 2,
+          at: when instanceof Date ? when.getTime() : 0,
+          label: when instanceof Date
+            ? Utilities.formatDate(when, Session.getScriptTimeZone(), 'M/d')
+            : '?'
+        });
+      });
+  }
+
+  const unpaid = boardUnpaidInvoiceCases_(ss);
+  const base = ss.getUrl().split('#')[0] + '#gid=' + (ships ? ships.getSheetId() : 0) + '&range=A';
+  const rows = cases.getLastRow() - 1;
+  const caseIds = cases.getRange(2, BOARD_COL.caseId, rows, 1).getValues();
+  const blank = SpreadsheetApp.newRichTextValue().setText('').build();
+
+  cases.getRange(2, BOARD_COL.unbilled, rows, 1).setRichTextValues(
+    caseIds.map(function (row) {
+      const caseId = String(row[0] || '').trim();
+      if (!caseId) return [blank];
+
+      const all = open[caseId] || [];
+      const hits = all.slice()
+        .sort(function (a, b) { return b.at - a.at; })
+        .slice(0, BOARD_UNREPLIED_MAX_LINKS);
+      const rest = all.length - hits.length;
+      const labels = hits.map(function (h) { return h.label; });
+
+      let text = labels.join(BOARD_UNREPLIED_SEPARATOR) + (rest > 0 ? ' +' + rest : '');
+      if (unpaid[caseId]) text = (text ? text + '　' : '') + BOARD_UNPAID_LABEL;
+      if (!text) return [blank];
+
+      const value = SpreadsheetApp.newRichTextValue().setText(text);
+      let at = 0;
+      hits.forEach(function (h, n) {
+        value.setLinkUrl(at, at + labels[n].length, base + h.row);
+        at += labels[n].length + BOARD_UNREPLIED_SEPARATOR.length;
+      });
+      return [value.build()];
+    })
+  );
+}
+
+/** 未入金の請求書がある案件。請求書シートを作るまでは空を返す。 */
+function boardUnpaidInvoiceCases_(ss) {
+  return {};
 }
 
 /**

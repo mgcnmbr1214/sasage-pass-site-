@@ -370,6 +370,7 @@ function mailScan_(options) {
     boardLog_('②エラー', 'ステータスの見直しに失敗: ' + err.message);
   }
   boardRefreshUnreplied_(ss);
+  boardRefreshUnbilled_(ss);
   return { found: found, note: '' };
 }
 
@@ -469,6 +470,7 @@ function mailGetPendingList() {
   mailSyncSentReplies_(ss);
   // 画面は操作のたびに一覧を読み直すため、ここで案件ボードの未返信も合わせておく
   boardRefreshUnreplied_(ss);
+  boardRefreshUnbilled_(ss);
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   if (!sheet || sheet.getLastRow() < 2) return [];
   const active = mailActiveCustomers_(ss);
