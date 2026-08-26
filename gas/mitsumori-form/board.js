@@ -1346,6 +1346,7 @@ function boardSetupTemplates_(ss) {
   boardMigrateTemplateNames_(sheet);
   boardMigrateQuoteTax_(sheet);
   boardMigrateTemplateNotes_(sheet);
+  boardMigrateShipBackNextOrder_(sheet);
   boardMigrateQuoteTemplate_(sheet);
 
   const last = sheet.getLastColumn();
@@ -1442,6 +1443,62 @@ function boardMigrateQuoteTax_(sheet) {
     boardLog_('移行', 'テンプレ T1 の金額表記に「税抜」を明記しました');
     return;
   }
+}
+
+/**
+ * T9 に「次回のご依頼について」を足す。
+ *
+ * 返送の連絡は、次のご依頼をいただく最良のきっかけになる。
+ * すでにテンプレを作ったあとのスプレッドシートにも行き渡らせる。
+ * **手で書き換えた本文は壊さない。** 見出しが無いときだけ、締めの前に差し込む。
+ */
+function boardMigrateShipBackNextOrder_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return;
+
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
+  const closing = '引き続きどうぞよろしくお願い申し上げます。';
+
+  for (let c = 1; c < ids.length; c++) {
+    if (String(ids[c] || '').trim() !== 'T9') continue;
+    const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
+    const body = String(cell.getValue() || '');
+    if (!body || body.indexOf('■ 次回のご依頼について') >= 0) return;
+    if (body.indexOf(closing) < 0) return;
+
+    cell.setValue(body.replace(closing, function () {
+      return boardNextOrderBlock_() + closing;
+    }));
+    boardLog_('移行', 'テンプレ T9 に次回のご依頼のご案内を追加しました');
+    return;
+  }
+}
+
+/** 返送の連絡に添える、次のご依頼のご案内。 */
+function boardNextOrderBlock_() {
+  return [
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ 次回のご依頼について',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '次回からは、本メールへのご返信で下記の2点をお知らせいただくだけで承ります。',
+    '',
+    '　・ご依頼予定数　：　　　点',
+    '　・ご発送予定日　：　　月　　日',
+    '',
+    'ご依頼内容（撮影・採寸・クリーニングなど）に変更がある場合のみ、',
+    'あわせてご希望をお書き添えください。変更がなければご記入は不要です。',
+    '',
+    '・ご依頼予定数はおおよそで構いません。実際の点数が前後しても問題ございません。',
+    '　2〜3回のご依頼にわたって調整いたしますので、そのままお送りください。',
+    '・ご発送予定日も多少前後して構いません。',
+    '　ただしお預かりの状況によって納期は変わりますので、ご連絡をいただいた時点で、',
+    '　受付開始日と納期の目安をあらためてご案内いたします。',
+    '',
+    'お知らせいただき次第、発送先とスケジュールをご案内いたします。',
+    'どうぞお気軽にご連絡ください。',
+    '',
+    ''
+  ].join('\n');
 }
 
 function boardMigrateTemplateNotes_(sheet) {
@@ -1850,6 +1907,26 @@ function boardDefaultShipBackBody_() {
     '',
     'お手元に届きましたら、内容をご確認いただけますと幸いです。',
     '不足や不備がございましたら、本メールへのご返信にてお知らせください。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ 次回のご依頼について',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '次回からは、本メールへのご返信で下記の2点をお知らせいただくだけで承ります。',
+    '',
+    '　・ご依頼予定数　：　　　点',
+    '　・ご発送予定日　：　　月　　日',
+    '',
+    'ご依頼内容（撮影・採寸・クリーニングなど）に変更がある場合のみ、',
+    'あわせてご希望をお書き添えください。変更がなければご記入は不要です。',
+    '',
+    '・ご依頼予定数はおおよそで構いません。実際の点数が前後しても問題ございません。',
+    '　2〜3回のご依頼にわたって調整いたしますので、そのままお送りください。',
+    '・ご発送予定日も多少前後して構いません。',
+    '　ただしお預かりの状況によって納期は変わりますので、ご連絡をいただいた時点で、',
+    '　受付開始日と納期の目安をあらためてご案内いたします。',
+    '',
+    'お知らせいただき次第、発送先とスケジュールをご案内いたします。',
+    'どうぞお気軽にご連絡ください。',
     '',
     '引き続きどうぞよろしくお願い申し上げます。'
   ].join('\n');

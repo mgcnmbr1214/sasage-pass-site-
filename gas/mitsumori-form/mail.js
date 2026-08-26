@@ -705,8 +705,34 @@ function mailOwnAddresses_(ss) {
  * その行のスレッドの中ではなく、**そのお客様から届いた最新のメール**を探す。
  * フォーム回答から作られた行のように、行そのものがメールでない場合もあるため。
  */
+/**
+ * 一覧で選んだお客様との、いちばん新しいメール。
+ *
+ * **送受信のどちらかは問わない。** こちらが最後に送ったメールが最新ならそれを出す。
+ * 「過去のやりとり」と同じ材料（Gmail）から作るので、二つの表示が食い違わない。
+ * Gmail から組み立てられないときだけ、メール履歴に残した内容へ戻す。
+ */
 function mailGetCustomerMessage(row) {
   boardUseCurrentColumns_();
+  let history = [];
+  try {
+    history = mailBuildHistory_(row);
+  } catch (err) {
+    boardLog_('②画面', '最新のメールの取得に失敗しました: ' + err.message);
+  }
+  if (history.length > 0) {
+    const top = history[0];
+    return {
+      text: top.date + '　' + top.direction + '\n' +
+        '件名: ' + top.subject + '\n' +
+        '────────────────────\n' + top.text
+    };
+  }
+  return mailStoredMessage_(row);
+}
+
+/** メール履歴に残した内容から組み立てる、最新のメールの控え。 */
+function mailStoredMessage_(row) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
   const values = sheet.getRange(Number(row), 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
   const stored = mailUnstamp_(values[BOARD_MAIL_COL.summary - 1]);
@@ -772,6 +798,10 @@ function mailActiveCustomers_(ss) {
  */
 function mailGetHistory(row) {
   boardUseCurrentColumns_();
+  return mailBuildHistory_(row);
+}
+
+function mailBuildHistory_(row) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
   if (!sheet || sheet.getLastRow() < 2) return [];
 
