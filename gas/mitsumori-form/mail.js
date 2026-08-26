@@ -362,6 +362,11 @@ function mailScan_(options) {
   } catch (err) {
     boardLog_('②エラー', '返送の送信確認に失敗: ' + err.message);
   }
+  try {
+    squareRefreshInvoices(ss);
+  } catch (err) {
+    boardLog_('②エラー', '請求書の状態確認に失敗: ' + err.message);
+  }
   // 顧客情報がそろったのに「情報不足」のまま残らないよう、毎回見直す。
   // 取り込みは新着のときしか走らないため、あとから埋めた分をここで拾う
   try {

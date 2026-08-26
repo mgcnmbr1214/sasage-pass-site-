@@ -929,3 +929,332 @@ function squareFetch_(method, path, payload) {
   }
   return JSON.parse(text);
 }
+
+// ------------------------------------------------------------
+// 月々のご利用料金の請求
+// ------------------------------------------------------------
+
+/**
+ * 未請求の返送をお客様ごとにまとめ、Squareに請求書の下書きを作る。
+ *
+ * **月で区切らず「未請求かどうか」で拾う。** 先月請求し忘れた返送も自動的に含まれる。
+ * 送信はSquareの画面で内容を確かめてから行っていただく。
+ */
+function squareCreateMonthlyInvoices() {
+  boardUseCurrentColumns_();
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  if (!squareGetToken_()) {
+    ui.alert('Squareのアクセストークンが未登録です。\n設定メニューから登録してください。');
+    return;
+  }
+
+  const month = squareBillingMonth_(new Date());
+  const groups = squareCollectBillable_(ss);
+  const ids = Object.keys(groups);
+  if (ids.length === 0) {
+    ui.alert('請求の対象になる返送がありません。\n\n' +
+      '「返送開始のお知らせ」を送ると対象になります。下書きのままでは対象外です。');
+    return;
+  }
+
+  const answer = ui.alert('今月の請求書を作成',
+    month.label + 'として、' + ids.length + ' 件の請求書の下書きをSquareに作ります。\n' +
+    '支払い期限は ' + Utilities.formatDate(month.due, Session.getScriptTimeZone(), 'yyyy年M月d日') + ' です。\n\n' +
+    '下書きを作るだけで、送信はSquareの画面で行います。よろしいですか？',
+    ui.ButtonSet.YES_NO);
+  if (answer !== ui.Button.YES) return;
+
+  const location = squareListLocations_()[0];
+  if (!location) {
+    ui.alert('Squareの店舗情報を取得できませんでした。');
+    return;
+  }
+
+  const done = [];
+  const skipped = [];
+  ids.forEach(function (customerId) {
+    try {
+      const result = squareCreateInvoiceFor_(ss, location, month, customerId, groups[customerId]);
+      done.push(result.customer + '　' + result.qty + '点　' + squareYen_(result.amount));
+    } catch (err) {
+      skipped.push(groups[customerId].customer + '：' + err.message);
+      boardLog_('請求', groups[customerId].customer + ' の請求書を作れませんでした: ' + err.message);
+    }
+  });
+
+  boardRefreshUnbilled_(ss);
+  boardLog_('請求', month.label + '：' + done.length + ' 件の請求書を作成しました');
+
+  ui.alert('今月の請求書を作成',
+    month.label + '\n\n' +
+    '■ 作成できた請求書（' + done.length + ' 件）\n' +
+    (done.length ? '　' + done.join('\n　') : '　なし') + '\n\n' +
+    (skipped.length
+      ? '■ 作成できなかったお客様（' + skipped.length + ' 件）\n　' + skipped.join('\n　') +
+        '\n\nカードが未登録の場合は、先に登録手数料の請求書でご登録いただいてください。\n\n'
+      : '') +
+    'Squareの画面で内容を確認し、送信してください。',
+    ui.ButtonSet.OK);
+}
+
+/**
+ * 請求の対象になる月。
+ * 月末に実行する運用だが、月初にずれ込むこともあるため、5日までは前月分とみなす。
+ */
+function squareBillingMonth_(today) {
+  const at = new Date(today.getTime());
+  if (at.getDate() <= 5) at.setMonth(at.getMonth() - 1);
+  const year = at.getFullYear();
+  const month = at.getMonth();
+  return {
+    year: year,
+    month: month,
+    key: year + '/' + ('0' + (month + 1)).slice(-2),
+    label: 'ササゲパス利用料金' + year + '年' + (month + 1) + '月分',
+    // 支払い期限は請求月の翌月5日
+    due: new Date(year, month + 1, 5)
+  };
+}
+
+/** 未請求（送信済）の返送を、お客様ごとにまとめる。 */
+function squareCollectBillable_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  const groups = {};
+  if (!sheet || sheet.getLastRow() < 2) return groups;
+
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_SHIPMENT_HEADERS.length).getValues()
+    .forEach(function (row, i) {
+      if (BOARD_SHIPMENT_BILLABLE.indexOf(String(row[BOARD_SHIPMENT_COL.status - 1] || '').trim()) < 0) return;
+      const customerId = String(row[BOARD_SHIPMENT_COL.customerId - 1] || '').trim();
+      const qty = Number(row[BOARD_SHIPMENT_COL.qty - 1] || 0);
+      const unitPrice = Number(row[BOARD_SHIPMENT_COL.unitPrice - 1] || 0);
+      // 点数か単価が入っていない行は、金額を出せないので含めない
+      if (!customerId || qty <= 0 || unitPrice <= 0) return;
+
+      if (!groups[customerId]) {
+        groups[customerId] = { customer: row[BOARD_SHIPMENT_COL.customer - 1], items: [] };
+      }
+      groups[customerId].items.push({
+        row: i + 2,
+        caseId: String(row[BOARD_SHIPMENT_COL.caseId - 1] || '').trim(),
+        date: row[BOARD_SHIPMENT_COL.date - 1],
+        qty: qty,
+        unitPrice: unitPrice
+      });
+    });
+  return groups;
+}
+
+/** お客様1人ぶんの請求書を作り、返送履歴と請求書シートに記録する。 */
+function squareCreateInvoiceFor_(ss, location, month, customerId, group) {
+  const customer = boardFindCustomer_(ss, customerId);
+  if (!customer || !boardIsEmail_(customer.email)) throw new Error('メールアドレスが登録されていません');
+
+  const squareId = squareEnsureCustomer_(ss, customer);
+  const card = squareFindCardOnFile_(squareId);
+  if (!card) throw new Error('保存されたカードがありません');
+
+  const order = squareCreateUsageOrder_(location.id, squareId, month, group.items);
+  const tpl = boardFindTemplate_(ss, 'S2');
+  const due = Utilities.formatDate(month.due, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+
+  const invoice = squareFetch_('POST', '/invoices', {
+    idempotency_key: Utilities.getUuid(),
+    invoice: {
+      location_id: location.id,
+      order_id: order.id,
+      primary_recipient: { customer_id: squareId },
+      delivery_method: 'EMAIL',
+      title: month.label,
+      description: tpl ? tpl.body : '',
+      payment_requests: [{
+        request_type: 'BALANCE',
+        due_date: due,
+        // 保存されたカードから自動で引き落とす
+        automatic_payment_source: 'CARD_ON_FILE',
+        card_id: card.id
+      }],
+      accepted_payment_methods: { card: true },
+      sale_or_service_date: due
+    }
+  }).invoice;
+
+  const qty = group.items.reduce(function (sum, item) { return sum + item.qty; }, 0);
+  const amount = group.items.reduce(function (sum, item) { return sum + item.qty * item.unitPrice; }, 0);
+
+  // 返送履歴に、どの請求にまとまったかを書き戻す
+  const ships = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  group.items.forEach(function (item) {
+    ships.getRange(item.row, BOARD_SHIPMENT_COL.status).setValue(SHIP_STATUS_INVOICED);
+    ships.getRange(item.row, BOARD_SHIPMENT_COL.billingMonth).setValue(month.key);
+    ships.getRange(item.row, BOARD_SHIPMENT_COL.invoiceId).setValue(invoice.id);
+  });
+
+  squareRecordInvoice_(ss, {
+    month: month.key,
+    customerId: customerId,
+    customer: group.customer,
+    targets: group.items.map(function (i) { return i.caseId + ' ' + boardFormatDate_(i.date); }).join('\n'),
+    qty: qty,
+    amount: amount,
+    invoiceId: invoice.id
+  });
+
+  return { customer: group.customer, qty: qty, amount: amount };
+}
+
+/** 明細は返送1回ぶんで1行。単価は税抜で、消費税は明細ごとに加算する。 */
+function squareCreateUsageOrder_(locationId, squareCustomerId, month, items) {
+  const data = squareFetch_('POST', '/orders', {
+    idempotency_key: Utilities.getUuid(),
+    order: {
+      location_id: locationId,
+      customer_id: squareCustomerId,
+      line_items: items.map(function (item) {
+        return {
+          name: item.caseId + '　' + boardFormatDate_(item.date) + ' 返送分',
+          quantity: String(item.qty),
+          base_price_money: { amount: item.unitPrice, currency: SQUARE_CURRENCY },
+          applied_taxes: [{ tax_uid: 'usage-tax' }]
+        };
+      }),
+      taxes: [{
+        uid: 'usage-tax',
+        name: SQUARE_TAX_NAME,
+        percentage: SQUARE_TAX_PERCENTAGE,
+        type: 'ADDITIVE',
+        scope: 'LINE_ITEM'
+      }]
+    }
+  });
+  return data.order;
+}
+
+/** そのお客様の、使える保存済みカード。複数あれば新しいほうを使う。 */
+function squareFindCardOnFile_(squareCustomerId) {
+  const data = squareFetch_('GET', '/cards?customer_id=' + encodeURIComponent(squareCustomerId));
+  const cards = (data.cards || []).filter(function (card) { return card.enabled !== false; });
+  return cards.length > 0 ? cards[cards.length - 1] : null;
+}
+
+function squareRecordInvoice_(ss, data) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_INVOICES);
+  if (!sheet) return;
+
+  const values = new Array(BOARD_INVOICE_HEADERS.length).fill('');
+  values[BOARD_INVOICE_COL.month - 1] = data.month;
+  values[BOARD_INVOICE_COL.customerId - 1] = data.customerId;
+  values[BOARD_INVOICE_COL.customer - 1] = data.customer;
+  values[BOARD_INVOICE_COL.targets - 1] = data.targets;
+  values[BOARD_INVOICE_COL.qty - 1] = data.qty;
+  values[BOARD_INVOICE_COL.amount - 1] = data.amount;
+  values[BOARD_INVOICE_COL.status - 1] = INVOICE_STATUS_DRAFT;
+  values[BOARD_INVOICE_COL.createdAt - 1] = new Date();
+  values[BOARD_INVOICE_COL.invoiceId - 1] = data.invoiceId;
+  sheet.appendRow(values);
+
+  const row = sheet.getLastRow();
+  sheet.getRange(row, BOARD_INVOICE_COL.url)
+    .setFormula('=HYPERLINK("' + squareDashboardUrl_(data.invoiceId) + '","Squareで開く")');
+  boardForceRowHeight_(sheet, row, 1);
+}
+
+function squareYen_(amount) {
+  return '¥' + Number(amount || 0).toLocaleString('ja-JP') + '（税抜）';
+}
+
+/**
+ * 請求書が送られたか、支払われたかを Square から取り込む。
+ *
+ * 返送履歴の状態も一緒に進める。
+ * 送信済 → 請求済、支払い済 → 支払い済。取り消された請求書は未請求に戻す。
+ */
+function squareRefreshInvoices(ss) {
+  const target = ss || SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = target.getSheetByName(BOARD_SHEET_INVOICES);
+  if (!sheet || sheet.getLastRow() < 2 || !squareGetToken_()) return 0;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_INVOICE_HEADERS.length).getValues();
+  const moved = [];
+
+  rows.forEach(function (row, i) {
+    const status = String(row[BOARD_INVOICE_COL.status - 1] || '').trim();
+    if (status === INVOICE_STATUS_PAID || status === INVOICE_STATUS_CANCELED) return;
+    const invoiceId = String(row[BOARD_INVOICE_COL.invoiceId - 1] || '').trim();
+    if (!invoiceId) return;
+
+    const invoice = squareGetInvoice_(invoiceId);
+    if (!invoice) {
+      // Squareから消えている。請求のやり直しができるよう未請求に戻す
+      sheet.getRange(i + 2, BOARD_INVOICE_COL.status).setValue(INVOICE_STATUS_CANCELED);
+      squareResetShipments_(target, invoiceId);
+      moved.push(row[BOARD_INVOICE_COL.customer - 1] + '→取消');
+      return;
+    }
+
+    const next = squareInvoiceStateLabel_(invoice.status);
+    if (next === INVOICE_STATUS_CANCELED) {
+      sheet.getRange(i + 2, BOARD_INVOICE_COL.status).setValue(next);
+      squareResetShipments_(target, invoiceId);
+      moved.push(row[BOARD_INVOICE_COL.customer - 1] + '→取消');
+      return;
+    }
+    if (next === status) return;
+
+    sheet.getRange(i + 2, BOARD_INVOICE_COL.status).setValue(next);
+    if (next === INVOICE_STATUS_SENT) {
+      if (!row[BOARD_INVOICE_COL.sentAt - 1]) {
+        sheet.getRange(i + 2, BOARD_INVOICE_COL.sentAt).setValue(new Date());
+      }
+      squareMarkShipments_(target, invoiceId, SHIP_STATUS_BILLED);
+    }
+    if (next === INVOICE_STATUS_PAID) {
+      if (!row[BOARD_INVOICE_COL.sentAt - 1]) {
+        sheet.getRange(i + 2, BOARD_INVOICE_COL.sentAt).setValue(new Date());
+      }
+      sheet.getRange(i + 2, BOARD_INVOICE_COL.paidAt).setValue(new Date());
+      squareMarkShipments_(target, invoiceId, SHIP_STATUS_PAID);
+    }
+    moved.push(row[BOARD_INVOICE_COL.customer - 1] + '→' + next);
+  });
+
+  if (moved.length > 0) {
+    boardRefreshUnbilled_(target);
+    boardLog_('請求', moved.length + ' 件の請求書の状態を更新しました（' + moved.join('、') + '）');
+  }
+  return moved.length;
+}
+
+/** Squareの請求書の状態を、シートの言い方に直す。 */
+function squareInvoiceStateLabel_(status) {
+  if (status === 'PAID' || status === 'REFUNDED') return INVOICE_STATUS_PAID;
+  if (status === 'CANCELED' || status === 'FAILED') return INVOICE_STATUS_CANCELED;
+  if (status === 'DRAFT') return INVOICE_STATUS_DRAFT;
+  // UNPAID / SCHEDULED / PARTIALLY_PAID などは、送られたが入金が済んでいない状態
+  return INVOICE_STATUS_SENT;
+}
+
+function squareMarkShipments_(ss, invoiceId, status) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!sheet || sheet.getLastRow() < 2) return;
+  sheet.getRange(2, BOARD_SHIPMENT_COL.invoiceId, sheet.getLastRow() - 1, 1).getValues()
+    .forEach(function (row, i) {
+      if (String(row[0] || '').trim() !== invoiceId) return;
+      sheet.getRange(i + 2, BOARD_SHIPMENT_COL.status).setValue(status);
+    });
+}
+
+/** 取り消された請求書に紐づく返送を、未請求に戻す。 */
+function squareResetShipments_(ss, invoiceId) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!sheet || sheet.getLastRow() < 2) return;
+  sheet.getRange(2, BOARD_SHIPMENT_COL.invoiceId, sheet.getLastRow() - 1, 1).getValues()
+    .forEach(function (row, i) {
+      if (String(row[0] || '').trim() !== invoiceId) return;
+      sheet.getRange(i + 2, BOARD_SHIPMENT_COL.status).setValue(SHIP_STATUS_SENT);
+      sheet.getRange(i + 2, BOARD_SHIPMENT_COL.invoiceId).setValue('');
+      sheet.getRange(i + 2, BOARD_SHIPMENT_COL.billingMonth).setValue('');
+    });
+}

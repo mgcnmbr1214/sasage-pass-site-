@@ -257,6 +257,29 @@ const BOARD_SHIPMENT_BILLABLE = [SHIP_STATUS_SENT];
 /** 案件ボードの「未請求の返送」に出す状態。 */
 const BOARD_SHIPMENT_UNBILLED = [SHIP_STATUS_SENT, SHIP_STATUS_INVOICED];
 
+/**
+ * 請求書。月に一度、未請求の返送をお客様ごとにまとめて1行になる。
+ * Squareでの送信と入金は、10分ごとの自動チェックで取り込む。
+ */
+const BOARD_SHEET_INVOICES = '請求書';
+const BOARD_INVOICE_HEADERS = [
+  '請求月', '顧客ID', 'お客様', '対象の返送', '点数計', '金額（税抜）', '状態',
+  '作成日', '送信日', '支払日', 'Square請求書ID', 'Square画面'
+];
+const BOARD_INVOICE_COL = {
+  month: 1, customerId: 2, customer: 3, targets: 4, qty: 5, amount: 6, status: 7,
+  createdAt: 8, sentAt: 9, paidAt: 10, invoiceId: 11, url: 12
+};
+const BOARD_INVOICE_WIDTHS = {
+  month: 90, customerId: 70, customer: 150, targets: 220, qty: 70, amount: 110, status: 110,
+  createdAt: 95, sentAt: 95, paidAt: 95, invoiceId: 130, url: 90
+};
+
+const INVOICE_STATUS_DRAFT = '下書き';
+const INVOICE_STATUS_SENT = '送信済';
+const INVOICE_STATUS_PAID = '支払い済';
+const INVOICE_STATUS_CANCELED = '取消';
+
 const BOARD_SHEET_EXAMPLES = '返信実例';
 const BOARD_EXAMPLE_HEADERS = ['日時', '顧客', '件名', 'AI初回案', '修正指示', '最終文面', '抽出した方針'];
 /**
@@ -328,6 +351,7 @@ function onOpen() {
   ui.createMenu('ササゲパス')
     .addItem('対応を選ぶ', 'mailOpenReviewPanel')
     .addItem('新着を今すぐ確認する', 'mailCheckNow')
+    .addItem('今月の請求書を作成', 'squareCreateMonthlyInvoices')
     .addSeparator()
     .addSubMenu(ui.createMenu('別途対応メニュー')
       .addItem('受付開始日・納期・点数だけを入力する', 'boardOpenPanel')
@@ -366,6 +390,7 @@ function boardSetup() {
   boardSetupSheet_(ss, BOARD_SHEET_MAILS, BOARD_MAIL_HEADERS);
   boardSetupSheet_(ss, BOARD_SHEET_EXAMPLES, BOARD_EXAMPLE_HEADERS, [140, 150, 240, 300, 260, 300, 320]);
   boardSetupSheet_(ss, BOARD_SHEET_SHIPMENTS, BOARD_SHIPMENT_HEADERS);
+  boardSetupSheet_(ss, BOARD_SHEET_INVOICES, BOARD_INVOICE_HEADERS);
   boardSetupTemplates_(ss);
   boardSetupSheet_(ss, BOARD_SHEET_KNOWLEDGE, BOARD_KNOWLEDGE_HEADERS, [140, 560, 100]);
   boardSetupSheet_(ss, BOARD_SHEET_SETTINGS, BOARD_SETTINGS_HEADERS, [220, 300, 340]);
@@ -1065,7 +1090,7 @@ function boardHideSourceSheets_(ss) {
 
 function boardOrderSheets_(ss) {
   const order = [BOARD_SHEET_CASES, BOARD_SHEET_CUSTOMERS, BOARD_SHEET_MAILS,
-    BOARD_SHEET_SHIPMENTS,
+    BOARD_SHEET_SHIPMENTS, BOARD_SHEET_INVOICES,
     BOARD_SHEET_TEMPLATES, BOARD_SHEET_KNOWLEDGE, BOARD_SHEET_EXAMPLES,
     BOARD_SHEET_SETTINGS, BOARD_SHEET_LOGS];
   order.forEach(function (name, index) {
@@ -1422,7 +1447,8 @@ function boardSeedTemplates_(sheet) {
     ['T7', 'お預かり完了のご連絡', '【ササゲパス】商品をお預かりいたしました', boardDefaultReceivedBody_(), '商品が到着したとき'],
     ['T8', '作業完了・データ納品のご連絡', '【ササゲパス】作業が完了いたしました（データ納品のご案内）', boardDefaultDeliveryBody_(), '作業が完了し、納品データを共有するとき。**納品URLは手入力**。入れないと下書きにできない'],
     ['T9', '返送開始のお知らせ', '【ササゲパス】商品の返送を開始いたしました', boardDefaultShipBackBody_(), '**この送信が月々のご請求の対象になる**。点数と追跡番号は画面で入力し、返送履歴にも残る'],
-    ['S1', 'Square請求書（登録手数料220円）', SQUARE_INVOICE_TITLE, squareInvoiceDescription_(), '過去の請求書と同一の文面。Squareの請求書メッセージ欄に入る']
+    ['S1', 'Square請求書（登録手数料220円）', SQUARE_INVOICE_TITLE, squareInvoiceDescription_(), '過去の請求書と同一の文面。Squareの請求書メッセージ欄に入る'],
+    ['S2', 'Square請求書（月々のご利用料金）', 'ササゲパス利用料金', boardDefaultUsageInvoiceBody_(), '「今月の請求書を作成」で作る請求書のメッセージ欄に入る。件名は月ごとに自動で付く']
   ];
   let col = Math.max(sheet.getLastColumn(), 1);
   seeds.forEach(function (seed) {
@@ -1616,6 +1642,23 @@ function boardDefaultReceivedBody_() {
  * 返送開始のお知らせ。**この送信が月々のご請求の対象になる。**
  * 点数と追跡番号は画面で入力していただき、返送履歴にも残す。
  */
+function boardDefaultUsageInvoiceBody_() {
+  return [
+    'ササゲパス運営事務局です。',
+    '',
+    '今月分のご利用料金をご請求申し上げます。',
+    '明細は本請求書に記載のとおりです。',
+    '',
+    'ご登録いただいているカードより自動でお支払いいただきますので、',
+    'お客様にてお手続きいただく必要はございません。',
+    '',
+    '内容にご不明な点や相違がございましたら、',
+    'お手数ですが info@sasagepass.com までご連絡ください。',
+    '',
+    '今後ともどうぞよろしくお願いいたします。'
+  ].join('\n');
+}
+
 function boardDefaultShipBackBody_() {
   return [
     '{{会社名}}',
@@ -2773,9 +2816,24 @@ function boardRefreshUnbilled_(ss) {
   );
 }
 
-/** 未入金の請求書がある案件。請求書シートを作るまでは空を返す。 */
+/**
+ * 請求書は送ったが、まだ入金が確認できていない案件。
+ *
+ * 返送履歴の状態がそのまま請求の進み具合を表す。
+ * 送信済・請求書作成済 → 未請求（日付リンク）／請求済 → 未入金あり／支払い済 → 何も出さない。
+ */
 function boardUnpaidInvoiceCases_(ss) {
-  return {};
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  const found = {};
+  if (!sheet || sheet.getLastRow() < 2) return found;
+
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_SHIPMENT_HEADERS.length).getValues()
+    .forEach(function (row) {
+      if (String(row[BOARD_SHIPMENT_COL.status - 1] || '').trim() !== SHIP_STATUS_BILLED) return;
+      const caseId = String(row[BOARD_SHIPMENT_COL.caseId - 1] || '').trim();
+      if (caseId) found[caseId] = true;
+    });
+  return found;
 }
 
 /**
