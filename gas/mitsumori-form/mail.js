@@ -319,7 +319,7 @@ function mailScan_(options) {
         const raw = message.getPlainBody();
         boardApplyCustomerIntake_(ss, customer.email, boardExtractCustomerIntake_(raw));
         boardApplyCaseIntake_(ss, customer.customerId, boardExtractCaseIntake_(raw));
-        boardAdvanceOnReply_(ss, customer.customerId);
+        boardReopenCase_(ss, customer.customerId);
       } catch (err) {
         boardLog_('②エラー', '顧客情報の取込に失敗: ' + err.message);
       }
@@ -370,9 +370,9 @@ function mailScan_(options) {
   // 顧客情報がそろったのに「情報不足」のまま残らないよう、毎回見直す。
   // 取り込みは新着のときしか走らないため、あとから埋めた分をここで拾う
   try {
-    boardReevaluateStatuses_(ss);
+    boardRefreshRegistration_(ss);
   } catch (err) {
-    boardLog_('②エラー', 'ステータスの見直しに失敗: ' + err.message);
+    boardLog_('②エラー', 'お客様の登録状況の更新に失敗: ' + err.message);
   }
   boardRefreshUnreplied_(ss);
   boardRefreshUnbilled_(ss);
@@ -842,6 +842,7 @@ function mailGetResponseTypes() {
         return { key: key, label: BOARD_CASE_FIELDS[key].label, type: BOARD_CASE_FIELDS[key].type };
       }),
       invoice: !!t.invoice,
+      forRegistration: t.forRegistration || '',
       requires: (t.requires || []).map(function (key) { return BOARD_CASE_FIELDS[key].label; }),
       requireKeys: t.requires || []
     };
@@ -912,6 +913,8 @@ function mailBuildCaseContext_(row, expectedCustomerId) {
     caseRow: caseRow,
     caseId: text(v[BOARD_COL.caseId - 1]),
     caseStatus: text(v[BOARD_COL.status - 1]),
+    registration: text(v[BOARD_COL.registration - 1]),
+    repeatCustomer: boardIsRepeatCustomer_(v[BOARD_COL.registration - 1]),
     // 受付開始日が未入力なら、お客様が答えた初回ご依頼予定日を初期値にする
     startDate: text(v[BOARD_COL.startDate - 1]
       ? boardToInputDate_(v[BOARD_COL.startDate - 1])

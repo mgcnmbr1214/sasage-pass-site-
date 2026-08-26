@@ -16,29 +16,36 @@ const BOARD_SHEET_LOGS = 'ログ';
 
 const BOARD_SOURCE_SHEET = 'Responses';
 
-const BOARD_STATUS_SIGNING = '支払い情報登録・契約書署名待ち';
-
+/**
+ * ステータスは**作業の進み具合だけ**を表す。
+ *
+ * 「返信が要るか」は未返信列、「お客様の登録がどこまで済んだか」は登録状況列が持つ。
+ * 3つを1列に詰め込んでいたころは、質問に普通に返信しただけで
+ * 作業中の案件が「返信済」まで巻き戻っていた。
+ */
+const BOARD_STATUS_NEW = '問合せ';
+const BOARD_STATUS_SIGNING = '支払い・署名待ち';
+const BOARD_STATUS_WAITING_SHIP = '発送待ち';
 const BOARD_STATUS_SHIPPED = '発送済み';
-
-const BOARD_STATUS_SHORT = '情報不足';
-const BOARD_STATUS_READY = '依頼確定前';
+const BOARD_STATUS_WORKING = '作業中';
+const BOARD_STATUS_DONE = '返送済';
 const BOARD_STATUS_CLOSED = '見送り';
 
-const BOARD_STATUS_DONE = '返送済';
-
-const BOARD_STATUSES = ['問合せ', '返信済', BOARD_STATUS_SHORT, BOARD_STATUS_READY, '依頼確定', BOARD_STATUS_SIGNING, '発送待ち', BOARD_STATUS_SHIPPED, '作業中', BOARD_STATUS_DONE, BOARD_STATUS_CLOSED];
+const BOARD_STATUSES = [
+  BOARD_STATUS_NEW, BOARD_STATUS_SIGNING, BOARD_STATUS_WAITING_SHIP,
+  BOARD_STATUS_SHIPPED, BOARD_STATUS_WORKING, BOARD_STATUS_DONE, BOARD_STATUS_CLOSED
+];
 
 /** 終わった案件。「対応を選ぶ」にも出さず、未返信も数えない。 */
 const BOARD_FINISHED_STATUSES = [BOARD_STATUS_DONE, BOARD_STATUS_CLOSED];
 
-/** そのステータスで次に動くのは誰か。案件ボードの「対応者」列に出す。 */
+/**
+ * そのステータスで次に動くのは誰か。案件ボードの「対応者」列に出す。
+ * 未返信のメールがあるときは、案件がどこまで進んでいても「自分」になる。
+ */
 const BOARD_STATUS_OWNER = {
-  '問合せ': '自分',
-  '返信済': 'お客様',
-  '情報不足': '自分',
-  '依頼確定前': '自分',
-  '依頼確定': '自分',
-  '支払い情報登録・契約書署名待ち': 'お客様',
+  '問合せ': 'お客様',
+  '支払い・署名待ち': 'お客様',
   '発送待ち': 'お客様',
   '発送済み': '自分',
   '作業中': '自分',
@@ -46,12 +53,36 @@ const BOARD_STATUS_OWNER = {
   '見送り': '完了'
 };
 
-/** 旧名称 → 新名称。セットアップ時に既存の値を書き換える。 */
-const BOARD_STATUS_RENAMES = { '手続き待ち': BOARD_STATUS_SIGNING };
+/**
+ * 旧名称 → 新名称。セットアップ時に既存の値を書き換える。
+ *
+ * 「返信済」「情報不足」「依頼確定前」はステータスから外した。
+ * 前者は未返信列が、後の2つは登録状況列が受け持つ。
+ */
+const BOARD_STATUS_RENAMES = {
+  '手続き待ち': BOARD_STATUS_SIGNING,
+  '支払い情報登録・契約書署名待ち': BOARD_STATUS_SIGNING,
+  '返信済': BOARD_STATUS_NEW,
+  '情報不足': BOARD_STATUS_NEW,
+  '依頼確定前': BOARD_STATUS_NEW,
+  '依頼確定': BOARD_STATUS_WAITING_SHIP
+};
+
+/**
+ * お客様の登録状況。**案件ではなくお客様のもの**なので、
+ * 案件行を次のご依頼で使い回してもそのまま引き継がれる。
+ * 自動で計算して書き込む列なので、手では書き換えない。
+ */
+const BOARD_REG_UNKNOWN = '未確認';
+const BOARD_REG_SHORT = '情報不足';
+const BOARD_REG_OK = '情報OK';
+const BOARD_REG_SIGNED = '契約済み';
+/** 契約まで済んだお客様は、支払い・署名待ちを飛ばして発送待ちへ進む。 */
+const BOARD_REG_DONE = [BOARD_REG_SIGNED];
 
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
-  '案件ID', 'ステータス', '対応者', 'お客様', '予定点数', '初回ご依頼予定数', '初回ご依頼予定日', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
+  '案件ID', 'ステータス', 'お客様の登録状況', '対応者', 'お客様', '予定点数', '初回ご依頼予定数', '初回ご依頼予定日', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
   '未返信', '未請求の返送',
   '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール', '単価',
   '請求書送付日', 'Square請求書ID', '署名・支払確認日',
@@ -59,13 +90,22 @@ const BOARD_CASE_HEADERS = [
 ];
 
 const BOARD_COL = {
-  caseId: 1, status: 2, owner: 3, customer: 4, qty: 5, firstQty: 6, firstDate: 7,
-  startDate: 8, dueFrom: 9, dueTo: 10, todo: 11,
-  unreplied: 12, unbilled: 13,
-  customerId: 14, detail: 15, formInquiry: 16, lastInbound: 17, lastOutbound: 18, unitPrice: 19,
-  invoiceSent: 20, invoiceId: 21, signedAt: 22,
-  tracking: 23, teamNote: 24, guideDraftAt: 25, lastContact: 26, memo: 27, sourceRow: 28
+  caseId: 1, status: 2, registration: 3, owner: 4, customer: 5, qty: 6, firstQty: 7, firstDate: 8,
+  startDate: 9, dueFrom: 10, dueTo: 11, todo: 12,
+  unreplied: 13, unbilled: 14,
+  customerId: 15, detail: 16, formInquiry: 17, lastInbound: 18, lastOutbound: 19, unitPrice: 20,
+  invoiceSent: 21, invoiceId: 22, signedAt: 23,
+  tracking: 24, teamNote: 25, guideDraftAt: 26, lastContact: 27, memo: 28, sourceRow: 29
 };
+
+/**
+ * 案件行を次のご依頼で使い回すときに消す、**その回だけの値**。
+ * 消した値は返送履歴に凍結済みなので、履歴としては残る。
+ * 単価・依頼内容・署名や登録手数料の記録は、お客様に一度きりのものなので残す。
+ */
+const BOARD_CASE_REOPEN_CLEARED = [
+  'startDate', 'dueFrom', 'dueTo', 'qty', 'tracking', 'teamNote', 'guideDraftAt'
+];
 
 /** 折りたたみグループにまとめる列。並びが変わっても、隣り合っている範囲ごとにまとめる。 */
 const BOARD_DETAIL_COLS = [
@@ -144,18 +184,28 @@ const BOARD_MAIL_COL = {
 const BOARD_RESPONSE_TYPES = [
   {
     id: 'REPLY', name: '通常の返信（AIが問い合わせ内容に応じて回答します）',
-    template: '', status: '返信済', fields: [], invoice: false, requires: []
+    template: '', status: '', fields: [], invoice: false, requires: []
   },
   {
     id: 'T1', name: '見積もり回答（料金・納期の目安・ご利用条件をお伝えします）',
-    template: 'T1', status: '返信済', fields: [], invoice: false, requires: []
+    template: 'T1', status: '', fields: [], invoice: false, requires: []
   },
   {
-    id: 'T2', name: '依頼確定（受付開始日・納期を回答し、依頼内容・支払い・発送に関する事項を伝えます）',
+    id: 'T2', name: '依頼確定・初回（受付開始日・納期に加え、支払い方法の登録と発送をご案内します）',
     template: 'T2', status: BOARD_STATUS_SIGNING,
     fields: ['startDate', 'dueFrom', 'dueTo', 'qty'], invoice: true,
     requires: ['startDate', 'dueFrom'],
-    stamp: 'guideDraftAt'
+    stamp: 'guideDraftAt',
+    forRegistration: 'first'
+  },
+  {
+    // カード登録と契約書署名は初回だけ。2回目以降はその案内も登録手数料も要らない
+    id: 'T2B', name: '依頼確定・2回目以降（受付開始日・納期を回答し、発送をご案内します）',
+    template: 'T2B', status: BOARD_STATUS_WAITING_SHIP,
+    fields: ['startDate', 'dueFrom', 'dueTo', 'qty'], invoice: false,
+    requires: ['startDate', 'dueFrom'],
+    stamp: 'guideDraftAt',
+    forRegistration: 'repeat'
   },
   {
     id: 'T4', name: '手続き完了（支払いと署名の確認をお伝えし、発送をご案内します）',
@@ -204,6 +254,38 @@ const BOARD_CASE_FIELDS = {
   shipQty: { label: '返送した点数', type: 'number', col: '' },
   shipTracking: { label: '返送の追跡番号', type: 'text', col: '' }
 };
+
+/**
+ * メール履歴に残っている「対応種別」の旧名称を新しい名称に付け替える。
+ *
+ * 名称は対応種別を引き当てる鍵になっている。旧名称のままだと、
+ * 過去の行を「対応を選ぶ」で開いたときに種別が未選択に戻ってしまう。
+ */
+const BOARD_RESPONSE_TYPE_RENAMES = {
+  '依頼確定（受付開始日・納期を回答し、依頼内容・支払い・発送に関する事項を伝えます）':
+    '依頼確定・初回（受付開始日・納期に加え、支払い方法の登録と発送をご案内します）',
+  '案内メール（依頼確定時）':
+    '依頼確定・初回（受付開始日・納期に加え、支払い方法の登録と発送をご案内します）'
+};
+
+function boardMigrateResponseTypes_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const range = sheet.getRange(2, BOARD_MAIL_COL.responseType, sheet.getLastRow() - 1, 1);
+  const values = range.getValues();
+  let changed = 0;
+  const next = values.map(function (row) {
+    const name = String(row[0] || '').trim();
+    if (BOARD_RESPONSE_TYPE_RENAMES[name]) { changed++; return [BOARD_RESPONSE_TYPE_RENAMES[name]]; }
+    return [row[0]];
+  });
+  if (changed > 0) {
+    range.setValues(next);
+    boardLog_('移行', '対応種別の名称を ' + changed + ' 件更新しました');
+  }
+  return changed;
+}
 
 function boardFindResponseTypeByName_(name) {
   const key = String(name || '').trim();
@@ -446,11 +528,17 @@ function boardSetup() {
     boardLog_('②エラー', '顧客情報の補完に失敗: ' + err.message);
   }
 
+  try {
+    boardMigrateResponseTypes_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '対応種別の名称更新に失敗: ' + err.message);
+  }
+
   let restated = 0;
   try {
-    restated = boardReevaluateStatuses_(ss);
+    restated = boardRefreshRegistration_(ss);
   } catch (err) {
-    boardLog_('②エラー', 'ステータスの見直しに失敗: ' + err.message);
+    boardLog_('②エラー', 'お客様の登録状況の更新に失敗: ' + err.message);
   }
   try {
     // 送った下書きを見つけて状態を進め、返信文面の食い違いも直す
@@ -475,7 +563,7 @@ function boardSetup() {
     (repaired > 0 ? '\nメール履歴の列ずれを修復：' + repaired + ' 件' : '') +
     (mailDeduped > 0 ? '\n重複したメール履歴を削除：' + mailDeduped + ' 件' : '') +
     (backfilled > 0 ? '\n依頼内容へ月間予定数を追記：' + backfilled + ' 件' : '') +
-    (restated > 0 ? '\nステータスの見直し：' + restated + ' 件' : '') +
+    (restated > 0 ? '\nお客様の登録状況の更新：' + restated + ' 件' : '') +
     '\n\n「案件ボード」タブをご確認ください。'
   );
 }
@@ -504,6 +592,7 @@ function boardMigrateCases_(ss) {
     boardLog_('移行', '納期予定を（自）（至）の2列に分割しました');
   }
 
+  headers = boardInsertColumnAfter_(sheet, headers, 'ステータス', 'お客様の登録状況');
   headers = boardInsertColumnAfter_(sheet, headers, 'ステータス', '対応者');
   headers = boardInsertColumnAfter_(sheet, headers, '次にやること', '未返信');
   headers = boardInsertColumnAfter_(sheet, headers, '未返信', '未請求の返送');
@@ -533,11 +622,12 @@ function boardMigrateCases_(ss) {
     boardLog_('移行', '契約書作成日 列を削除しました');
   }
 
-  boardRenameStatuses_(sheet);
-
   // 列を足し引きしたので、BOARD_COL を実際の並びに引き直す。
   // これを忘れると、以降の処理がすべて1列ずれた場所を読み書きする
   boardSyncColumns_(sheet);
+
+  // 引き直したあとに中身を書き換える。順番を逆にすると別の列を潰す
+  boardRenameStatuses_(sheet);
 }
 
 /** 見出しの名前を変える。変更後の見出し配列を返す。 */
@@ -642,6 +732,11 @@ function boardMigrateCustomers_(ss) {
 /** 旧ステータス名を新名称へ置き換える。入力規則より先に実行する。 */
 function boardRenameStatuses_(sheet) {
   if (sheet.getLastRow() < 2) return;
+  // 列番号がずれたまま書き換えると、関係のない列を上書きしてしまう
+  if (String(sheet.getRange(1, BOARD_COL.status).getValue() || '').trim() !== 'ステータス') {
+    boardLog_('移行', 'ステータス列を特定できないため、名称の書き換えを見送りました');
+    return;
+  }
   const range = sheet.getRange(2, BOARD_COL.status, sheet.getLastRow() - 1, 1);
   const values = range.getValues();
   let changed = 0;
@@ -697,7 +792,7 @@ const BOARD_UNPAID_LABEL = '未入金あり';
 
 /** 列の幅。並べ替えても効くよう、位置ではなく列の意味で指定する。 */
 const BOARD_CASE_WIDTHS = {
-  caseId: 80, status: 190, owner: 70, customer: 150, qty: 70, firstQty: 100, firstDate: 95,
+  caseId: 80, status: 130, registration: 105, owner: 70, customer: 150, qty: 70, firstQty: 100, firstDate: 95,
   startDate: 95, dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
   customerId: 70, detail: 160, formInquiry: 160, lastInbound: 200, lastOutbound: 200, unitPrice: 70,
   invoiceSent: 95, invoiceId: 110, signedAt: 95,
@@ -736,7 +831,7 @@ function boardApplyCaseFormatting_(sheet) {
     .build());
 
   const todoRange = sheet.getRange(2, BOARD_COL.todo, maxRows, 1);
-  ['確認して返信', '日付を入れて', '経過', '作業チームへ共有', '不足している情報', '依頼確定メール'].forEach(function (word) {
+  ['メールに返信する', '経過', '作業チームへ共有', '依頼確定メール'].forEach(function (word) {
     rules.push(SpreadsheetApp.newConditionalFormatRule()
       .whenTextContains(word)
       .setFontColor('#A32D2D')
@@ -747,6 +842,8 @@ function boardApplyCaseFormatting_(sheet) {
     .setHorizontalAlignment('center').setBackground(null).setFontColor(null);
   sheet.getRange(2, BOARD_COL.status, maxRows, 1).setBackground(null).setFontColor(null);
 
+  sheet.getRange(2, BOARD_COL.registration, maxRows, 1)
+    .setHorizontalAlignment('center').setFontColor('#5A6A8A');
   sheet.getRange(2, BOARD_COL.unreplied, maxRows, 1).setHorizontalAlignment('center');
   sheet.getRange(2, BOARD_COL.unbilled, maxRows, 1)
     .setHorizontalAlignment('center').setFontColor('#2C7A46');
@@ -1296,7 +1393,8 @@ const BOARD_NOTE_OLD = '※納期は商品到着後の状況により前後す�
  * **元の名称と一致するときだけ**変えるので、手で付けた名前は残る。
  */
 const BOARD_TEMPLATE_RENAMES = [
-  { id: 'T2', from: '案内メール（依頼確定時）', to: '依頼確定' }
+  { id: 'T2', from: '案内メール（依頼確定時）', to: '依頼確定' },
+  { id: 'T2', from: '依頼確定', to: '依頼確定（初回）' }
 ];
 
 function boardMigrateTemplateNames_(sheet) {
@@ -1441,6 +1539,7 @@ function boardSeedTemplates_(sheet) {
   const seeds = [
     ['T1', '見積もり回答', '【ササゲパス】お見積もりのご案内', boardDefaultQuoteBody_(), 'フォーム回答への初回返信'],
     ['T2', '依頼確定', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定（自）が未入力なら下書きを作成しない。予定点数が空なら該当行が自動で消える'],
+    ['T2B', '依頼確定（2回目以降）', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideRepeatBody_(), '契約済みのお客様向け。カード登録と署名のご案内を省き、登録手数料も作らない'],
     ['T4', '手続き完了のご連絡', '【ササゲパス】お手続きを確認いたしました', boardDefaultDoneBody_(), '署名・カード登録の確認後に送る'],
     ['T5', 'リマインド（手続き未完了）', '【ササゲパス】お手続きのご確認', boardDefaultRemindPaymentBody_(), '請求書を送ってから一定日数が経っても署名・支払いが確認できないとき'],
     ['T6', 'リマインド（追跡番号未着）', '【ササゲパス】ご発送状況のご確認', boardDefaultRemindShippingBody_(), '発送の連絡も荷物の到着もないとき'],
@@ -1457,6 +1556,69 @@ function boardSeedTemplates_(sheet) {
     sheet.getRange(1, col, BOARD_TEMPLATE_ROWS.length, 1)
       .setValues(seed.map(function (value) { return [value]; }));
   });
+}
+
+/**
+ * 2回目以降の依頼確定（T2B）。
+ *
+ * カード登録と契約書署名は初回だけなので、その案内をまるごと省く。
+ * 「初回のみ納期を長くいただく」旨の注記も外し、月々のご請求の説明を添える。
+ */
+function boardDefaultGuideRepeatBody_() {
+  return [
+    '{{会社名}}',
+    '{{担当者名}} 様',
+    '',
+    'お世話になっております。ササゲパス運営事務局です。',
+    'いつもご利用いただき、誠にありがとうございます。',
+    '下記のとおりご案内いたしますので、ご確認をお願いいたします。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ ご依頼内容',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '　ご依頼内容　：{{依頼内容}}',
+    '　ご依頼点数　：{{予定点数}}点',
+    '　単　　　価　：{{単価}}／点',
+    '　受付開始日　：{{受付開始日}}',
+    '　納期の目安　：{{納期予定}}',
+    '　※上記受付開始日に到着した際のおおよその目安です。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ ご請求について',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '今回のご利用ぶんは月末締めでまとめ、',
+    'ご登録いただいているカードより自動でお支払いいただきます。',
+    'お客様にてお手続きいただく必要はございません。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ 発送先',
+    '━━━━━━━━━━━━━━━━━━━━',
+    'ヤマト運輸の「営業所止め」でご発送ください。',
+    '',
+    '　営業所コード　：{{営業所コード}}',
+    '　営 業 所 名　：{{営業所名}}',
+    '　〒{{発送先郵便番号}}　大阪府松原市',
+    '　{{発送先宛名}}',
+    '　電 話 番 号　：{{発送先TEL}}',
+    '　品　　　名　：{{品名}}',
+    '',
+    '・ヤマト運輸のWeb集荷をご利用の場合は、上記の営業所コードをご入力ください。',
+    '・手書きの送り状の場合は上記のとおりご記入のうえ、',
+    '　伝票右下の「営業所受け取りサービス」へのチェックを必ずお願いいたします。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ 発送にあたってのお願い',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '・梱包方法に指定はございません。ご都合のよい方法で結構です。',
+    '・ご発送後、このメールにそのままご返信いただく形で、',
+    '　送り状のお問い合わせ番号（追跡番号）またはお控えの写真をお送りください。',
+    '・商品の状態に応じて、弊社判断で必要なメンテナンスを行います。',
+    '　手を加えてほしくない商品がある場合は、',
+    '　「メンテナンス不要」とわかる形でご発送ください。',
+    '',
+    'ご不明な点がございましたら、本メールへのご返信にてお気軽にご連絡ください。',
+    '引き続きどうぞよろしくお願い申し上げます。'
+  ].join('\n');
 }
 
 function boardDefaultGuideBody_() {
@@ -2645,25 +2807,29 @@ function boardFindCustomerRow_(ss, customerId) {
 }
 
 /**
- * お客様から返信が届いたときに、情報の過不足でステータスを進める。
- * こちらが返信を待っている段階の案件だけを対象にする。
+ * 返送まで終わった案件に新しいご連絡が届いたら、同じ行で次のご依頼を始める。
+ *
+ * 案件行はお客様ごとに使い続ける。前回ぶんの日付が残っていると
+ * 「次にやること」が終わった依頼を指してしまうので、その回だけの値を消す。
+ * 消す値は返送履歴に凍結済みなので、請求の根拠も履歴も失われない。
  */
-function boardAdvanceOnReply_(ss, customerId) {
+function boardReopenCase_(ss, customerId) {
   const row = boardFindLatestCaseRow_(ss, customerId);
   if (!row) return '';
 
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const status = String(sheet.getRange(row, BOARD_COL.status).getValue() || '').trim();
-  if (['返信済', BOARD_STATUS_SHORT, BOARD_STATUS_READY].indexOf(status) < 0) return '';
+  if (status !== BOARD_STATUS_DONE) return '';
 
-  const next = boardEvaluateReadiness_(ss, customerId).ready ? BOARD_STATUS_READY : BOARD_STATUS_SHORT;
-  if (next === status) return '';
-
-  sheet.getRange(row, BOARD_COL.status).setValue(next);
+  sheet.getRange(row, BOARD_COL.status).setValue(BOARD_STATUS_NEW);
+  BOARD_CASE_REOPEN_CLEARED.forEach(function (key) {
+    if (BOARD_COL[key]) sheet.getRange(row, BOARD_COL[key]).clearContent();
+  });
   boardSetTodoFormula_(sheet, row);
   boardSetOwnerFormula_(sheet, row);
-  boardLog_('案件情報', sheet.getRange(row, BOARD_COL.caseId).getValue() + ' を「' + next + '」に進めました');
-  return next;
+  boardLog_('案件情報', sheet.getRange(row, BOARD_COL.caseId).getValue() +
+    ' に新しいご連絡が届いたため、次のご依頼として再開しました');
+  return BOARD_STATUS_NEW;
 }
 
 /**
@@ -2704,50 +2870,63 @@ function boardBackfillGuideDate_(ss) {
 }
 
 /**
- * 情報の過不足を見て、全案件のステータスを判定し直す。
+ * 「お客様の登録状況」列を、全案件ぶん書き直す。
  *
- * 判定の仕組みを作る前に届いた返信は一度も評価されていないため、
- * 初期セットアップのたびに手当てする。対象は返信のやりとり中の案件だけで、
- * 依頼確定より先へ進んだ案件には触れない。
+ * **ステータスには触らない。** ここで作業の進み具合まで動かしていたころは、
+ * 質問に返信しただけの案件が勝手に先へ進んでいた。
  */
-function boardReevaluateStatuses_(ss) {
+function boardRefreshRegistration_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   if (!sheet || sheet.getLastRow() < 2) return 0;
 
-  const targets = ['返信済', BOARD_STATUS_SHORT, BOARD_STATUS_READY];
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
-  const changed = [];
+  let changed = 0;
 
   rows.forEach(function (row, i) {
-    const status = String(row[BOARD_COL.status - 1] || '').trim();
-    if (targets.indexOf(status) < 0) return;
+    if (!String(row[BOARD_COL.caseId - 1] || '').trim()) return;
+    const next = boardRegistrationOf_(ss,
+      String(row[BOARD_COL.customerId - 1] || '').trim(), row[BOARD_COL.signedAt - 1]);
+    if (next === String(row[BOARD_COL.registration - 1] || '').trim()) return;
 
-    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
-    if (!customerId) return;
-
-    const next = boardEvaluateReadiness_(ss, customerId).ready ? BOARD_STATUS_READY : BOARD_STATUS_SHORT;
-    // 一度も返信が届いていない案件は「返信済」のままにしておく
-    if (next === BOARD_STATUS_SHORT && status === '返信済') return;
-    if (next === status) return;
-
-    sheet.getRange(i + 2, BOARD_COL.status).setValue(next);
+    sheet.getRange(i + 2, BOARD_COL.registration).setValue(next);
     boardSetTodoFormula_(sheet, i + 2);
-    boardSetOwnerFormula_(sheet, i + 2);
-    changed.push(row[BOARD_COL.caseId - 1] + '→' + next);
+    changed++;
   });
 
-  if (changed.length > 0) boardLog_('整理', 'ステータスを見直しました: ' + changed.join('、'));
-  return changed.length;
+  if (changed > 0) boardLog_('整理', 'お客様の登録状況を ' + changed + ' 件更新しました');
+  return changed;
 }
 
-/** 次に動くのが自分かお客様かを、ステータスから自動で表示する。 */
+/**
+ * そのお客様の登録がどこまで済んでいるか。
+ * 署名・支払確認日が入っていれば契約済み。カード登録と契約書署名は初回だけなので、
+ * 以降のご依頼は支払い・署名待ちを飛ばして進む。
+ */
+function boardRegistrationOf_(ss, customerId, signedAt) {
+  if (!customerId) return BOARD_REG_UNKNOWN;
+  if (signedAt) return BOARD_REG_SIGNED;
+  if (!boardFindCustomerRow_(ss, customerId)) return BOARD_REG_UNKNOWN;
+  return boardEvaluateReadiness_(ss, customerId).ready ? BOARD_REG_OK : BOARD_REG_SHORT;
+}
+
+/** 契約まで済んでいるお客様か。「依頼確定」のどちらを勧めるかに使う。 */
+function boardIsRepeatCustomer_(registration) {
+  return BOARD_REG_DONE.indexOf(String(registration || '').trim()) >= 0;
+}
+
+/**
+ * 次に動くのが自分かお客様かを、ステータスから自動で表示する。
+ * 未返信のメールがあるあいだは、案件がどこまで進んでいても動くのは自分。
+ */
 function boardSetOwnerFormula_(sheet, row) {
   const status = '$' + boardColLetter_(BOARD_COL.status) + row;
+  const unreplied = '$' + boardColLetter_(BOARD_COL.unreplied) + row;
   const cases = Object.keys(BOARD_STATUS_OWNER).map(function (name) {
     return status + '="' + name + '","' + BOARD_STATUS_OWNER[name] + '"';
   }).join(',');
   sheet.getRange(row, BOARD_COL.owner).setFormula(
-    '=IF($' + boardColLetter_(BOARD_COL.caseId) + row + '="","",IFS(' + cases + ',TRUE,""))'
+    '=IF($' + boardColLetter_(BOARD_COL.caseId) + row + '="","",IFS(' +
+    unreplied + '<>"","自分",' + cases + ',TRUE,""))'
   );
 }
 
@@ -2906,26 +3085,30 @@ function boardRefreshUnreplied_(ss) {
   );
 }
 
+/**
+ * 「次にやること」を数式で出す。
+ *
+ * 未返信のメールがあれば、案件がどこまで進んでいてもそれが最優先。
+ * 問合せの段階では、お客様の登録状況を見て次の一手が変わる。
+ */
 function boardSetTodoFormula_(sheet, row) {
   const cell = function (col) { return '$' + boardColLetter_(col) + row; };
   const b = cell(BOARD_COL.status);
-  const start = cell(BOARD_COL.startDate);
+  const reg = cell(BOARD_COL.registration);
   const from = cell(BOARD_COL.dueFrom);
   const to = cell(BOARD_COL.dueTo);
   const draft = cell(BOARD_COL.guideDraftAt);
   const dueEnd = 'IF(' + to + '="",' + from + ',' + to + ')';
   const elapsed = '" ("&TEXT(MAX(0,TODAY()-' + draft + '),"0")&"日経過)"';
+  const ready = 'OR(' + reg + '="' + BOARD_REG_OK + '",' + reg + '="' + BOARD_REG_SIGNED + '")';
   const formula = '=IF(' + cell(BOARD_COL.caseId) + '="","",IFS(' +
-    b + '="問合せ","返信案を確認して返信",' +
-    b + '="返信済","お客様の返信待ち",' +
-    b + '="' + BOARD_STATUS_SHORT + '","不足している情報を聞く",' +
-    b + '="' + BOARD_STATUS_READY + '","依頼確定メールを送る",' +
-    b + '="依頼確定",IF(OR(' + start + '="",' + from + '=""),"日付を入れて案内メール","案内メールを送る"),' +
+    cell(BOARD_COL.unreplied) + '<>"","メールに返信する",' +
+    b + '="' + BOARD_STATUS_NEW + '",IF(' + ready + ',"依頼確定メールを送る","不足情報のご返信待ち"),' +
     b + '="' + BOARD_STATUS_SIGNING + '",IF(' + cell(BOARD_COL.signedAt) + '<>"","お客様のご発送待ち",' +
       '"支払い情報の登録・署名待ち"&IF(' + draft + '="","",' + elapsed + ')),' +
-    b + '="発送待ち","お客様のご発送待ち",' +
+    b + '="' + BOARD_STATUS_WAITING_SHIP + '","お客様のご発送待ち",' +
     b + '="' + BOARD_STATUS_SHIPPED + '","作業チームへ共有する",' +
-    b + '="作業中","作業"&IF(' + from + '="","","（納期 "&TEXT(' + dueEnd + ',"m/d")&"）"),' +
+    b + '="' + BOARD_STATUS_WORKING + '","作業"&IF(' + from + '="","","（納期 "&TEXT(' + dueEnd + ',"m/d")&"）"),' +
     'TRUE,""))';
   sheet.getRange(row, BOARD_COL.todo).setFormula(formula);
 }
@@ -3382,7 +3565,9 @@ function boardUseCurrentColumns_() {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-    if (sheet) boardSyncColumns_(sheet);
+    // 見出しが揃っていなければ、その場で列を足してから引き直す。
+    // 古い並びのまま既定の列番号で書き込むと、別の列を壊す
+    if (sheet && !boardSyncColumns_(sheet)) boardEnsureLayout_(ss);
     boardEnsureMailColumns_(ss);
   } catch (err) {
     boardLog_('移行', '列の並びを読めませんでした: ' + err.message);

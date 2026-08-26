@@ -185,6 +185,19 @@
     if (type && type.status) {
       html += '<div class="tasks-note">下書きに保存すると、案件のステータスが' +
         '<b>「' + esc(type.status) + '」</b>に変わります。</div>';
+    } else if (type) {
+      html += '<div class="tasks-note">この対応では、案件のステータスは変わりません。</div>';
+    }
+    if (type && type.forRegistration && ctx && ctx.registration) {
+      var wanted = ctx.repeatCustomer ? 'repeat' : 'first';
+      if (type.forRegistration !== wanted) {
+        html += '<div class="tasks-note" style="color:#A32D2D">このお客様は' +
+          '<b>' + esc(ctx.registration) + '</b>です。' +
+          (ctx.repeatCustomer
+            ? '「依頼確定・2回目以降」をお選びください。'
+            : 'カード登録と契約書署名がまだのため、「依頼確定・初回」をお選びください。') +
+          '</div>';
+      }
     }
     box.innerHTML = html;
   }
@@ -322,9 +335,26 @@
     }
   }
 
+  /**
+   * 契約済みのお客様には「依頼確定・2回目以降」を、まだの方には「初回」を先に出す。
+   * 合わないほうは消さずに末尾へ回すだけなので、必要なら選び直せる。
+   */
+  function orderTypeOptions() {
+    if (!ctx || !ctx.registration) return;
+    var demote = ctx.repeatCustomer ? 'first' : 'repeat';
+    var sel = el('rtype');
+    types.forEach(function (t) {
+      if (t.forRegistration !== demote) return;
+      for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === t.id) { sel.appendChild(sel.options[i]); return; }
+      }
+    });
+  }
+
   function loadContext(type) {
     google.script.run.withSuccessHandler(function (data) {
       ctx = data;
+      orderTypeOptions();
       renderTasks(type);
       renderExtras(type);
     }).withFailureHandler(function (e) {
