@@ -3436,7 +3436,7 @@ function boardRecordShipment_(ss, caseRow, fields, mail) {
  * 返送履歴の「下書き」が実際に送られたかを確かめ、「送信済」に進める。
  *
  * **送られていない返送は請求しない。** 下書きのままでは請求の対象にならない。
- * 下書きがGmailから消えていれば送られたとみなし、そのメッセージIDを控える。
+ * 送られた証拠は、記録しておいたスレッドの中にある送信メールそのもの。
  */
 function boardRefreshShipments_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
@@ -3447,21 +3447,20 @@ function boardRefreshShipments_(ss) {
   const sent = [];
   const lost = [];
 
+  const stale = new Date().getTime() - 30 * 60 * 1000;
+
   rows.forEach(function (row, i) {
     if (String(row[BOARD_SHIPMENT_COL.status - 1] || '').trim() !== SHIP_STATUS_DRAFT) return;
-    const draftId = String(row[BOARD_SHIPMENT_COL.messageId - 1] || '').trim();
-    if (!draftId) return;
-
-    try {
-      if (GmailApp.getDraft(draftId)) return;   // まだ下書きのまま
-    } catch (err) {
-      // 見つからない＝送られたか、手で消されたか
-    }
+    if (!String(row[BOARD_SHIPMENT_COL.messageId - 1] || '').trim()) return;
 
     const message = boardFindSentShipment_(ss, row, ours);
     if (!message) {
-      // 黙って止まると、いつまでも請求に乗らない理由が分からない
-      lost.push(row[BOARD_SHIPMENT_COL.caseId - 1]);
+      // 黙って止まると、いつまでも請求に乗らない理由が分からない。
+      // 送ったばかりのうちは下書きのままが普通なので、しばらく経った分だけ知らせる
+      const when = row[BOARD_SHIPMENT_COL.date - 1];
+      if (when instanceof Date && when.getTime() < stale) {
+        lost.push(row[BOARD_SHIPMENT_COL.caseId - 1]);
+      }
       return;
     }
 
@@ -3483,21 +3482,25 @@ function boardRefreshShipments_(ss) {
 /**
  * その返送のお知らせとして、実際に送られたメールを探す。
  *
- * **記録しておいたスレッドの中を見る。** 送信時刻の下限で絞る作りにしていたころは、
- * 下書きを作った直後に送ると送信時刻が記録時刻をわずかに下回り、
- * 永久に「下書き」のまま残った。実際にA005で起きている。
+ * **記録しておいたスレッドの中を見て、本文の書き出しが一致するメールを探す。**
+ * これが唯一の証拠。下書きが残っているかどうかは見ない。
  *
- * 本文の書き出しが一致すればそれ。一致しなければ、そのスレッドで
- * こちらが最後に送ったメールを採る。下書きが消えている以上、それが送った本人。
+ * 以前は「Gmailの下書きが消えたか」を先に確かめ、消えていなければ何もしなかった。
+ * その判定が通らず、送信済みのA005が下書きのまま何度も取り残された。
+ * 送っていなければスレッドの中身は下書きのままなので、この探し方なら取り違えない。
  */
 function boardFindSentShipment_(ss, row, ours) {
   const threadId = String(row[BOARD_SHIPMENT_COL.threadId - 1] || '').trim();
   const head = String(row[BOARD_SHIPMENT_COL.body - 1] || '').replace(/\s+/g, '').slice(0, 60);
+  const when = row[BOARD_SHIPMENT_COL.date - 1];
+  // 下書きは記録の数秒前に作られる。送信もその前後になりうるので少しだけ前から見る
+  const floor = when instanceof Date ? when.getTime() - 2 * 60 * 1000 : 0;
 
   if (threadId) {
     try {
       const thread = GmailApp.getThreadById(threadId);
       if (thread) {
+        // 下書きはスレッドの一員として返ってくる。送っていないものは除く
         const mine = thread.getMessages().filter(function (message) {
           if (message.isDraft()) return false;
           const from = String(message.getFrom() || '').toLowerCase();
@@ -3506,7 +3509,11 @@ function boardFindSentShipment_(ss, row, ours) {
         for (let i = mine.length - 1; i >= 0; i--) {
           if (head && mailPlainBody_(mine[i]).replace(/\s+/g, '').indexOf(head) >= 0) return mine[i];
         }
-        if (mine.length > 0) return mine[mine.length - 1];
+        // Gmailで文面を手直しして送った場合に備える。ただし**このスレッドの古い送信メール**を
+        // 取り違えないよう、記録した時刻の前後に送られたものだけを認める
+        for (let i = mine.length - 1; i >= 0; i--) {
+          if (mine[i].getDate().getTime() >= floor) return mine[i];
+        }
       }
     } catch (err) {
       boardLog_('返送', 'スレッドを読めませんでした: ' + err.message);
@@ -3516,9 +3523,8 @@ function boardFindSentShipment_(ss, row, ours) {
   // スレッドが無い行（フォーム起点）は送信済みフォルダから探す。
   // 記録した直後に送られることがあるため、少し前から見る
   const customer = boardFindCustomer_(ss, row[BOARD_SHIPMENT_COL.customerId - 1]);
-  const when = row[BOARD_SHIPMENT_COL.date - 1];
-  if (!customer || !(when instanceof Date)) return null;
-  return mailFirstSentAfter_(customer.email, new Date(when.getTime() - 10 * 60 * 1000));
+  if (!customer || !floor) return null;
+  return mailFirstSentAfter_(customer.email, new Date(floor));
 }
 
 /**
