@@ -91,6 +91,14 @@
   var current = null;
   var ctx = null;
   var lastApplied = null;
+  /**
+   * 入力欄にいま入っている値の控え。
+   *
+   * 返送の点数や追跡番号は**案件ボードに保管場所が無い**ため、
+   * 画面を描き直すたびに空へ戻っていた。実際にそれで点数が記録されずに送られた。
+   * 対応の種類ごとに覚えておき、描き直しても消えないようにする。
+   */
+  var typed = {};
 
   function el(id) { return document.getElementById(id); }
 
@@ -113,13 +121,31 @@
     return hit;
   }
 
+  function typedKey(type) { return (current ? current.row : 0) + ':' + type.id; }
+
+  function remember(type, key, value) {
+    var box = typedKey(type);
+    if (!typed[box]) typed[box] = {};
+    typed[box][key] = value;
+  }
+
+  /** 入力欄に出す値。手で入れた控えを優先し、無ければ案件の値を使う。 */
+  function remembered(type, key) {
+    var box = typed[typedKey(type)];
+    if (box && box[key] != null && box[key] !== '') return box[key];
+    return ctx && ctx[key] != null ? ctx[key] : '';
+  }
+
   /** 対応種別ごとに出している入力欄の、現在の値を集める。 */
   function collectFields(type) {
     var data = {};
     if (!type) return data;
     (type.fields || []).forEach(function (f) {
       var input = el('fx_' + f.key);
-      if (input) data[f.key] = input.value;
+      if (input) { data[f.key] = input.value; remember(type, f.key, input.value); return; }
+      // 入力欄が描かれていないときは控えから拾う。空のまま送ると記録が欠ける
+      var box = typed[typedKey(type)];
+      if (box && box[f.key] != null) data[f.key] = box[f.key];
     });
     return data;
   }
@@ -249,7 +275,7 @@
     type.fields.forEach(function (f) {
       html += '<label class="ex-label">' + esc(f.label) +
         (type.requireKeys.indexOf(f.key) >= 0 ? ' <span style="color:#e5484d">*</span>' : '') + '</label>' +
-        '<input type="' + f.type + '" id="fx_' + f.key + '" value="' + esc(ctx[f.key] == null ? '' : ctx[f.key]) + '">';
+        '<input type="' + f.type + '" id="fx_' + f.key + '" value="' + esc(remembered(type, f.key)) + '">';
     });
     if (type.fields.length > 0) {
       var answered = [];
@@ -289,7 +315,10 @@
           .mailSaveCaseFields(ctx.caseRow, collectFields(type));
       });
       type.fields.forEach(function (f) {
-        el('fx_' + f.key).addEventListener('change', updateApprove);
+        el('fx_' + f.key).addEventListener('input', function () {
+          remember(type, f.key, this.value);
+          updateApprove();
+        });
       });
     }
 
@@ -397,7 +426,7 @@
       var b = el(id);
       if (b) b.disabled = state;
     });
-    if (!state) hideBusy();
+    if (!state) { hideBusy(); updateApprove(); }
   }
 
   function renderList() {

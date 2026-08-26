@@ -995,6 +995,26 @@ function mailSaveCaseFields(caseRow, data) {
   return { message: '案件の内容を保存しました。' };
 }
 
+/**
+ * 返送のお知らせに必要な入力がそろっているか確かめる。
+ *
+ * ここが空のまま返送履歴に記録されると、金額を出せず請求できない。
+ * 実際にA005で、点数も追跡番号も入らないまま送られた。
+ */
+function mailRequireShipmentFields_(values, fields) {
+  const type = boardFindResponseTypeByName_(values[BOARD_MAIL_COL.responseType - 1]);
+  if (!type || !type.shipment) return;
+
+  const missing = (type.requires || []).filter(function (key) {
+    return !String((fields || {})[key] == null ? '' : fields[key]).trim();
+  }).map(function (key) { return BOARD_CASE_FIELDS[key].label; });
+
+  if (missing.length > 0) {
+    throw new Error('「' + missing.join('」「') + '」が入力されていません。\n' +
+      '返送の記録に必要です。入力してから保存してください。');
+  }
+}
+
 /** 返送の入力欄を、テンプレートの差し込み名に置き換える。 */
 function mailShipmentVars_(fields) {
   const data = fields || {};
@@ -1211,6 +1231,10 @@ function mailApproveToDraft(row, text, fields) {
   const r = Number(row);
   const values = sheet.getRange(r, 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
   if (!String(text || '').trim()) throw new Error('本文が空です。先に返信案を作成してください。');
+
+  // 返送の点数と追跡番号は**請求の根拠**。欠けたまま通すと、月々の請求から漏れる。
+  // 画面の作りが変わっても記録が欠けないよう、ここでも必ず確かめる
+  mailRequireShipmentFields_(values, fields);
 
   // 差し込みでは埋められない箇所が残ったまま送られるのを防ぐ
   const blank = String(text).match(BOARD_TEMPLATE_PLACEHOLDER);

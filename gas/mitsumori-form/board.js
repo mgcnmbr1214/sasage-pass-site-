@@ -529,6 +529,11 @@ function boardSetup() {
   }
 
   try {
+    boardMigrateShipmentAmounts_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '返送履歴の金額の移行に失敗: ' + err.message);
+  }
+  try {
     boardMigrateResponseTypes_(ss);
   } catch (err) {
     boardLog_('②エラー', '対応種別の名称更新に失敗: ' + err.message);
@@ -3408,7 +3413,7 @@ function boardRecordShipment_(ss, caseRow, fields, mail) {
   values[BOARD_SHIPMENT_COL.customer - 1] = v[BOARD_COL.customer - 1];
   values[BOARD_SHIPMENT_COL.qty - 1] = qty === '' ? '' : Number(qty);
   values[BOARD_SHIPMENT_COL.unitPrice - 1] = unitPrice || '';
-  values[BOARD_SHIPMENT_COL.amount - 1] = qty === '' || !unitPrice ? '' : Number(qty) * unitPrice;
+  // 金額は数式にする（appendRow のあとで入れる）
   values[BOARD_SHIPMENT_COL.tracking - 1] = String((fields || {}).shipTracking || '').trim();
   values[BOARD_SHIPMENT_COL.status - 1] = SHIP_STATUS_DRAFT;
   values[BOARD_SHIPMENT_COL.detail - 1] = v[BOARD_COL.detail - 1];
@@ -3420,6 +3425,7 @@ function boardRecordShipment_(ss, caseRow, fields, mail) {
   values[BOARD_SHIPMENT_COL.messageId - 1] = draftId;
 
   sheet.appendRow(values);
+  boardSetShipmentAmountFormula_(sheet, sheet.getLastRow());
   boardForceRowHeight_(sheet, sheet.getLastRow(), 1);
   boardLog_('返送', v[BOARD_COL.caseId - 1] + '：返送履歴に記録しました（' +
     (qty === '' ? '点数未入力' : qty + '点') + '）');
@@ -3437,7 +3443,9 @@ function boardRefreshShipments_(ss) {
   if (!sheet || sheet.getLastRow() < 2) return 0;
 
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_SHIPMENT_HEADERS.length).getValues();
+  const ours = mailOwnAddresses_(ss);
   const sent = [];
+  const lost = [];
 
   rows.forEach(function (row, i) {
     if (String(row[BOARD_SHIPMENT_COL.status - 1] || '').trim() !== SHIP_STATUS_DRAFT) return;
@@ -3450,10 +3458,12 @@ function boardRefreshShipments_(ss) {
       // 見つからない＝送られたか、手で消されたか
     }
 
-    const customer = boardFindCustomer_(ss, row[BOARD_SHIPMENT_COL.customerId - 1]);
-    const when = row[BOARD_SHIPMENT_COL.date - 1];
-    const message = customer ? mailFirstSentAfter_(customer.email, when) : null;
-    if (!message) return;   // 送った証拠が無ければ動かさない
+    const message = boardFindSentShipment_(ss, row, ours);
+    if (!message) {
+      // 黙って止まると、いつまでも請求に乗らない理由が分からない
+      lost.push(row[BOARD_SHIPMENT_COL.caseId - 1]);
+      return;
+    }
 
     sheet.getRange(i + 2, BOARD_SHIPMENT_COL.status).setValue(SHIP_STATUS_SENT);
     sheet.getRange(i + 2, BOARD_SHIPMENT_COL.messageId).setValue(message.getId());
@@ -3464,7 +3474,77 @@ function boardRefreshShipments_(ss) {
   if (sent.length > 0) {
     boardLog_('返送', sent.length + ' 件の返送を送信済みにしました（' + sent.join('、') + '）');
   }
+  if (lost.length > 0) {
+    boardLog_('返送', '下書きは無くなりましたが、送ったメールを確認できません（' + lost.join('、') + '）');
+  }
   return sent.length;
+}
+
+/**
+ * その返送のお知らせとして、実際に送られたメールを探す。
+ *
+ * **記録しておいたスレッドの中を見る。** 送信時刻の下限で絞る作りにしていたころは、
+ * 下書きを作った直後に送ると送信時刻が記録時刻をわずかに下回り、
+ * 永久に「下書き」のまま残った。実際にA005で起きている。
+ *
+ * 本文の書き出しが一致すればそれ。一致しなければ、そのスレッドで
+ * こちらが最後に送ったメールを採る。下書きが消えている以上、それが送った本人。
+ */
+function boardFindSentShipment_(ss, row, ours) {
+  const threadId = String(row[BOARD_SHIPMENT_COL.threadId - 1] || '').trim();
+  const head = String(row[BOARD_SHIPMENT_COL.body - 1] || '').replace(/\s+/g, '').slice(0, 60);
+
+  if (threadId) {
+    try {
+      const thread = GmailApp.getThreadById(threadId);
+      if (thread) {
+        const mine = thread.getMessages().filter(function (message) {
+          if (message.isDraft()) return false;
+          const from = String(message.getFrom() || '').toLowerCase();
+          return ours.some(function (address) { return address && from.indexOf(address) >= 0; });
+        });
+        for (let i = mine.length - 1; i >= 0; i--) {
+          if (head && mailPlainBody_(mine[i]).replace(/\s+/g, '').indexOf(head) >= 0) return mine[i];
+        }
+        if (mine.length > 0) return mine[mine.length - 1];
+      }
+    } catch (err) {
+      boardLog_('返送', 'スレッドを読めませんでした: ' + err.message);
+    }
+  }
+
+  // スレッドが無い行（フォーム起点）は送信済みフォルダから探す。
+  // 記録した直後に送られることがあるため、少し前から見る
+  const customer = boardFindCustomer_(ss, row[BOARD_SHIPMENT_COL.customerId - 1]);
+  const when = row[BOARD_SHIPMENT_COL.date - 1];
+  if (!customer || !(when instanceof Date)) return null;
+  return mailFirstSentAfter_(customer.email, new Date(when.getTime() - 10 * 60 * 1000));
+}
+
+/**
+ * 金額の欄を数式にする。
+ * 点数をあとから手で入れ直したとき、金額もその場で直る。
+ */
+function boardSetShipmentAmountFormula_(sheet, row) {
+  const qty = '$' + boardColLetter_(BOARD_SHIPMENT_COL.qty) + row;
+  const price = '$' + boardColLetter_(BOARD_SHIPMENT_COL.unitPrice) + row;
+  sheet.getRange(row, BOARD_SHIPMENT_COL.amount)
+    .setFormula('=IF(OR(' + qty + '="",' + price + '=""),"",' + qty + '*' + price + ')');
+}
+
+function boardMigrateShipmentAmounts_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const formulas = sheet.getRange(2, BOARD_SHIPMENT_COL.amount, sheet.getLastRow() - 1, 1).getFormulas();
+  let changed = 0;
+  formulas.forEach(function (formula, i) {
+    if (String(formula[0] || '').trim()) return;
+    boardSetShipmentAmountFormula_(sheet, i + 2);
+    changed++;
+  });
+  if (changed > 0) boardLog_('移行', '返送履歴の金額 ' + changed + ' 件を自動計算にしました');
+  return changed;
 }
 
 /** 顧客IDに紐づく最新の案件の行番号。完了・失注は除く。 */
