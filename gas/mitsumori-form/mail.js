@@ -3,7 +3,7 @@
  *
  * 顧客からの新着メールを検知して「メール履歴」に保存し、届いた中身を通知する。
  * 返信案は検知の時点では作らない。「対応を選ぶ」で対応種別を選んでから Claude API で作る。
- * 確認・修正はスプレッドシート上の画面で行い、承認したものだけを Gmail の下書きにする。
+ * 確認・修正はスプレッドシート上の画面で行い、承認したものをその場で送信する。
  * 自動送信は実装しない。
  */
 
@@ -31,7 +31,7 @@ const MAIL_STATUS_SKIP = '対応不要';
 
 /** 状態の説明。プルダウンの説明文と設計ドキュメントで使う。 */
 const MAIL_STATUS_HELP = [
-  MAIL_STATUS_PENDING + '：まだ返していない（返信案の作成中・下書き保存済みもここ）',
+  MAIL_STATUS_PENDING + '：まだ返していない（返信案の作成中もここ）',
   MAIL_STATUS_SENT + '：返信を送った',
   MAIL_STATUS_SKIP + '：返信しないと決めた'
 ].join('\n');
@@ -39,7 +39,7 @@ const MAIL_STATUS_HELP = [
 /**
  * 旧名称 → 新名称。初期セットアップで既存の値を書き換える。
  *
- * 途中の段階（返信案あり・下書きあり）は廃止した。
+ * 途中の段階（返信案あり・下書きあり）は廃止した。下書きそのものも廃止した。
  * 文面がどこまでできているかは画面を見れば分かり、状態として分けても
  * 次にやることは変わらない。**送ったかどうかだけ**を持つ。
  */
@@ -59,7 +59,7 @@ const MAIL_STATUSES = [MAIL_STATUS_PENDING, MAIL_STATUS_SENT, MAIL_STATUS_SKIP];
  *
  * 同じスレッドのメールは件名で見分けられないため、シート上で日時を添える。
  * ただしこの1行はメールの中身ではないので、
- * 画面へ渡すときと下書きを作るときは必ず mailUnstamp_ で外す。
+ * 画面へ渡すときと送信するときは必ず mailUnstamp_ で外す。
  */
 const MAIL_STAMP_PATTERN = /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}\r?\n/;
 
@@ -176,7 +176,7 @@ function mailShowStatus() {
     '',
     '■ 通知（届いたメールの中身を知らせます。返信案は載せません）',
     '　通知先　　：' + (settings['通知先メールアドレス'] || '（未設定。通知は送られません）'),
-    '　下書き差出人：' + (settings['送信元エイリアス'] || '（未設定）'),
+    '　メール差出人：' + (settings['送信元エイリアス'] || '（未設定）'),
     '',
     '■ 検知の対象',
     '　顧客タブの登録アドレス：' + customers.length + ' 件',
@@ -353,15 +353,10 @@ function mailScan_(options) {
   }
 
   if (found > 0) boardLog_('②新着メール', found + ' 件の新着メールを記録しました');
-  // 下書きを送ったかどうかは、画面を開かなくても分かるようにする。
-  // ここを通さないと「対応を選ぶ」を開くまで「返信前」のまま残る
+  // 画面から送った分はその場で「返信済み」になる。
+  // ここで拾うのは、**Gmailから直接返信した**分だけ
   mailRefreshSentStatus_(ss);
   mailSyncSentReplies_(ss);
-  try {
-    boardRefreshShipments_(ss);
-  } catch (err) {
-    boardLog_('②エラー', '返送の送信確認に失敗: ' + err.message);
-  }
   try {
     squareRefreshInvoices(ss);
   } catch (err) {
@@ -528,7 +523,7 @@ function mailGetPendingList() {
 /**
  * 「返信前」の行について、実際に返信が送られたかを Gmail 側で確認する。
  * スレッドの最新メールが自分から送られていれば返信済みとみなす。
- * 下書きを消しただけの場合は状態を変えないため、一覧から消えない。
+ * Gmailから直接返信した場合に、一覧から消えるようにする。
  */
 function mailRefreshSentStatus_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
@@ -551,7 +546,6 @@ function mailRefreshSentStatus_(ss) {
       if (!thread) return;
       const messages = thread.getMessages();
       const last = messages[messages.length - 1];
-      // 下書きもスレッドの一員として返ってくる。まだ送っていないので進めない
       if (last.isDraft()) return;
       const from = String(last.getFrom() || '').toLowerCase();
       const sentByUs = ours.some(function (address) { return address && from.indexOf(address) >= 0; });
@@ -658,8 +652,8 @@ function mailSyncSentReplies_(ss) {
  * フォームの回答に対する返信は、返信ではなく新規メールとして送るため
  * スレッドを辿れない。送信済みフォルダから探すしかない。
  *
- * 下書きが残っているかどうかでは判断しない。
- * Gmailで直接書いて送った場合、こちらが作った下書きは残ったままになり、
+ * 送信済みフォルダから探す。スレッドを持たないフォーム起点の行で使う。
+ * かつては下書きの有無で判断していたが、
  * いつまでも「返信前」から進まなくなる。
  */
 function mailFirstSentAfter_(email, since) {
@@ -1085,25 +1079,6 @@ function mailComposeWithType(row, typeId, fields) {
   return { text: reply, message: '返信案を作成しました。内容をご確認ください。' };
 }
 
-/**
- * この行で前に作った下書きを削除する。
- * 二重送信や、古い文面の下書きが残るのを防ぐ。
- */
-function mailDiscardDraft_(sheet, row, values) {
-  const draftId = String(values[BOARD_MAIL_COL.draftId - 1] || '').trim();
-  if (!draftId) return false;
-  try {
-    const draft = GmailApp.getDraft(draftId);
-    if (draft) draft.deleteDraft();
-  } catch (err) {
-    boardLog_('②下書き', '下書きの削除に失敗（すでに無い可能性）: ' + err.message);
-    sheet.getRange(row, BOARD_MAIL_COL.draftId).setValue('');
-    return false;
-  }
-  sheet.getRange(row, BOARD_MAIL_COL.draftId).setValue('');
-  return true;
-}
-
 /** 新規メールの件名。対応種別のテンプレートに件名があればそれを使う。 */
 function mailSubjectFor_(ss, values) {
   const type = boardFindResponseTypeByName_(values[BOARD_MAIL_COL.responseType - 1]);
@@ -1128,7 +1103,7 @@ function mailContextText_(values) {
   return mailUnstamp_(values[BOARD_MAIL_COL.summary - 1]);
 }
 
-/** 画面で編集した本文をシートに保存する（下書きにはしない）。 */
+/** 画面で編集した本文をシートに保存する（送信はしない）。 */
 function mailSaveText(row, text) {
   boardUseCurrentColumns_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BOARD_SHEET_MAILS);
@@ -1139,7 +1114,7 @@ function mailSaveText(row, text) {
 
 /**
  * 返信案をゼロから作り直す。
- * 下書きを消してやり直したいときや、対応種別を変えたあとに使う。
+ * 文面を作り直したいときや、対応種別を変えたあとに使う。
  * これまでの修正指示は引き継いで生成する。
  */
 function mailRegenerate(row) {
@@ -1176,7 +1151,7 @@ function mailRegenerate(row) {
   sheet.getRange(r, BOARD_MAIL_COL.aiFirst).setValue(reply);
   sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(mailStamp_(new Date(), reply));
   sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_PENDING);
-  sheet.getRange(r, BOARD_MAIL_COL.savedAt).setValue('');
+  sheet.getRange(r, BOARD_MAIL_COL.sentAt).setValue('');
   boardLog_('②再生成', values[BOARD_MAIL_COL.subject - 1] + ' の返信案を作り直しました');
 
   return { text: reply, message: '返信案を作り直しました。' };
@@ -1221,10 +1196,14 @@ function mailReviseText(row, text, instruction) {
 }
 
 /**
- * 承認して Gmail の下書きに保存する。ここで学習用の記録も残す。
- * 送信はGmail側で人が行う。実際に送られたかは「最新の送信メール」で分かる。
+ * その場で送信する。**下書きは作らない。**
+ *
+ * 下書きを作って人がGmailで送る形にしていたころは、送られたかどうかを
+ * Gmailに問い合わせて推し量るしかなかった。その判定が外れ、
+ * 実際には送信済みの返送が何度実行しても「下書き」のまま取り残された。
+ * 自分で送れば、送ったことを確かめる必要がない。
  */
-function mailApproveToDraft(row, text, fields) {
+function mailSendReply(row, text, fields) {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
@@ -1232,45 +1211,40 @@ function mailApproveToDraft(row, text, fields) {
   const values = sheet.getRange(r, 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
   if (!String(text || '').trim()) throw new Error('本文が空です。先に返信案を作成してください。');
 
-  // 返送の点数と追跡番号は**請求の根拠**。欠けたまま通すと、月々の請求から漏れる。
-  // 画面の作りが変わっても記録が欠けないよう、ここでも必ず確かめる
+  // 返送の点数と追跡番号は**請求の根拠**。欠けたまま通すと、月々の請求から漏れる
   mailRequireShipmentFields_(values, fields);
 
   // 差し込みでは埋められない箇所が残ったまま送られるのを防ぐ
   const blank = String(text).match(BOARD_TEMPLATE_PLACEHOLDER);
   if (blank) {
-    throw new Error('本文に「' + blank[0] + '」が残っています。\n書き換えてから保存してください。');
+    throw new Error('本文に「' + blank[0] + '」が残っています。' + '\n' + '書き換えてから送信してください。');
   }
 
-  const settings = boardGetSettings_(ss);
+  const preview = mailSendPreview_(ss, values);
+  if (!boardIsEmail_(preview.to)) {
+    throw new Error('送信先のメールアドレスが分かりません。「顧客」タブをご確認ください。');
+  }
+
   const options = { name: 'ササゲパス' };
-  const alias = settings['送信元エイリアス'];
+  const alias = boardGetSettings_(ss)['送信元エイリアス'];
   if (alias && GmailApp.getAliases().indexOf(alias) >= 0) options.from = alias;
 
-  // 前に作った下書きは、送るときも作り直すときも先に片付ける。
-  // 残しておくと、あとから下書きを送ってしまい二重送信になるため。
-  const removed = mailDiscardDraft_(sheet, r, values);
-
-  let draftId = '';
   const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
+  let message = null;
   if (threadId) {
     const thread = GmailApp.getThreadById(threadId);
     if (!thread) throw new Error('元のメールスレッドが見つかりません。');
-    draftId = thread.createDraftReply(text, options).getId();
+    thread.reply(text, options);
+    message = mailLastOwnMessage_(ss, threadId);
   } else {
-    // フォーム回答が起点の場合は返信先のスレッドが無いため、新規メールとして作る
-    const customer = boardFindCustomer_(ss, values[BOARD_MAIL_COL.customerId - 1]);
-    const to = customer && boardIsEmail_(customer.email)
-      ? customer.email : String(values[BOARD_MAIL_COL.from - 1] || '').trim();
-    if (!boardIsEmail_(to)) throw new Error('送信先のメールアドレスが分かりません。「顧客」タブをご確認ください。');
-    const subject = mailSubjectFor_(ss, values);
-    draftId = GmailApp.createDraft(to, subject, text, options).getId();
+    // フォーム回答が起点の場合は返信先のスレッドが無いため、新規メールとして送る
+    GmailApp.sendEmail(preview.to, preview.subject, text, options);
   }
 
-  sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(mailStamp_(new Date(), text));
-  sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_PENDING);
-  sheet.getRange(r, BOARD_MAIL_COL.savedAt).setValue(new Date());
-  sheet.getRange(r, BOARD_MAIL_COL.draftId).setValue(draftId);
+  const sentAt = message ? message.getDate() : new Date();
+  sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(mailStamp_(sentAt, text));
+  sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SENT);
+  sheet.getRange(r, BOARD_MAIL_COL.sentAt).setValue(sentAt);
 
   mailRecordExample_(ss, {
     customer: values[BOARD_MAIL_COL.from - 1],
@@ -1288,14 +1262,14 @@ function mailApproveToDraft(row, text, fields) {
       const cases = ss.getSheetByName(BOARD_SHEET_CASES);
       if (type.status) {
         cases.getRange(caseRow, BOARD_COL.status).setValue(type.status);
-        statusNote = '\n案件のステータスを「' + type.status + '」に更新しました。';
+        statusNote = '\n' + '案件のステータスを「' + type.status + '」に更新しました。';
       }
       // 送った日付を残す種別（案内メールなど）は、その列にも記録する
       if (type.stamp && BOARD_COL[type.stamp]) {
         const cell = cases.getRange(caseRow, BOARD_COL[type.stamp]);
-        if (!cell.getValue()) cell.setValue(new Date());
+        if (!cell.getValue()) cell.setValue(sentAt);
       }
-      cases.getRange(caseRow, BOARD_COL.lastContact).setValue(new Date());
+      cases.getRange(caseRow, BOARD_COL.lastContact).setValue(sentAt);
       boardSetTodoFormula_(cases, caseRow);
       boardSetOwnerFormula_(cases, caseRow);
 
@@ -1303,21 +1277,59 @@ function mailApproveToDraft(row, text, fields) {
       // 案件行は次の依頼で使い回すため、いまの依頼内容と単価をここで凍結する
       if (type.shipment) {
         boardRecordShipment_(ss, caseRow, fields, {
-          subject: values[BOARD_MAIL_COL.subject - 1],
+          subject: preview.subject,
           body: text,
           threadId: threadId,
-          draftId: draftId
+          messageId: message ? message.getId() : ''
         });
       }
     }
   }
 
-  boardLog_('②下書き保存', values[BOARD_MAIL_COL.subject - 1] + ' の下書きを保存しました');
-  return {
-    message: 'Gmailの下書きに保存しました。内容を確認して送信してください。\n' +
-      (removed ? '前に作った下書きは削除し、最新の内容に作り直しました。\n' : '') +
-      '実際に送信するまでこの一覧には残ります（下書きを消してもやり直せます）。' + statusNote
-  };
+  boardRefreshUnreplied_(ss);
+  boardRefreshUnbilled_(ss);
+  boardLog_('②送信', preview.to + ' へ「' + preview.subject + '」を送信しました');
+  return { message: preview.to + ' へ送信しました。' + statusNote };
+}
+
+/** 送信ボタンを押す前に、宛先と件名を確かめてもらうための下ごしらえ。 */
+function mailGetSendPreview(row) {
+  boardUseCurrentColumns_();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  const values = sheet.getRange(Number(row), 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
+  const preview = mailSendPreview_(ss, values);
+  return { to: String(preview.to), subject: String(preview.subject) };
+}
+
+/** 送信先と件名。スレッドがあれば返信、無ければ新規メールとして決まる。 */
+function mailSendPreview_(ss, values) {
+  const customer = boardFindCustomer_(ss, values[BOARD_MAIL_COL.customerId - 1]);
+  const to = customer && boardIsEmail_(customer.email)
+    ? customer.email : String(values[BOARD_MAIL_COL.from - 1] || '').trim();
+
+  const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
+  if (!threadId) return { to: to, subject: mailSubjectFor_(ss, values) };
+
+  const subject = String(values[BOARD_MAIL_COL.subject - 1] || '');
+  return { to: to, subject: subject.indexOf('Re:') === 0 ? subject : 'Re: ' + subject };
+}
+
+/** 送った直後のメールをスレッドから拾い直す。記録に残すIDと時刻に使う。 */
+function mailLastOwnMessage_(ss, threadId) {
+  const ours = mailOwnAddresses_(ss);
+  try {
+    const thread = GmailApp.getThreadById(threadId);
+    if (!thread) return null;
+    const messages = thread.getMessages();
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const from = String(messages[i].getFrom() || '').toLowerCase();
+      if (ours.some(function (a) { return a && from.indexOf(a) >= 0; })) return messages[i];
+    }
+  } catch (err) {
+    boardLog_('②送信', '送信したメールを見つけられませんでした: ' + err.message);
+  }
+  return null;
 }
 
 function mailDismiss(row) {
@@ -1394,7 +1406,7 @@ function mailAppendKnowledge_(ss, lesson) {
 function mailGenerateReply_(apiKey, ctx) {
   const system = [
     'あなたは「ササゲパス」（古着・アパレルEC向けのささげ代行サービス。運営：合同会社ケセラセラ）の',
-    'メール担当者です。お客様からのメールに対する返信文の下書きを作成してください。',
+    'メール担当者です。お客様からのメールに対する返信文の案を作成してください。',
     '',
     '守ること:',
     '- 日本語のビジネスメールとして自然な文体。丁寧だが冗長にしない。',

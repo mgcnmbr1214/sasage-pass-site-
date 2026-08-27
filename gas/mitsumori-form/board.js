@@ -161,20 +161,23 @@ const BOARD_INTAKE_LABELS = (function () {
 
 const BOARD_MAIL_HEADERS = [
   '日時', '顧客ID', 'お客様', '差出人', '件名', '受信本文',
-  'AI初回案', '修正指示ログ', '返信文面', '状態', 'GmailスレッドID', '下書き保存日時', '対応種別', '下書きID',
+  'AI初回案', '修正指示ログ', '返信文面', '状態', 'GmailスレッドID', '返信日時', '対応種別',
   'GmailメッセージID'
 ];
 
-/** メール履歴の旧見出し → 新見出し。中身は動かさず、名前だけ付け替える。 */
-const BOARD_MAIL_RENAMES = { '要約': '受信本文', '最終文面': '返信文面' };
+/**
+ * メール履歴の旧見出し → 新見出し。中身は動かさず、名前だけ付け替える。
+ * 下書きは廃止した。画面から直接送るので、保存した日時＝返信した日時になる。
+ */
+const BOARD_MAIL_RENAMES = { '要約': '受信本文', '最終文面': '返信文面', '下書き保存日時': '返信日時' };
 
 /** メール履歴で普段は畳んでおく列。文面そのものは畳まない。 */
-const BOARD_MAIL_DETAIL_COLS = ['aiFirst', 'instructions', 'threadId', 'savedAt', 'draftId', 'messageId'];
+const BOARD_MAIL_DETAIL_COLS = ['aiFirst', 'instructions', 'threadId', 'sentAt', 'messageId'];
 
 const BOARD_MAIL_COL = {
   date: 1, customerId: 2, customerName: 3, from: 4, subject: 5, summary: 6,
   aiFirst: 7, instructions: 8, finalText: 9, status: 10,
-  threadId: 11, savedAt: 12, responseType: 13, draftId: 14, messageId: 15
+  threadId: 11, sentAt: 12, responseType: 13, messageId: 14
 };
 
 /**
@@ -238,7 +241,7 @@ const BOARD_RESPONSE_TYPES = [
 
 /**
  * 差し込みでは埋められず、人が書くしかない箇所の目印。
- * 残ったまま下書きにしようとすると止める。
+ * 残ったまま送ろうとすると止める。
  */
 const BOARD_TEMPLATE_PLACEHOLDER = /【ここに[^】]*】/;
 
@@ -329,6 +332,7 @@ const BOARD_SHIPMENT_WIDTHS = {
 const BOARD_SHIPMENT_DETAIL_COLS = ['detail', 'startDate', 'due', 'threadId', 'messageId'];
 
 /** 返送1件の請求の進み具合。 */
+/** 下書きを使っていた時代の名残。移行でだけ使う。 */
 const SHIP_STATUS_DRAFT = '下書き';
 const SHIP_STATUS_SENT = '送信済';
 const SHIP_STATUS_INVOICED = '請求書作成済';
@@ -529,6 +533,11 @@ function boardSetup() {
   }
 
   try {
+    boardMigrateShipmentDrafts_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '返送履歴の状態の移行に失敗: ' + err.message);
+  }
+  try {
     boardMigrateShipmentAmounts_(ss);
   } catch (err) {
     boardLog_('②エラー', '返送履歴の金額の移行に失敗: ' + err.message);
@@ -546,7 +555,7 @@ function boardSetup() {
     boardLog_('②エラー', 'お客様の登録状況の更新に失敗: ' + err.message);
   }
   try {
-    // 送った下書きを見つけて状態を進め、返信文面の食い違いも直す
+    // Gmailから直接返信した分を拾い、返信文面の食い違いも直す
     mailRefreshSentStatus_(ss);
     mailSyncSentReplies_(ss);
   } catch (err) {
@@ -664,7 +673,7 @@ function boardInsertColumnAfter_(sheet, headers, after, name) {
  *
  * 旧: 日時 / 顧客ID / 差出人 / 件名 / 種別 / 要約 / AI返信案 / 状態 / GmailスレッドID
  * 新: 日時 / 顧客ID / 差出人 / 件名 / 要約 / AI初回案 / 修正指示ログ / 最終文面 /
- *     状態 / GmailスレッドID / 下書き保存日時 / 対応種別
+ *     状態 / GmailスレッドID / 返信日時 / 対応種別
  *
  * 旧形式の行は「状態」の位置にスレッドIDが入り、「GmailスレッドID」が空になるため、
  * その形を手がかりに判定する。
@@ -885,7 +894,7 @@ const BOARD_MAIL_WIDTHS = {
   date: 130, customerId: 70, customerName: 150, from: 200, subject: 230, summary: 400,
   finalText: 400, status: 110, responseType: 200,
   aiFirst: 160, instructions: 160,
-  threadId: 120, savedAt: 120, draftId: 120, messageId: 120
+  threadId: 120, sentAt: 120, messageId: 120
 };
 
 /**
@@ -1051,7 +1060,7 @@ function boardBackfillFormDates_(sheet) {
 
 /**
  * 受信本文と返信文面の先頭に日時を付ける。
- * 受信本文は受信日時、返信文面は下書きを保存した日時（無ければ受信日時）。
+ * 受信本文は受信日時、返信文面は返信した日時（無ければ受信日時）。
  */
 function boardStampMailBodies_(sheet) {
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
@@ -1061,7 +1070,7 @@ function boardStampMailBodies_(sheet) {
 
   rows.forEach(function (row) {
     const at = row[BOARD_MAIL_COL.date - 1];
-    const savedAt = row[BOARD_MAIL_COL.savedAt - 1];
+    const savedAt = row[BOARD_MAIL_COL.sentAt - 1];
     const before = [row[BOARD_MAIL_COL.summary - 1], row[BOARD_MAIL_COL.finalText - 1]];
     const after = [
       mailStamp_(at, before[0]),
@@ -1234,7 +1243,7 @@ const BOARD_SETTING_NOTES = [
 
 const BOARD_DEFAULT_SETTINGS = [
   ['通知先メールアドレス', 'sasagepass@gmail.com', '②の返信案ができたときの通知先'],
-  ['送信元エイリアス', 'info@sasagepass.com', 'メール下書きの差出人。Gmailにエイリアス登録が必要'],
+  ['送信元エイリアス', 'info@sasagepass.com', 'メールの差出人。Gmailにエイリアス登録が必要'],
   ['営業所コード', '160652', '案内メールの発送先'],
   ['営業所名', '松原柴垣営業所', ''],
   ['発送先郵便番号', '580-0017', ''],
@@ -1600,13 +1609,13 @@ function boardSeedTemplates_(sheet) {
 
   const seeds = [
     ['T1', '見積もり回答', '【ササゲパス】お見積もりのご案内', boardDefaultQuoteBody_(), 'フォーム回答への初回返信'],
-    ['T2', '依頼確定', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定（自）が未入力なら下書きを作成しない。予定点数が空なら該当行が自動で消える'],
+    ['T2', '依頼確定', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定（自）が未入力なら送信できない。予定点数が空なら該当行が自動で消える'],
     ['T2B', '依頼確定（2回目以降）', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideRepeatBody_(), '契約済みのお客様向け。カード登録と署名のご案内を省き、登録手数料も作らない'],
     ['T4', '手続き完了のご連絡', '【ササゲパス】お手続きを確認いたしました', boardDefaultDoneBody_(), '署名・カード登録の確認後に送る'],
     ['T5', 'リマインド（手続き未完了）', '【ササゲパス】お手続きのご確認', boardDefaultRemindPaymentBody_(), '請求書を送ってから一定日数が経っても署名・支払いが確認できないとき'],
     ['T6', 'リマインド（追跡番号未着）', '【ササゲパス】ご発送状況のご確認', boardDefaultRemindShippingBody_(), '発送の連絡も荷物の到着もないとき'],
     ['T7', 'お預かり完了のご連絡', '【ササゲパス】商品をお預かりいたしました', boardDefaultReceivedBody_(), '商品が到着したとき'],
-    ['T8', '作業完了・データ納品のご連絡', '【ササゲパス】作業が完了いたしました（データ納品のご案内）', boardDefaultDeliveryBody_(), '作業が完了し、納品データを共有するとき。**納品URLは手入力**。入れないと下書きにできない'],
+    ['T8', '作業完了・データ納品のご連絡', '【ササゲパス】作業が完了いたしました（データ納品のご案内）', boardDefaultDeliveryBody_(), '作業が完了し、納品データを共有するとき。**納品URLは手入力**。入れないと送信できない'],
     ['T9', '返送開始のお知らせ', '【ササゲパス】商品の返送を開始いたしました', boardDefaultShipBackBody_(), '**この送信が月々のご請求の対象になる**。点数と追跡番号は画面で入力し、返送履歴にも残る'],
     ['S1', 'Square請求書（登録手数料220円）', SQUARE_INVOICE_TITLE, squareInvoiceDescription_(), '過去の請求書と同一の文面。Squareの請求書メッセージ欄に入る'],
     ['S2', 'Square請求書（月々のご利用料金）', 'ササゲパス利用料金', boardDefaultUsageInvoiceBody_(), '「今月の請求書を作成」で作る請求書のメッセージ欄に入る。件名は月ごとに自動で付く']
@@ -2918,7 +2927,7 @@ function boardReopenCase_(ss, customerId) {
  * 案内メール作成日が空の案件を、メール履歴の記録から埋める。
  *
  * 「対応を選ぶ」から送った分はこの列を書いていなかったため、
- * 依頼確定の対応をした行の下書き保存日時を使って後から補う。
+ * 依頼確定の対応をした行の返信日時を使って後から補う。
  */
 function boardBackfillGuideDate_(ss) {
   const cases = ss.getSheetByName(BOARD_SHEET_CASES);
@@ -2929,7 +2938,7 @@ function boardBackfillGuideDate_(ss) {
   mails.getRange(2, 1, mails.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues()
     .forEach(function (row) {
       if (String(row[BOARD_MAIL_COL.responseType - 1] || '').indexOf('依頼確定') !== 0) return;
-      const when = row[BOARD_MAIL_COL.savedAt - 1] || row[BOARD_MAIL_COL.date - 1];
+      const when = row[BOARD_MAIL_COL.sentAt - 1] || row[BOARD_MAIL_COL.date - 1];
       if (!(when instanceof Date)) return;
       const id = String(row[BOARD_MAIL_COL.customerId - 1] || '').trim();
       if (!id) return;
@@ -3384,7 +3393,7 @@ function boardBuildTemplateText_(ss, caseRow, templateId, extra) {
  * 案件行は次の依頼で使い回すため、依頼内容・単価・納期はいずれ上書きされる。
  * **請求の根拠が消えないよう、返送した時点の値をここで凍結する。**
  *
- * 同じ下書きから二度呼ばれても増えないよう、下書きIDで重複を避ける。
+ * 同じメールで二度呼ばれても増えないよう、メッセージIDで重複を避ける。
  */
 function boardRecordShipment_(ss, caseRow, fields, mail) {
   const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
@@ -3397,12 +3406,12 @@ function boardRecordShipment_(ss, caseRow, fields, mail) {
 
   const qty = boardExtractCount_((fields || {}).shipQty);
   const unitPrice = Number(v[BOARD_COL.unitPrice - 1] || (customer ? customer.unitPrice : 0) || 0);
-  const draftId = String((mail || {}).draftId || '').trim();
+  const messageId = String((mail || {}).messageId || '').trim();
 
-  if (draftId && sheet.getLastRow() > 1) {
+  if (messageId && sheet.getLastRow() > 1) {
     const seen = sheet.getRange(2, BOARD_SHIPMENT_COL.messageId, sheet.getLastRow() - 1, 1).getValues();
     for (let i = 0; i < seen.length; i++) {
-      if (String(seen[i][0] || '').trim() === draftId) return 0;
+      if (String(seen[i][0] || '').trim() === messageId) return 0;
     }
   }
 
@@ -3415,14 +3424,15 @@ function boardRecordShipment_(ss, caseRow, fields, mail) {
   values[BOARD_SHIPMENT_COL.unitPrice - 1] = unitPrice || '';
   // 金額は数式にする（appendRow のあとで入れる）
   values[BOARD_SHIPMENT_COL.tracking - 1] = String((fields || {}).shipTracking || '').trim();
-  values[BOARD_SHIPMENT_COL.status - 1] = SHIP_STATUS_DRAFT;
+  // 送ったあとに呼ばれる。送信済みかどうかを確かめ直す必要はない
+  values[BOARD_SHIPMENT_COL.status - 1] = SHIP_STATUS_SENT;
   values[BOARD_SHIPMENT_COL.detail - 1] = v[BOARD_COL.detail - 1];
   values[BOARD_SHIPMENT_COL.startDate - 1] = v[BOARD_COL.startDate - 1];
   values[BOARD_SHIPMENT_COL.due - 1] = boardFormatDateRange_(v[BOARD_COL.dueFrom - 1], v[BOARD_COL.dueTo - 1]);
   values[BOARD_SHIPMENT_COL.subject - 1] = (mail || {}).subject || '';
   values[BOARD_SHIPMENT_COL.body - 1] = (mail || {}).body || '';
   values[BOARD_SHIPMENT_COL.threadId - 1] = (mail || {}).threadId || '';
-  values[BOARD_SHIPMENT_COL.messageId - 1] = draftId;
+  values[BOARD_SHIPMENT_COL.messageId - 1] = messageId;
 
   sheet.appendRow(values);
   boardSetShipmentAmountFormula_(sheet, sheet.getLastRow());
@@ -3430,101 +3440,6 @@ function boardRecordShipment_(ss, caseRow, fields, mail) {
   boardLog_('返送', v[BOARD_COL.caseId - 1] + '：返送履歴に記録しました（' +
     (qty === '' ? '点数未入力' : qty + '点') + '）');
   return 1;
-}
-
-/**
- * 返送履歴の「下書き」が実際に送られたかを確かめ、「送信済」に進める。
- *
- * **送られていない返送は請求しない。** 下書きのままでは請求の対象にならない。
- * 送られた証拠は、記録しておいたスレッドの中にある送信メールそのもの。
- */
-function boardRefreshShipments_(ss) {
-  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
-  if (!sheet || sheet.getLastRow() < 2) return 0;
-
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_SHIPMENT_HEADERS.length).getValues();
-  const ours = mailOwnAddresses_(ss);
-  const sent = [];
-  const lost = [];
-
-  const stale = new Date().getTime() - 30 * 60 * 1000;
-
-  rows.forEach(function (row, i) {
-    if (String(row[BOARD_SHIPMENT_COL.status - 1] || '').trim() !== SHIP_STATUS_DRAFT) return;
-    if (!String(row[BOARD_SHIPMENT_COL.messageId - 1] || '').trim()) return;
-
-    const message = boardFindSentShipment_(ss, row, ours);
-    if (!message) {
-      // 黙って止まると、いつまでも請求に乗らない理由が分からない。
-      // 送ったばかりのうちは下書きのままが普通なので、しばらく経った分だけ知らせる
-      const when = row[BOARD_SHIPMENT_COL.date - 1];
-      if (when instanceof Date && when.getTime() < stale) {
-        lost.push(row[BOARD_SHIPMENT_COL.caseId - 1]);
-      }
-      return;
-    }
-
-    sheet.getRange(i + 2, BOARD_SHIPMENT_COL.status).setValue(SHIP_STATUS_SENT);
-    sheet.getRange(i + 2, BOARD_SHIPMENT_COL.messageId).setValue(message.getId());
-    sheet.getRange(i + 2, BOARD_SHIPMENT_COL.date).setValue(message.getDate());
-    sent.push(row[BOARD_SHIPMENT_COL.caseId - 1]);
-  });
-
-  if (sent.length > 0) {
-    boardLog_('返送', sent.length + ' 件の返送を送信済みにしました（' + sent.join('、') + '）');
-  }
-  if (lost.length > 0) {
-    boardLog_('返送', '下書きは無くなりましたが、送ったメールを確認できません（' + lost.join('、') + '）');
-  }
-  return sent.length;
-}
-
-/**
- * その返送のお知らせとして、実際に送られたメールを探す。
- *
- * **記録しておいたスレッドの中を見て、本文の書き出しが一致するメールを探す。**
- * これが唯一の証拠。下書きが残っているかどうかは見ない。
- *
- * 以前は「Gmailの下書きが消えたか」を先に確かめ、消えていなければ何もしなかった。
- * その判定が通らず、送信済みのA005が下書きのまま何度も取り残された。
- * 送っていなければスレッドの中身は下書きのままなので、この探し方なら取り違えない。
- */
-function boardFindSentShipment_(ss, row, ours) {
-  const threadId = String(row[BOARD_SHIPMENT_COL.threadId - 1] || '').trim();
-  const head = String(row[BOARD_SHIPMENT_COL.body - 1] || '').replace(/\s+/g, '').slice(0, 60);
-  const when = row[BOARD_SHIPMENT_COL.date - 1];
-  // 下書きは記録の数秒前に作られる。送信もその前後になりうるので少しだけ前から見る
-  const floor = when instanceof Date ? when.getTime() - 2 * 60 * 1000 : 0;
-
-  if (threadId) {
-    try {
-      const thread = GmailApp.getThreadById(threadId);
-      if (thread) {
-        // 下書きはスレッドの一員として返ってくる。送っていないものは除く
-        const mine = thread.getMessages().filter(function (message) {
-          if (message.isDraft()) return false;
-          const from = String(message.getFrom() || '').toLowerCase();
-          return ours.some(function (address) { return address && from.indexOf(address) >= 0; });
-        });
-        for (let i = mine.length - 1; i >= 0; i--) {
-          if (head && mailPlainBody_(mine[i]).replace(/\s+/g, '').indexOf(head) >= 0) return mine[i];
-        }
-        // Gmailで文面を手直しして送った場合に備える。ただし**このスレッドの古い送信メール**を
-        // 取り違えないよう、記録した時刻の前後に送られたものだけを認める
-        for (let i = mine.length - 1; i >= 0; i--) {
-          if (mine[i].getDate().getTime() >= floor) return mine[i];
-        }
-      }
-    } catch (err) {
-      boardLog_('返送', 'スレッドを読めませんでした: ' + err.message);
-    }
-  }
-
-  // スレッドが無い行（フォーム起点）は送信済みフォルダから探す。
-  // 記録した直後に送られることがあるため、少し前から見る
-  const customer = boardFindCustomer_(ss, row[BOARD_SHIPMENT_COL.customerId - 1]);
-  if (!customer || !floor) return null;
-  return mailFirstSentAfter_(customer.email, new Date(floor));
 }
 
 /**
@@ -3536,6 +3451,31 @@ function boardSetShipmentAmountFormula_(sheet, row) {
   const price = '$' + boardColLetter_(BOARD_SHIPMENT_COL.unitPrice) + row;
   sheet.getRange(row, BOARD_SHIPMENT_COL.amount)
     .setFormula('=IF(OR(' + qty + '="",' + price + '=""),"",' + qty + '*' + price + ')');
+}
+
+/**
+ * 下書きを廃止する前に記録した返送を「送信済」に直す。
+ *
+ * 画面から直接送るようになったため、これ以降「下書き」は生まれない。
+ * 残っているのは、下書きを経由していた時代に**実際には送られた**返送だけ。
+ */
+function boardMigrateShipmentDrafts_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const range = sheet.getRange(2, BOARD_SHIPMENT_COL.status, sheet.getLastRow() - 1, 1);
+  const values = range.getValues();
+  let changed = 0;
+  const next = values.map(function (row) {
+    if (String(row[0] || '').trim() !== SHIP_STATUS_DRAFT) return [row[0]];
+    changed++;
+    return [SHIP_STATUS_SENT];
+  });
+  if (changed > 0) {
+    range.setValues(next);
+    boardLog_('移行', '下書きのまま残っていた返送 ' + changed + ' 件を送信済にしました');
+  }
+  return changed;
 }
 
 function boardMigrateShipmentAmounts_(ss) {
@@ -3599,7 +3539,7 @@ function boardCreateGuideDraft(data) {
   const alias = settings['送信元エイリアス'];
   if (alias && GmailApp.getAliases().indexOf(alias) >= 0) options.from = alias;
 
-  GmailApp.createDraft(customer.email, subject, body, options);
+  GmailApp.sendEmail(customer.email, subject, body, options);
 
   sheet.getRange(row, BOARD_COL.guideDraftAt).setValue(new Date());
   if (!sheet.getRange(row, BOARD_COL.invoiceSent).getValue()) {
@@ -3607,9 +3547,9 @@ function boardCreateGuideDraft(data) {
   }
   sheet.getRange(row, BOARD_COL.status).setValue(BOARD_STATUS_SIGNING);
   boardSetTodoFormula_(sheet, row);
-  boardLog_('下書き作成', v[BOARD_COL.caseId - 1] + ' の案内メール下書きを作成しました');
+  boardLog_('送信', v[BOARD_COL.caseId - 1] + ' の案内メールを送信しました');
 
-  return { message: 'Gmailの下書きを作成しました。内容を確認して送信してください。', to: customer.email };
+  return { message: '案内メールを送信しました。', to: customer.email };
 }
 
 // ------------------------------------------------------------
@@ -3757,6 +3697,15 @@ function boardEnsureMailColumns_(ss) {
   Object.keys(BOARD_MAIL_RENAMES).forEach(function (from) {
     headers = boardRenameColumn_(sheet, headers, from, BOARD_MAIL_RENAMES[from]);
   });
+
+  // 下書きは廃止した。画面から直接送るので、下書きIDを控える必要がない
+  const draftId = headers.indexOf('下書きID');
+  if (draftId >= 0) {
+    sheet.deleteColumn(draftId + 1);
+    headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+      .map(function (h) { return String(h || '').trim(); });
+    boardLog_('移行', 'メール履歴の 下書きID 列を削除しました（下書きの廃止）');
+  }
 
   // 対応不要は状態列に一本化した
   const dismiss = headers.indexOf('対応不要');

@@ -49,7 +49,7 @@
   <label>予定点数（任意）</label>
   <input type="number" id="qty" min="0" placeholder="空欄ならメールに記載しません">
 
-  <button class="btn-main" id="btnDraft" disabled>案内メールの下書きを作る</button>
+  <button class="btn-main" id="btnDraft" disabled>案内メールを送信する</button>
   <div class="hint" id="hint">受付開始日と納期予定を入力すると押せるようになります。</div>
 
   <button class="btn-sub" id="btnSave">入力内容を保存する</button>
@@ -89,7 +89,7 @@
     var ok = document.getElementById('startDate').value && document.getElementById('dueFrom').value;
     document.getElementById('btnDraft').disabled = !ok;
     document.getElementById('hint').textContent = ok
-      ? '押すとGmailに下書きが作られます。送信は手動です。'
+      ? '押すとお客様へ案内メールを送信します。取り消せません。'
       : '受付開始日と納期予定の開始日を入力すると押せるようになります。';
   }
 

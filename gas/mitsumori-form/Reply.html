@@ -209,7 +209,7 @@
       html += '</ul></div>';
     }
     if (type && type.status) {
-      html += '<div class="tasks-note">下書きに保存すると、案件のステータスが' +
+      html += '<div class="tasks-note">送信すると、案件のステータスが' +
         '<b>「' + esc(type.status) + '」</b>に変わります。</div>';
     } else if (type) {
       html += '<div class="tasks-note">この対応では、案件のステータスは変わりません。</div>';
@@ -464,7 +464,7 @@
       '<div class="card"><label>返信案（そのまま編集できます）</label>' +
       '<textarea id="editor"></textarea>' +
       '<div class="btns">' +
-      '<button class="b-main" id="btnApprove">この内容で下書きに保存</button>' +
+      '<button class="b-main" id="btnApprove">この内容で送信する</button>' +
       '<button class="b-sub" id="btnOpenThread">Gmailで開く</button>' +
       '<button class="b-sub" id="btnSave">編集内容だけ保存</button>' +
       '<button class="b-sub" id="btnSkip">対応不要</button>' +
@@ -540,15 +540,26 @@
     });
 
     el('btnApprove').addEventListener('click', function () {
+      // **送ると取り消せない。** 宛先と件名はシートに聞いて、確かめてから送る
+      var fields = collectFields(findType(el('rtype').value));
+      var body = el('editor').value;
       busy(true);
-      show('ok', '下書きに保存しています...');
-      google.script.run.withSuccessHandler(function (r) {
-        show('ok', r.message);
+      show('ok', '宛先を確認しています...');
+      google.script.run.withSuccessHandler(function (p) {
         busy(false);
-        reload(false);
+        if (!confirm('このメールを送信します。取り消せません。\n\n' +
+          '宛先：' + p.to + '\n件名：' + p.subject + '\n\n' +
+          body.slice(0, 120) + (body.length > 120 ? '…' : '') + '\n\nよろしいですか？')) return;
+        busy(true);
+        show('ok', '送信しています...');
+        google.script.run.withSuccessHandler(function (r) {
+          show('ok', r.message);
+          busy(false);
+          reload(false);
+        }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
+          .mailSendReply(current.row, body, fields);
       }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
-        .mailApproveToDraft(current.row, el('editor').value,
-                            collectFields(findType(el('rtype').value)));
+        .mailGetSendPreview(current.row);
     });
 
     el('btnOpenThread').addEventListener('click', function () {
