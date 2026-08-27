@@ -36,8 +36,13 @@ const BOARD_STATUSES = [
   BOARD_STATUS_SHIPPED, BOARD_STATUS_WORKING, BOARD_STATUS_DONE, BOARD_STATUS_CLOSED
 ];
 
-/** 終わった案件。「対応を選ぶ」にも出さず、未返信も数えない。 */
-const BOARD_FINISHED_STATUSES = [BOARD_STATUS_DONE, BOARD_STATUS_CLOSED];
+/**
+ * 手を引いた案件。**見送りだけ。**
+ *
+ * 返送済は「終わり」ではない。案件行はそのお客様のもので、
+ * 次のご依頼で使い続ける。返送のあとにこちらから連絡することもある。
+ */
+const BOARD_FINISHED_STATUSES = [BOARD_STATUS_CLOSED];
 
 /**
  * そのステータスで次に動くのは誰か。案件ボードの「対応者」列に出す。
@@ -3536,7 +3541,12 @@ function boardMigrateShipmentAmounts_(ss) {
   return changed;
 }
 
-/** 顧客IDに紐づく最新の案件の行番号。完了・失注は除く。 */
+/**
+ * 顧客IDに紐づく最新の案件の行番号。見送りだけ除く。
+ *
+ * 返送済も返す。**返さないと、返送のあとに届いたご連絡で案件を再開できず、
+ * 続けて送る返送のお知らせも記録できない。**
+ */
 function boardFindLatestCaseRow_(ss, customerId) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   if (!sheet || sheet.getLastRow() < 2 || !customerId) return 0;
@@ -3545,7 +3555,7 @@ function boardFindLatestCaseRow_(ss, customerId) {
   rows.forEach(function (row, i) {
     if (String(row[BOARD_COL.customerId - 1]).trim() !== String(customerId).trim()) return;
     const status = String(row[BOARD_COL.status - 1] || '').trim();
-    if (status === '返送済' || status === '見送り') return;
+    if (status === BOARD_STATUS_CLOSED) return;
     found = i + 2;
   });
   return found;
