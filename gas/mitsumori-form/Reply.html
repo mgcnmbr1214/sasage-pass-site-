@@ -627,9 +627,11 @@
         busy(true);
         show('ok', '送信しています...');
         google.script.run.withSuccessHandler(function (r) {
-          show('ok', r.message);
           busy(false);
-          reload(false);
+          // 送り終えたら閉じる。開いたままだと送れたか分からず、二度押してしまう
+          alert(r.message + '\n\nこの画面を閉じます。' +
+            '続けて対応する場合は、メニューから「対応を選ぶ」を開き直してください。');
+          google.script.host.close();
         }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
           .mailSendReply(current.row, body, fields, attachments);
       }).withFailureHandler(function (e) { show('err', e.message); busy(false); })

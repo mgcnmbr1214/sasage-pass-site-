@@ -1267,15 +1267,21 @@ function mailSendReply(row, text, fields, files) {
   if (attachments.length > 0) options.attachments = attachments;
 
   const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
+  const target = mailReplyTarget_(values, preview.to);
   let message = null;
-  if (threadId) {
-    const thread = GmailApp.getThreadById(threadId);
-    if (!thread) throw new Error('元のメールスレッドが見つかりません。');
-    thread.reply(text, options);
-    message = mailLastOwnMessage_(ss, threadId);
+  if (target) {
+    target.reply(text, options);
+    message = mailLastOwnMessage_(ss, threadId || target.getThread().getId());
   } else {
-    // フォーム回答が起点の場合は返信先のスレッドが無いため、新規メールとして送る
+    // お客様のメールが見つからない（フォーム回答が起点など）ときは新規メールとして送る
     GmailApp.sendEmail(preview.to, preview.subject, text, options);
+  }
+
+  // 宛先を取り違えていないか、送ったあとにも確かめる。
+  // 気づかないまま同じ間違いを繰り返さないため
+  if (message && String(message.getTo() || '').toLowerCase().indexOf(preview.to.toLowerCase()) < 0) {
+    boardLog_('②送信', '宛先が想定と違います（予定 ' + preview.to +
+      ' ／ 実際 ' + message.getTo() + '）');
   }
 
   const sentAt = message ? message.getDate() : new Date();
@@ -1355,6 +1361,45 @@ function mailSendPreview_(ss, values) {
 
   const subject = String(values[BOARD_MAIL_COL.subject - 1] || '');
   return { to: to, subject: subject.indexOf('Re:') === 0 ? subject : 'Re: ' + subject };
+}
+
+/**
+ * どのメールに返信するかを決める。
+ *
+ * **スレッドにそのまま返信してはいけない。** スレッドへの返信は
+ * 「最後のメールの差出人」に宛てられる。こちらが最後に送っていると、
+ * 宛先が自分自身（info@sasagepass.com）になる。実際にA006でそうなった。
+ *
+ * 返すのは**お客様が書いたメール**。その差出人はお客様なので取り違えない。
+ */
+function mailReplyTarget_(values, to) {
+  const address = String(to || '').trim().toLowerCase();
+
+  // その行のメールそのもの。いちばん確かな返信先
+  const messageId = String(values[BOARD_MAIL_COL.messageId - 1] || '').trim();
+  if (messageId) {
+    try {
+      const message = GmailApp.getMessageById(messageId);
+      if (message && String(message.getFrom() || '').toLowerCase().indexOf(address) >= 0) return message;
+    } catch (err) {
+      boardLog_('②送信', '元のメールを開けませんでした: ' + err.message);
+    }
+  }
+
+  // 記録が古い場合に備え、同じスレッドからお客様の最新のメールを探す
+  const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '').trim();
+  if (!threadId) return null;
+  try {
+    const thread = GmailApp.getThreadById(threadId);
+    if (!thread) return null;
+    const messages = thread.getMessages();
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (String(messages[i].getFrom() || '').toLowerCase().indexOf(address) >= 0) return messages[i];
+    }
+  } catch (err) {
+    boardLog_('②送信', 'スレッドを開けませんでした: ' + err.message);
+  }
+  return null;
 }
 
 /** 送った直後のメールをスレッドから拾い直す。記録に残すIDと時刻に使う。 */
