@@ -166,8 +166,8 @@ const BOARD_INTAKE_LABELS = (function () {
 
 const BOARD_MAIL_HEADERS = [
   '日時', '顧客ID', 'お客様', '差出人', '件名', '受信本文',
-  'AI初回案', '修正指示ログ', '返信文面', '状態', 'GmailスレッドID', '返信日時', '対応種別',
-  'GmailメッセージID'
+  'AI初回案', '修正指示ログ', '返信文面', '状態', 'GmailスレッドID', '返信日時', '送信予定日時', '対応種別',
+  'GmailメッセージID', '予約の控え'
 ];
 
 /**
@@ -177,12 +177,12 @@ const BOARD_MAIL_HEADERS = [
 const BOARD_MAIL_RENAMES = { '要約': '受信本文', '最終文面': '返信文面', '下書き保存日時': '返信日時' };
 
 /** メール履歴で普段は畳んでおく列。文面そのものは畳まない。 */
-const BOARD_MAIL_DETAIL_COLS = ['aiFirst', 'instructions', 'threadId', 'sentAt', 'messageId'];
+const BOARD_MAIL_DETAIL_COLS = ['aiFirst', 'instructions', 'threadId', 'sentAt', 'messageId', 'hold'];
 
 const BOARD_MAIL_COL = {
   date: 1, customerId: 2, customerName: 3, from: 4, subject: 5, summary: 6,
   aiFirst: 7, instructions: 8, finalText: 9, status: 10,
-  threadId: 11, sentAt: 12, responseType: 13, messageId: 14
+  threadId: 11, sentAt: 12, sendAt: 13, responseType: 14, messageId: 15, hold: 16
 };
 
 /**
@@ -899,7 +899,7 @@ const BOARD_MAIL_WIDTHS = {
   date: 130, customerId: 70, customerName: 150, from: 200, subject: 230, summary: 400,
   finalText: 400, status: 110, responseType: 200,
   aiFirst: 160, instructions: 160,
-  threadId: 120, sentAt: 120, messageId: 120
+  threadId: 120, sentAt: 120, sendAt: 130, messageId: 120, hold: 160
 };
 
 /**
@@ -3231,6 +3231,17 @@ function boardSetTodoFormula_(sheet, row) {
     b + '="' + BOARD_STATUS_WORKING + '","作業"&IF(' + from + '="","","（納期 "&TEXT(' + dueEnd + ',"m/d")&"）"),' +
     'TRUE,""))';
   sheet.getRange(row, BOARD_COL.todo).setFormula(formula);
+}
+
+/**
+ * 画面の日時入力（2026-09-01T18:30）を Date に直す。
+ * 読み取れない書き方は null を返す。**推測で送らない。**
+ */
+function boardFromInputDateTime_(value) {
+  const m = String(value == null ? '' : value).trim()
+    .match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T ](\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), 0);
 }
 
 function boardColLetter_(col) {

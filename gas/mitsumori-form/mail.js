@@ -26,12 +26,14 @@ const MAIL_EXAMPLE_COUNT = 3;
  * Gmailの開封状況とは無関係。
  */
 const MAIL_STATUS_PENDING = '返信前';
+const MAIL_STATUS_SCHEDULED = '送信予約';
 const MAIL_STATUS_SENT = '返信済み';
 const MAIL_STATUS_SKIP = '対応不要';
 
 /** 状態の説明。プルダウンの説明文と設計ドキュメントで使う。 */
 const MAIL_STATUS_HELP = [
   MAIL_STATUS_PENDING + '：まだ返していない（返信案の作成中もここ）',
+  MAIL_STATUS_SCHEDULED + '：日時を決めて送信待ち',
   MAIL_STATUS_SENT + '：返信を送った',
   MAIL_STATUS_SKIP + '：返信しないと決めた'
 ].join('\n');
@@ -52,7 +54,7 @@ const MAIL_STATUS_RENAMES = {
   '送信済': MAIL_STATUS_SENT
 };
 
-const MAIL_STATUSES = [MAIL_STATUS_PENDING, MAIL_STATUS_SENT, MAIL_STATUS_SKIP];
+const MAIL_STATUSES = [MAIL_STATUS_PENDING, MAIL_STATUS_SCHEDULED, MAIL_STATUS_SENT, MAIL_STATUS_SKIP];
 
 /**
  * 受信本文・返信文面の先頭に付ける日時。
@@ -353,6 +355,14 @@ function mailScan_(options) {
   }
 
   if (found > 0) boardLog_('②新着メール', found + ' 件の新着メールを記録しました');
+  // 時刻が来た予約を送る。**新着の記録より先に済ませる。**
+  // 予約が詰まっているのに新着の処理で時間切れになると、いつまでも送られない
+  try {
+    mailSendScheduled_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '予約したメールの送信に失敗: ' + err.message);
+  }
+
   // 画面から送った分はその場で「返信済み」になる。
   // ここで拾うのは、**Gmailから直接返信した**分だけ
   mailRefreshSentStatus_(ss);
@@ -500,7 +510,11 @@ function mailGetPendingList() {
       instructions: row[BOARD_MAIL_COL.instructions - 1],
       threadId: row[BOARD_MAIL_COL.threadId - 1],
       responseType: row[BOARD_MAIL_COL.responseType - 1],
-      status: status
+      status: status,
+      // 予約中なら、その時刻を画面に出して取り消せるようにする
+      sendAt: row[BOARD_MAIL_COL.sendAt - 1] instanceof Date
+        ? Utilities.formatDate(row[BOARD_MAIL_COL.sendAt - 1], Session.getScriptTimeZone(), 'M月d日 HH:mm')
+        : ''
     };
 
     if (item.open) waiting[customerId] = true;
@@ -1242,6 +1256,107 @@ function mailSendReply(row, text, fields, files) {
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   const r = Number(row);
   const values = sheet.getRange(r, 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
+  mailValidateBeforeSend_(ss, values, text, fields);
+  return mailDeliver_(ss, sheet, r, values, text, fields, mailBuildAttachments_(files));
+}
+
+/**
+ * 指定の日時に送る。**この時点では送らない。**
+ *
+ * 本文と添付をシートとドライブに預け、10分ごとの確認で時刻が来たら送る。
+ * Gmailの予約送信はGmailの画面からしか使えないため、こちらで持つ。
+ * 送ったかどうかをGmailに問い合わせるのではなく、自分の予定を自分で読むだけなので、
+ * 下書きのときのような取りこぼしは起きない。
+ */
+function mailScheduleReply(row, text, fields, files, sendAt) {
+  boardUseCurrentColumns_();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  const r = Number(row);
+  const values = sheet.getRange(r, 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
+  mailValidateBeforeSend_(ss, values, text, fields);
+
+  const when = boardFromInputDateTime_(sendAt);
+  if (!when) throw new Error('送信する日時を選んでください。');
+  if (when.getTime() < new Date().getTime() + 60 * 1000) {
+    throw new Error('過ぎている日時は指定できません。');
+  }
+
+  // 前の予約が残っていれば、その添付は捨ててから入れ替える
+  mailReleaseHold_(sheet, r);
+
+  sheet.getRange(r, BOARD_MAIL_COL.finalText).setValue(mailStamp_(new Date(), text));
+  sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SCHEDULED);
+  sheet.getRange(r, BOARD_MAIL_COL.sendAt).setValue(when);
+  // 添付と入力欄は、送るときまで預かる。画面はもう開いていない
+  sheet.getRange(r, BOARD_MAIL_COL.hold).setValue(mailHold_(files, fields));
+
+  boardRefreshUnreplied_(ss);
+  const label = Utilities.formatDate(when, Session.getScriptTimeZone(), 'M月d日 HH:mm');
+  boardLog_('②送信予約', label + ' に送るよう予約しました（' + values[BOARD_MAIL_COL.from - 1] + '）');
+  return { message: label + ' に送信するよう予約しました。' };
+}
+
+/** 予約を取り消して、預かっていた添付も捨てる。 */
+function mailCancelSchedule(row) {
+  boardUseCurrentColumns_();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  const r = Number(row);
+  const values = sheet.getRange(r, 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
+  if (String(values[BOARD_MAIL_COL.status - 1] || '').trim() !== MAIL_STATUS_SCHEDULED) {
+    return { message: 'このメールに送信予約はありません。' };
+  }
+
+  mailReleaseHold_(sheet, r);
+  sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_PENDING);
+  sheet.getRange(r, BOARD_MAIL_COL.sendAt).setValue('');
+  boardRefreshUnreplied_(ss);
+  boardLog_('②送信予約', '送信予約を取り消しました（' + values[BOARD_MAIL_COL.from - 1] + '）');
+  return { message: '送信予約を取り消しました。' };
+}
+
+/**
+ * 予約の時刻が来たものを送る。10分ごとの確認から呼ばれる。
+ * 一度に送るのは少しずつにして、失敗しても残りが次に回るようにする。
+ */
+function mailSendScheduled_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues();
+  const now = new Date().getTime();
+  let sent = 0;
+
+  for (let i = 0; i < rows.length && sent < MAIL_SCHEDULED_PER_RUN; i++) {
+    const values = rows[i];
+    if (String(values[BOARD_MAIL_COL.status - 1] || '').trim() !== MAIL_STATUS_SCHEDULED) continue;
+    const when = values[BOARD_MAIL_COL.sendAt - 1];
+    if (!(when instanceof Date) || when.getTime() > now) continue;
+
+    const r = i + 2;
+    const text = mailUnstamp_(values[BOARD_MAIL_COL.finalText - 1]);
+    try {
+      const hold = mailTakeHold_(values);
+      mailValidateBeforeSend_(ss, values, text, hold.fields);
+      mailDeliver_(ss, sheet, r, values, text, hold.fields, hold.attachments);
+      mailReleaseHold_(sheet, r);
+      sent++;
+    } catch (err) {
+      // 送れないまま毎回試し続けても直らない。人が気づけるよう戻して知らせる
+      sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_PENDING);
+      sheet.getRange(r, BOARD_MAIL_COL.sendAt).setValue('');
+      boardLog_('②エラー', '予約したメールを送れませんでした（' +
+        values[BOARD_MAIL_COL.from - 1] + '）: ' + err.message);
+    }
+  }
+
+  if (sent > 0) boardLog_('②送信', '予約していたメール ' + sent + ' 件を送信しました');
+  return sent;
+}
+
+/** 送る前に必ず確かめること。今すぐ送るときも、予約するときも通す。 */
+function mailValidateBeforeSend_(ss, values, text, fields) {
   if (!String(text || '').trim()) throw new Error('本文が空です。先に返信案を作成してください。');
 
   // 返送の点数と追跡番号は**請求の根拠**。欠けたまま通すと、月々の請求から漏れる
@@ -1252,18 +1367,18 @@ function mailSendReply(row, text, fields, files) {
   if (blank) {
     throw new Error('本文に「' + blank[0] + '」が残っています。' + '\n' + '書き換えてから送信してください。');
   }
-
-  const preview = mailSendPreview_(ss, values);
-  if (!boardIsEmail_(preview.to)) {
+  if (!boardIsEmail_(mailSendPreview_(ss, values).to)) {
     throw new Error('送信先のメールアドレスが分かりません。「顧客」タブをご確認ください。');
   }
+}
+
+/** 実際に送って、記録を残す。今すぐ送るときも、予約の時刻が来たときもここを通る。 */
+function mailDeliver_(ss, sheet, r, values, text, fields, attachments) {
+  const preview = mailSendPreview_(ss, values);
 
   const options = { name: 'ササゲパス' };
   const alias = boardGetSettings_(ss)['送信元エイリアス'];
   if (alias && GmailApp.getAliases().indexOf(alias) >= 0) options.from = alias;
-
-  // 添付の組み立ては送信より先に済ませる。途中で失敗させない
-  const attachments = mailBuildAttachments_(files);
   if (attachments.length > 0) options.attachments = attachments;
 
   const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
@@ -1361,6 +1476,42 @@ function mailSendPreview_(ss, values) {
 
   const subject = String(values[BOARD_MAIL_COL.subject - 1] || '');
   return { to: to, subject: subject.indexOf('Re:') === 0 ? subject : 'Re: ' + subject };
+}
+
+/** 予約したメールを1回でまとめて送りすぎないための上限。 */
+const MAIL_SCHEDULED_PER_RUN = 10;
+
+/**
+ * 送るときまで、入力欄の値を預かる。
+ *
+ * **添付ファイルは預かれない。** 中身はシートに収まらず、ドライブに置くには
+ * Googleドライブの権限が新たに要る。権限が増えると再承認が済むまで
+ * 10分ごとの自動チェックが止まるため、それは割に合わない。
+ * 添付が要るメールは、その場で送っていただく。
+ */
+function mailHold_(files, fields) {
+  if ((files || []).length > 0) {
+    throw new Error('添付ファイルのあるメールは予約できません。' + '\n' +
+      '今すぐ送るか、添付を外して予約してください。');
+  }
+  return JSON.stringify({ fields: fields || {} });
+}
+
+/** 預かっていた入力欄の値を取り出す。 */
+function mailTakeHold_(values) {
+  const raw = String(values[BOARD_MAIL_COL.hold - 1] || '').trim();
+  if (!raw) return { attachments: [], fields: {} };
+  try {
+    return { attachments: [], fields: JSON.parse(raw).fields || {} };
+  } catch (err) {
+    boardLog_('②送信予約', '預かった内容を読めませんでした: ' + err.message);
+    return { attachments: [], fields: {} };
+  }
+}
+
+/** 預かりの控えを空にする。 */
+function mailReleaseHold_(sheet, row) {
+  sheet.getRange(row, BOARD_MAIL_COL.hold).setValue('');
 }
 
 /**

@@ -65,6 +65,11 @@
   .inv-state { font-size: 12.5px; color: #5A6A8A; margin-bottom: 2px; }
   .steps-text { font-size: 12px; color: #5A6A8A; line-height: 1.9; white-space: pre-wrap; background: #fff; border-radius: 8px; padding: 8px 11px; margin: 8px 0 0; }
   .hint { font-size: 11.5px; color: #8A97B8; margin-top: 6px; line-height: 1.6; }
+  .when { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .when label { font-size: 12px; color: #3D4A66; display: flex; align-items: center; gap: 5px; }
+  .when input[type=datetime-local] { font-size: 12px; padding: 4px 6px;
+    border: 1px solid #D8E0F5; border-radius: 5px; }
+  .when-note { font-size: 11.5px; color: #C2820A; }
   .files { margin-top: 8px; }
   .files-add { font-size: 12px; color: #3B6EF8; cursor: pointer; }
   .file-item { display: flex; align-items: center; gap: 8px; font-size: 12px;
@@ -183,6 +188,44 @@
       reader.readAsDataURL(file);
     });
     updateApprove();
+  }
+
+  function whenKind() {
+    var hit = 'now';
+    Array.prototype.forEach.call(document.getElementsByName('whenKind'), function (r) {
+      if (r.checked) hit = r.value;
+    });
+    return hit;
+  }
+
+  /** 既定は明日の朝9時。すぐ過ぎてしまう時刻を初期値にしない。 */
+  function defaultSendAt() {
+    var d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+      'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+  /** すでに予約済みのメールなら、その時刻と取り消しボタンを出す。 */
+  function renderSchedule() {
+    var note = el('whenNote');
+    if (!note) return;
+    if (!current || current.status !== '送信予約') { note.innerHTML = ''; return; }
+    note.innerHTML = '⏰ ' + esc(current.sendAt || '') + ' に送信予約中　' +
+      '<a href="#" id="cancelSchedule">取り消す</a>';
+    el('cancelSchedule').addEventListener('click', function (e) {
+      e.preventDefault();
+      busy(true);
+      google.script.run.withSuccessHandler(function (r) {
+        show('ok', r.message);
+        busy(false);
+        reload(true);
+      }).withFailureHandler(function (er) { show('err', er.message); busy(false); })
+        .mailCancelSchedule(current.row);
+    });
   }
 
   function typedKey(type) { return (current ? current.row : 0) + ':' + type.id; }
@@ -532,6 +575,12 @@
       '<div id="tasks"></div><div id="extras"></div></div>' +
       '<div class="card"><label>返信案（そのまま編集できます）</label>' +
       '<textarea id="editor"></textarea>' +
+      '<div class="when">' +
+      '<label><input type="radio" name="whenKind" value="now" checked>今すぐ送る</label>' +
+      '<label><input type="radio" name="whenKind" value="later">日時を指定</label>' +
+      '<input type="datetime-local" id="sendAt" disabled>' +
+      '<span class="hint" style="margin:0">※添付のあるメールは予約できません</span>' +
+      '<span class="when-note" id="whenNote"></span></div>' +
       '<div class="files"><input type="file" id="fileInput" multiple style="display:none">' +
       '<span class="files-add" id="fileAdd">＋ ファイルを添付する</span>' +
       '<div id="fileList"></div></div>' +
@@ -615,28 +664,54 @@
       // **送ると取り消せない。** 宛先と件名はシートに聞いて、確かめてから送る
       var fields = collectFields(findType(el('rtype').value));
       var body = el('editor').value;
+      var later = whenKind() === 'later';
+      if (later && !el('sendAt').value) { show('err', '送信する日時を選んでください。'); return; }
+      if (later && attachments.length > 0) {
+        show('err', '添付ファイルのあるメールは予約できません。今すぐ送るか、添付を外してください。');
+        return;
+      }
       busy(true);
       show('ok', '宛先を確認しています...');
       google.script.run.withSuccessHandler(function (p) {
         busy(false);
         var names = attachments.map(function (f) { return f.name; }).join('、');
-        if (!confirm('このメールを送信します。取り消せません。\n\n' +
+        var when = el('sendAt').value;
+        if (!confirm((later
+            ? 'このメールを ' + when.replace('T', ' ') + ' に送信します。'
+            : 'このメールを送信します。取り消せません。') + '\n\n' +
           '宛先：' + p.to + '\n件名：' + p.subject +
           (names ? '\n添付：' + names : '') + '\n\n' +
           body.slice(0, 120) + (body.length > 120 ? '…' : '') + '\n\nよろしいですか？')) return;
         busy(true);
-        show('ok', '送信しています...');
-        google.script.run.withSuccessHandler(function (r) {
+        show('ok', later ? '予約しています...' : '送信しています...');
+        var done = function (r) {
           busy(false);
           // 送り終えたら閉じる。開いたままだと送れたか分からず、二度押してしまう
           alert(r.message + '\n\nこの画面を閉じます。' +
             '続けて対応する場合は、メニューから「対応を選ぶ」を開き直してください。');
           google.script.host.close();
-        }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
-          .mailSendReply(current.row, body, fields, attachments);
+        };
+        var failed = function (e) { show('err', e.message); busy(false); };
+        if (later) {
+          google.script.run.withSuccessHandler(done).withFailureHandler(failed)
+            .mailScheduleReply(current.row, body, fields, attachments, when);
+        } else {
+          google.script.run.withSuccessHandler(done).withFailureHandler(failed)
+            .mailSendReply(current.row, body, fields, attachments);
+        }
       }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
         .mailGetSendPreview(current.row);
     });
+
+    Array.prototype.forEach.call(document.getElementsByName('whenKind'), function (radio) {
+      radio.addEventListener('change', function () {
+        var later = whenKind() === 'later';
+        el('sendAt').disabled = !later;
+        el('btnApprove').textContent = later ? 'この日時に送る' : 'この内容で送信する';
+        if (later && !el('sendAt').value) el('sendAt').value = defaultSendAt();
+      });
+    });
+    renderSchedule();
 
     el('fileAdd').addEventListener('click', function () { el('fileInput').click(); });
     el('fileInput').addEventListener('change', function () {
