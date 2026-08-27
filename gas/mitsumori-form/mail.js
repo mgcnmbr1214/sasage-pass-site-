@@ -1196,6 +1196,39 @@ function mailReviseText(row, text, instruction) {
 }
 
 /**
+ * 添付できる合計の大きさ。Gmailの上限は25MBだが、
+ * 中身は文字に直して画面から渡すため、余裕を持たせて10MBにする。
+ */
+const MAIL_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * 画面から受け取ったファイルを、送信できる形に組み立てる。
+ *
+ * ブラウザからは中身をbase64の文字列で渡してもらう。
+ * 大きすぎるものは**送る前に**止める。送信の途中で失敗すると、
+ * 送れたのか送れていないのか分からなくなる。
+ */
+function mailBuildAttachments_(files) {
+  const list = files || [];
+  if (list.length === 0) return [];
+
+  let total = 0;
+  const blobs = list.map(function (file) {
+    const name = String(file.name || 'file').trim();
+    const bytes = Utilities.base64Decode(String(file.data || ''));
+    total += bytes.length;
+    return Utilities.newBlob(bytes, String(file.type || 'application/octet-stream'), name);
+  });
+
+  if (total > MAIL_ATTACHMENT_MAX_BYTES) {
+    throw new Error('添付ファイルの合計が大きすぎます（' +
+      Math.round(total / 1024 / 1024) + 'MB）。' + '\n' +
+      Math.round(MAIL_ATTACHMENT_MAX_BYTES / 1024 / 1024) + 'MB までにしてください。');
+  }
+  return blobs;
+}
+
+/**
  * その場で送信する。**下書きは作らない。**
  *
  * 下書きを作って人がGmailで送る形にしていたころは、送られたかどうかを
@@ -1203,7 +1236,7 @@ function mailReviseText(row, text, instruction) {
  * 実際には送信済みの返送が何度実行しても「下書き」のまま取り残された。
  * 自分で送れば、送ったことを確かめる必要がない。
  */
-function mailSendReply(row, text, fields) {
+function mailSendReply(row, text, fields, files) {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
@@ -1228,6 +1261,10 @@ function mailSendReply(row, text, fields) {
   const options = { name: 'ササゲパス' };
   const alias = boardGetSettings_(ss)['送信元エイリアス'];
   if (alias && GmailApp.getAliases().indexOf(alias) >= 0) options.from = alias;
+
+  // 添付の組み立ては送信より先に済ませる。途中で失敗させない
+  const attachments = mailBuildAttachments_(files);
+  if (attachments.length > 0) options.attachments = attachments;
 
   const threadId = String(values[BOARD_MAIL_COL.threadId - 1] || '');
   let message = null;
@@ -1288,8 +1325,13 @@ function mailSendReply(row, text, fields) {
 
   boardRefreshUnreplied_(ss);
   boardRefreshUnbilled_(ss);
-  boardLog_('②送信', preview.to + ' へ「' + preview.subject + '」を送信しました');
-  return { message: preview.to + ' へ送信しました。' + statusNote };
+  const attached = attachments.map(function (blob) { return blob.getName(); });
+  boardLog_('②送信', preview.to + ' へ「' + preview.subject + '」を送信しました' +
+    (attached.length > 0 ? '（添付: ' + attached.join('、') + '）' : ''));
+  return {
+    message: preview.to + ' へ送信しました。' +
+      (attached.length > 0 ? '\n' + '添付: ' + attached.join('、') : '') + statusNote
+  };
 }
 
 /** 送信ボタンを押す前に、宛先と件名を確かめてもらうための下ごしらえ。 */

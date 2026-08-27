@@ -65,6 +65,13 @@
   .inv-state { font-size: 12.5px; color: #5A6A8A; margin-bottom: 2px; }
   .steps-text { font-size: 12px; color: #5A6A8A; line-height: 1.9; white-space: pre-wrap; background: #fff; border-radius: 8px; padding: 8px 11px; margin: 8px 0 0; }
   .hint { font-size: 11.5px; color: #8A97B8; margin-top: 6px; line-height: 1.6; }
+  .files { margin-top: 8px; }
+  .files-add { font-size: 12px; color: #3B6EF8; cursor: pointer; }
+  .file-item { display: flex; align-items: center; gap: 8px; font-size: 12px;
+    color: #3D4A66; background: #F6F8FE; border-radius: 5px; padding: 5px 9px; margin-top: 5px; }
+  .file-size { color: #8A97B8; }
+  .file-del { margin-left: auto; color: #E5484D; cursor: pointer; border: 0; background: none;
+    font-size: 12px; padding: 0; }
   .hist { margin-top: 9px; }
   .hist summary { font-size: 12px; color: #3B6EF8; cursor: pointer; }
   .hist-item { border-top: 1px solid #EEF2FF; padding: 8px 0 0; margin-top: 8px; }
@@ -119,6 +126,63 @@
     var hit = null;
     types.forEach(function (t) { if (t.id === id) hit = t; });
     return hit;
+  }
+
+  /** 添付するファイル。{name, type, size, data(base64)} を並べて持つ。 */
+  var attachments = [];
+  /** 読み込み中のファイル数。0になるまで送信させない。 */
+  var reading = 0;
+  /**
+   * 合計10MBまで。Gmailの上限は25MBだが、
+   * ファイルの中身は文字に直してシートの画面から渡すため、余裕を持たせる。
+   */
+  var ATTACH_MAX = 10 * 1024 * 1024;
+
+  function renderFiles() {
+    var box = el('fileList');
+    if (!box) return;
+    box.innerHTML = attachments.map(function (f, i) {
+      return '<div class="file-item"><span>' + esc(f.name) + '</span>' +
+        '<span class="file-size">' + Math.max(1, Math.round(f.size / 1024)) + ' KB</span>' +
+        '<button class="file-del" data-i="' + i + '">外す</button></div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('.file-del'), function (b) {
+      b.addEventListener('click', function () {
+        attachments.splice(Number(b.getAttribute('data-i')), 1);
+        renderFiles();
+      });
+    });
+  }
+
+  /** 選ばれたファイルを読み込んで控える。読み終わるまで送信は押せない。 */
+  function addFiles(list) {
+    Array.prototype.forEach.call(list, function (file) {
+      var total = attachments.reduce(function (sum, f) { return sum + f.size; }, 0);
+      if (total + file.size > ATTACH_MAX) {
+        show('err', '添付の合計が10MBを超えます。「' + file.name + '」は追加しませんでした。');
+        return;
+      }
+      var reader = new FileReader();
+      reading++;
+      reader.onload = function () {
+        reading--;
+        attachments.push({
+          name: file.name,
+          type: file.type || 'application/octet-stream',
+          size: file.size,
+          data: String(reader.result).split(',')[1] || ''
+        });
+        renderFiles();
+        updateApprove();
+      };
+      reader.onerror = function () {
+        reading--;
+        updateApprove();
+        show('err', '「' + file.name + '」を読み込めませんでした。');
+      };
+      reader.readAsDataURL(file);
+    });
+    updateApprove();
   }
 
   function typedKey(type) { return (current ? current.row : 0) + ':' + type.id; }
@@ -355,10 +419,12 @@
       var input = el('fx_' + key);
       if (!input || !input.value) missing.push(key);
     });
-    btn.disabled = missing.length > 0;
+    btn.disabled = missing.length > 0 || reading > 0;
     var hint = el('approveHint');
     if (hint) {
-      hint.textContent = missing.length > 0
+      hint.textContent = reading > 0
+        ? '添付ファイルを読み込んでいます...'
+        : missing.length > 0
         ? '「' + type.requires.join('」「') + '」を入力すると押せるようになります。'
         : '';
     }
@@ -453,6 +519,9 @@
 
   function select(index) {
     current = items[index];
+    // 添付は選んだメールごとのもの。持ち越すと関係ない相手に送ってしまう
+    attachments = [];
+    reading = 0;
     el('main').innerHTML =
       '<div class="card"><h3>最新のメール</h3>' +
       '<textarea id="customerMail" readonly></textarea>' +
@@ -463,6 +532,9 @@
       '<div id="tasks"></div><div id="extras"></div></div>' +
       '<div class="card"><label>返信案（そのまま編集できます）</label>' +
       '<textarea id="editor"></textarea>' +
+      '<div class="files"><input type="file" id="fileInput" multiple style="display:none">' +
+      '<span class="files-add" id="fileAdd">＋ ファイルを添付する</span>' +
+      '<div id="fileList"></div></div>' +
       '<div class="btns">' +
       '<button class="b-main" id="btnApprove">この内容で送信する</button>' +
       '<button class="b-sub" id="btnOpenThread">Gmailで開く</button>' +
@@ -547,8 +619,10 @@
       show('ok', '宛先を確認しています...');
       google.script.run.withSuccessHandler(function (p) {
         busy(false);
+        var names = attachments.map(function (f) { return f.name; }).join('、');
         if (!confirm('このメールを送信します。取り消せません。\n\n' +
-          '宛先：' + p.to + '\n件名：' + p.subject + '\n\n' +
+          '宛先：' + p.to + '\n件名：' + p.subject +
+          (names ? '\n添付：' + names : '') + '\n\n' +
           body.slice(0, 120) + (body.length > 120 ? '…' : '') + '\n\nよろしいですか？')) return;
         busy(true);
         show('ok', '送信しています...');
@@ -557,9 +631,15 @@
           busy(false);
           reload(false);
         }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
-          .mailSendReply(current.row, body, fields);
+          .mailSendReply(current.row, body, fields, attachments);
       }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
         .mailGetSendPreview(current.row);
+    });
+
+    el('fileAdd').addEventListener('click', function () { el('fileInput').click(); });
+    el('fileInput').addEventListener('change', function () {
+      addFiles(this.files);
+      this.value = '';
     });
 
     el('btnOpenThread').addEventListener('click', function () {

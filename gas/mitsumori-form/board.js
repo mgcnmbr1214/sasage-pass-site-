@@ -1361,6 +1361,7 @@ function boardSetupTemplates_(ss) {
   boardMigrateQuoteTax_(sheet);
   boardMigrateTemplateNotes_(sheet);
   boardMigrateShipBackNextOrder_(sheet);
+  boardMigrateShipBackDetail_(sheet);
   boardMigrateQuoteTemplate_(sheet);
 
   const last = sheet.getLastColumn();
@@ -1466,6 +1467,29 @@ function boardMigrateQuoteTax_(sheet) {
  * すでにテンプレを作ったあとのスプレッドシートにも行き渡らせる。
  * **手で書き換えた本文は壊さない。** 見出しが無いときだけ、締めの前に差し込む。
  */
+/**
+ * T9 の依頼内容を、料金抜きの差し込みに切り替える。
+ *
+ * オプションごとの単価は数量で変わるため、実際の請求額と一致しない。
+ * 月間予定数も、実際に返送した点数とは別のもの。返送の連絡では出さない。
+ */
+function boardMigrateShipBackDetail_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return;
+
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
+  for (let c = 1; c < ids.length; c++) {
+    if (String(ids[c] || '').trim() !== 'T9') continue;
+    const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
+    const body = String(cell.getValue() || '');
+    if (!body || body.indexOf('{{依頼内容}}') < 0) return;
+
+    cell.setValue(body.replace('{{依頼内容}}', function () { return '{{依頼内容（料金なし）}}'; }));
+    boardLog_('移行', 'テンプレ T9 の依頼内容から料金表示を外しました');
+    return;
+  }
+}
+
 function boardMigrateShipBackNextOrder_(sheet) {
   const last = sheet.getLastColumn();
   if (last < 2) return;
@@ -1908,7 +1932,7 @@ function boardDefaultShipBackBody_() {
     '　追跡番号：{{返送追跡番号}}',
     '',
     '　ご依頼内容：',
-    '{{依頼内容}}',
+    '{{依頼内容（料金なし）}}',
     '',
     '　{{メモ}}',
     '',
@@ -3332,6 +3356,23 @@ function boardSaveCase(data) {
  * 案件の情報でテンプレートの変数を埋めた件名と本文を返す。
  * 予定点数が空欄のときは、その行ごと削除する（点数が空のまま送られないようにするため）。
  */
+/**
+ * 依頼内容から、料金と月間予定数を外した書き方。
+ *
+ * 返送の連絡で使う。**オプションごとの単価は実際の請求額と一致しない**
+ * （数量で変わる）し、月間予定数も実際に返送した点数とは別のもの。
+ * 並べて出すと、どれが請求額なのか読み取れなくなる。
+ */
+function boardDetailWithoutPrice_(text) {
+  return String(text == null ? '' : text)
+    .split('\n')
+    .filter(function (line) { return line.indexOf('月間予定数') < 0; })
+    .join('\n')
+    .replace(/[（(]\s*[¥￥][^）)]*[)）]/g, '')
+    .replace(/[ 　]{2,}/g, ' ')
+    .trim();
+}
+
 function boardBuildTemplateText_(ss, caseRow, templateId, extra) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const v = sheet.getRange(Number(caseRow), 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
@@ -3348,6 +3389,8 @@ function boardBuildTemplateText_(ss, caseRow, templateId, extra) {
     '会社名': customer.company,
     '担当者名': customer.name,
     '依頼内容': v[BOARD_COL.detail - 1],
+    // 返送の連絡だけは料金抜きで出す。請求額と取り違えられないようにする
+    '依頼内容（料金なし）': boardDetailWithoutPrice_(v[BOARD_COL.detail - 1]),
     '予定点数': qty,
     '単価': v[BOARD_COL.unitPrice - 1],
     '受付開始日': boardFormatDate_(v[BOARD_COL.startDate - 1]),
