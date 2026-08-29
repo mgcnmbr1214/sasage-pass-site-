@@ -125,14 +125,16 @@ const BOARD_CUSTOMER_HEADERS = [
   '顧客ID', '会社名・屋号', '担当者名', 'メールアドレス', '電話番号',
   'ストア名', '代表者名義', '請求先 郵便番号', '請求先 住所',
   '返送先 郵便番号', '返送先 住所', '返送先 宛名', '返送先 電話番号',
-  '依頼内容', '月間予定数', '単価', '初回問い合わせ日', '最終更新日', 'メモ', 'Square顧客ID'
+  '依頼内容', '月間予定数', '単価', '初回問い合わせ日', '最終更新日', 'メモ', 'Square顧客ID',
+  '契約書署名日', 'カード登録', '登録の確認日'
 ];
 
 const BOARD_CUSTOMER_COL = {
   id: 1, company: 2, name: 3, email: 4, tel: 5,
   storeName: 6, representative: 7, billZip: 8, billAddress: 9,
   returnZip: 10, returnAddress: 11, returnName: 12, returnTel: 13,
-  detail: 14, monthly: 15, unitPrice: 16, firstAt: 17, updatedAt: 18, memo: 19, squareId: 20
+  detail: 14, monthly: 15, unitPrice: 16, firstAt: 17, updatedAt: 18, memo: 19, squareId: 20,
+  signedAt: 21, card: 22, checkedAt: 23
 };
 
 /**
@@ -537,6 +539,11 @@ function boardSetup() {
     boardLog_('②エラー', '顧客情報の補完に失敗: ' + err.message);
   }
 
+  try {
+    squareRefreshRegistrations(ss);
+  } catch (err) {
+    boardLog_('②エラー', '署名とカードの確認に失敗: ' + err.message);
+  }
   try {
     boardMigrateShipmentDrafts_(ss);
   } catch (err) {
@@ -3643,7 +3650,10 @@ function boardFindCustomer_(ss, customerId) {
         returnName: text('returnName'),
         returnTel: text('returnTel'),
         unitPrice: rows[i][BOARD_CUSTOMER_COL.unitPrice - 1],
-        squareId: text('squareId')
+        squareId: text('squareId'),
+        // 契約書の署名日は一度見つけたら残す。メールは90日で探せなくなる
+        signedAt: rows[i][BOARD_CUSTOMER_COL.signedAt - 1],
+        card: text('card')
       };
     }
   }

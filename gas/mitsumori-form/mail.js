@@ -368,6 +368,11 @@ function mailScan_(options) {
   mailRefreshSentStatus_(ss);
   mailSyncSentReplies_(ss);
   try {
+    squareRefreshRegistrations(ss);
+  } catch (err) {
+    boardLog_('②エラー', '署名とカードの確認に失敗: ' + err.message);
+  }
+  try {
     squareRefreshInvoices(ss);
   } catch (err) {
     boardLog_('②エラー', '請求書の状態確認に失敗: ' + err.message);

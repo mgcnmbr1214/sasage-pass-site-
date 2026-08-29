@@ -273,7 +273,11 @@ function squareGetFlowState() {
 
 const SQUARE_SIGN_SENDER = 'noreply@messaging.squareup.com';
 const SQUARE_SIGN_KEYWORD = '署名されました';
+/** 件名の言い回しが変わっても拾えるよう、本文側の手がかりも見る。 */
+const SQUARE_SIGN_KEYWORD_ALT = '署名済みの契約書';
 const SQUARE_SIGN_LOOKBACK_DAYS = 90;
+/** 署名とカードを見に行く間隔。毎回だとGmailとSquareを無駄に叩く。 */
+const SQUARE_REGISTRATION_CHECK_HOURS = 6;
 
 /**
  * 「支払い情報登録・契約書署名待ち」の案件について、
@@ -283,6 +287,91 @@ const SQUARE_SIGN_LOOKBACK_DAYS = 90;
  * 「契約書番号◯◯が◯◯様によって署名されました」のメールで判定する。
  * 両方そろった案件だけ、署名・支払確認日を記録して連絡を促す。
  */
+/**
+ * お客様ごとの「契約書署名日」と「カード登録」を最新にする。
+ *
+ * **Squareに契約書のAPIは無い。** 開発者フォーラムで2021年から要望が出ているが、
+ * 実装されていない。webhookにも契約や署名の種類は無い。
+ * そのため署名はSquareからの通知メールで見つけるしかない。
+ *
+ * ただし**見つけた日付は顧客タブに残す**。メールは90日で検索から外れるが、
+ * 記録が残っていれば、そのあとも署名済みだと分かる。
+ * Squareの画面で確認した日付を手で入れてもよい。**メールは見つけるきっかけにすぎない。**
+ *
+ * カードのほうはAPIで直接分かる。期限切れや無効化も読み取れる。
+ */
+function squareRefreshRegistrations(ss) {
+  const book = ss || SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = book.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CUSTOMER_HEADERS.length).getValues();
+  const now = new Date();
+  const due = now.getTime() - SQUARE_REGISTRATION_CHECK_HOURS * 3600 * 1000;
+  let changed = 0;
+
+  rows.forEach(function (row, i) {
+    const email = String(row[BOARD_CUSTOMER_COL.email - 1] || '').trim();
+    if (!boardIsEmail_(email)) return;
+
+    // 毎回すべて問い合わせると、GmailもSquareも無駄に叩く
+    const checkedAt = row[BOARD_CUSTOMER_COL.checkedAt - 1];
+    if (checkedAt instanceof Date && checkedAt.getTime() > due) return;
+
+    const customer = {
+      email: email,
+      name: row[BOARD_CUSTOMER_COL.name - 1],
+      squareId: String(row[BOARD_CUSTOMER_COL.squareId - 1] || '').trim()
+    };
+
+    // 署名日はまだ分かっていないときだけ探す。一度入れたら上書きしない
+    if (!row[BOARD_CUSTOMER_COL.signedAt - 1]) {
+      const signedAt = squareFindSignedDate_(customer);
+      if (signedAt) {
+        sheet.getRange(i + 2, BOARD_CUSTOMER_COL.signedAt).setValue(signedAt);
+        boardLog_('Square', row[BOARD_CUSTOMER_COL.id - 1] + ' の契約書署名を確認しました（' +
+          Utilities.formatDate(signedAt, Session.getScriptTimeZone(), 'yyyy/MM/dd') + '）');
+        changed++;
+      }
+    }
+
+    const label = squareCardLabel_(customer.squareId);
+    if (label !== String(row[BOARD_CUSTOMER_COL.card - 1] || '')) {
+      sheet.getRange(i + 2, BOARD_CUSTOMER_COL.card).setValue(label);
+      boardLog_('Square', row[BOARD_CUSTOMER_COL.id - 1] + ' のカード登録: ' + (label || 'なし'));
+      changed++;
+    }
+    sheet.getRange(i + 2, BOARD_CUSTOMER_COL.checkedAt).setValue(now);
+  });
+
+  return changed;
+}
+
+/**
+ * 保存されたカードの表示。無ければ空。
+ * **有効期限も出す。** 期限が切れると月々の請求が止まるが、
+ * 止まってから気づいたのでは遅い。
+ */
+function squareCardLabel_(squareCustomerId) {
+  if (!squareCustomerId) return '';
+  let card;
+  try {
+    card = squareFindCardOnFile_(squareCustomerId);
+  } catch (err) {
+    boardLog_('Square', 'カードの確認に失敗: ' + err.message);
+    return '';
+  }
+  if (!card) return '';
+
+  const month = Number(card.exp_month || 0);
+  const year = Number(card.exp_year || 0);
+  const expiry = month && year
+    ? year + '/' + (month < 10 ? '0' + month : month) + 'まで'
+    : '有効期限不明';
+  return String(card.card_brand || 'カード') + ' ****' + String(card.last_4 || '????') +
+    '（' + expiry + '）';
+}
+
 function squareCheckCompletions() {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -309,7 +398,9 @@ function squareCheckCompletions() {
 
     const invoice = squareGetInvoice_(invoiceId);
     const paid = invoice && (invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID');
-    const signedAt = squareFindSignedDate_(customer);
+    // 顧客タブに残した署名日を先に見る。手で入れた日付もここで効く
+    const signedAt = customer.signedAt instanceof Date
+      ? customer.signedAt : squareFindSignedDate_(customer);
 
     if (!paid || !signedAt) {
       boardLog_('Square', caseId + '：支払い ' +
@@ -413,7 +504,8 @@ function squareFindSignedDate_(customer) {
   const keys = squareIdentityKeys_(customer);
   if (keys.length === 0) return null;
 
-  const query = 'from:' + SQUARE_SIGN_SENDER + ' "' + SQUARE_SIGN_KEYWORD + '"' +
+  const query = 'from:' + SQUARE_SIGN_SENDER +
+    ' ("' + SQUARE_SIGN_KEYWORD + '" OR "' + SQUARE_SIGN_KEYWORD_ALT + '")' +
     ' newer_than:' + SQUARE_SIGN_LOOKBACK_DAYS + 'd';
   let threads;
   try {
@@ -428,9 +520,11 @@ function squareFindSignedDate_(customer) {
     thread.getMessages().forEach(function (message) {
       if (String(message.getFrom() || '').indexOf(SQUARE_SIGN_SENDER) < 0) return;
       const subject = String(message.getSubject() || '');
-      if (subject.indexOf(SQUARE_SIGN_KEYWORD) < 0) return;
+      const body = String(message.getBody() || '');
+      // 件名の言い回しが変わっても、本文の手がかりで拾えるようにする
+      if (subject.indexOf(SQUARE_SIGN_KEYWORD) < 0 && body.indexOf(SQUARE_SIGN_KEYWORD_ALT) < 0) return;
 
-      const haystack = squareNormalizeIdentity_(subject + ' ' + String(message.getBody() || ''));
+      const haystack = squareNormalizeIdentity_(subject + ' ' + body);
       const hit = keys.some(function (key) { return haystack.indexOf(key) >= 0; });
       if (!hit) return;
       if (!latest || message.getDate() > latest) latest = message.getDate();
