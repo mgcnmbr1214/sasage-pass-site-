@@ -14,7 +14,7 @@
 
   var CONFIG = {
     // GA4の「測定ID」。G- から始まります。  例: 'G-XXXXXXXXXX'
-    GA4_ID: '',
+    GA4_ID: 'G-BXM34QJ761',
 
     // Google広告の「コンバージョンID」。AW- から始まります。  例: 'AW-123456789'
     GOOGLE_ADS_ID: '',
