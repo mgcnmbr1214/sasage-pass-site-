@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>1分で料金チェック | ササゲパス</title>
+  <meta name="description" content="ササゲパスの概算見積もり。ご希望のサービスと数量を選ぶだけで、1分で料金の目安が分かります。撮影・採寸・出品を1点500円〜、クリーニング無料。">
+  <link rel="canonical" href="https://sasagepass.com/mitsumori/">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <!-- 計測タグ（IDの設定は /tracking.js の CONFIG で行います） -->
+  <script src="/tracking.js"></script>
+
+  <style>
+    :root {
+      --navy: #3B6EF8;
+      --gray-mid: #DDE4F8;
+      --text: #1E293B;
+      --text-mid: #5A6A8A;
+      --header-h: 56px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+    body {
+      font-family: 'Noto Sans JP', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f7f3ed;
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .mt-header {
+      flex: 0 0 auto;
+      height: var(--header-h);
+      background: #fff;
+      border-bottom: 1px solid var(--gray-mid);
+      display: flex;
+      align-items: center;
+    }
+    .mt-header-inner {
+      width: 100%;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .mt-logo img { height: 30px; width: auto; display: block; }
+    .mt-back {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-mid);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .mt-back:hover { color: var(--navy); }
+
+    /* フォーム本体は残り全面を占め、内部でスクロールします。
+       （Googleサイトでの現行の見え方と同じ方式です） */
+    .mt-frame-wrap { flex: 1 1 auto; min-height: 0; }
+    #estimateFrame { display: block; width: 100%; height: 100%; border: 0; }
+
+    @media (max-width: 767px) {
+      :root { --header-h: 48px; }
+      .mt-header-inner { padding: 0 14px; }
+      .mt-logo img { height: 24px; }
+      .mt-back { font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="mt-header">
+    <div class="mt-header-inner">
+      <a href="/" class="mt-logo">
+        <img src="https://sasagepass.square.site/uploads/b/f1910340-c84c-11f0-97f6-71a006ccaaab/%E3%82%B5%E3%82%B5%E3%82%B2%E3%83%91%E3%82%B9%20%E3%83%AD%E3%82%B4%20%282%29.png" alt="ササゲパス">
+      </a>
+      <a href="/" class="mt-back">← サービス内容に戻る</a>
+    </div>
+  </header>
+
+  <div class="mt-frame-wrap">
+    <iframe
+      id="estimateFrame"
+      src="https://script.google.com/macros/s/AKfycbwUoYXP1qgqAXsjvYX6YH_BU-nKWgV8AQkop7FG5-_kB-Rp18zZuJqnqbMAF7TlyoLl/exec"
+      title="ササゲパス 概算見積もりフォーム"
+      loading="eager"
+      referrerpolicy="no-referrer-when-downgrade"></iframe>
+  </div>
+
+  <script>
+    (function () {
+      // GASは自分のHTMLを入れ子のサンドボックスiframeで描画するため、
+      // 送信元は script.google.com ではなく *.googleusercontent.com になります。
+      // そのため送信元ウィンドウでの一致判定は使えず、オリジンで検証します。
+      var ALLOWED_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*googleusercontent\.com$|^https:\/\/script\.google\.com$/;
+
+      window.addEventListener('message', function (e) {
+        if (!ALLOWED_ORIGIN.test(e.origin)) return;
+
+        var data = e.data;
+        if (!data || typeof data !== 'object') return;
+        if (data.source !== 'sasage-estimate') return;
+
+        // 見積フォームの送信完了 → コンバージョン計測
+        if (data.type === 'submitted') {
+          if (window.sasageTrack) window.sasageTrack('estimate_submit');
+        }
+      }, false);
+    })();
+  </script>
+
+</body>
+</html>
