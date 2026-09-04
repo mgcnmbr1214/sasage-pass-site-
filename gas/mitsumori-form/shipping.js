@@ -107,7 +107,8 @@ function shipAnalyze_(apiKey, message) {
     '判定の基準:',
     '- shipped: お客様が商品を発送したと読み取れる場合に true。発送予定や検討中は false。',
     '- tracking: 送り状のお問い合わせ番号。本文か画像から読み取る。数字とハイフンのみ。無ければ空文字。',
-    '- quantity: 発送された点数。書かれていなければ空文字。',
+    '- quantity: 発送された商品の点数。書かれていなければ空文字。',
+    '  送り状の「個数」は荷物（箱）の数であって商品の点数ではない。点数として使わないこと。',
     '- arrival: 到着予定日。書かれていなければ空文字。',
     '- notes: メンテナンスの指定や取り扱いの注意など、作業者が知るべきこと。無ければ空文字。',
     '- 推測で埋めないこと。読み取れないものは空文字にする。'
@@ -156,19 +157,23 @@ function shipImageParts_(message) {
   return parts;
 }
 
-/** 作業チームへ渡す内容。料金は載せない。 */
+/** 作業チームへ渡す内容。料金と月間予定数は載せない。 */
 function shipBuildTeamNote_(row, customer, tracking, result) {
-  const detail = String(row[BOARD_COL.detail - 1] || '')
-    .split('\n')
-    .map(function (line) { return line.replace(/（[^）]*¥[^）]*）/g, '').trim(); })
+  const detail = boardDetailWithoutPrice_(row[BOARD_COL.detail - 1])
+    .split(String.fromCharCode(10))
+    .map(function (line) { return line.trim(); })
     .filter(function (line) { return line; })
     .map(function (line) { return '　・' + line; })
-    .join('\n');
+    .join(String.fromCharCode(10));
 
-  // 「10点」と答えられても「10点点」にならないよう数字だけ取り出す
-  const answered = String(result.quantity || '').trim() || String(row[BOARD_COL.qty - 1] || '').trim();
-  const count = boardExtractCount_(answered);
-  const quantity = count === '' ? answered : String(count);
+  // **点数は案件ボードの予定点数を正とする。**
+  // 送り状の写真には「個数 1」（荷物の数）と書かれており、それを点数として
+  // 読み取ってしまい、22点のご依頼が「1点」になったことがある。
+  // メールから読み取った数は、予定点数が空のときだけ使う
+  const planned = boardExtractCount_(row[BOARD_COL.qty - 1]);
+  const read = boardExtractCount_(result.quantity);
+  const quantity = planned !== '' ? String(planned)
+    : (read !== '' ? String(read) : String(result.quantity || '').trim());
   const due = boardFormatDateRange_(row[BOARD_COL.dueFrom - 1], row[BOARD_COL.dueTo - 1]);
 
   const lines = [
@@ -198,11 +203,21 @@ function shipBuildTeamNote_(row, customer, tracking, result) {
   lines.push('■ 作業内容');
   lines.push(detail || '　（未設定）');
 
+  // 案件のメモは、その案件でずっと守ってほしいこと。毎回渡す
+  const memo = String(row[BOARD_COL.memo - 1] || '').trim();
+  if (memo) {
+    lines.push('');
+    lines.push('■ メモ');
+    memo.split(String.fromCharCode(10)).forEach(function (line) {
+      if (line.trim()) lines.push('　' + line.trim());
+    });
+  }
+
   if (result.notes) {
     lines.push('');
     lines.push('■ お客様からの指定');
     lines.push('　' + result.notes);
   }
 
-  return lines.join('\n');
+  return lines.join(String.fromCharCode(10));
 }
