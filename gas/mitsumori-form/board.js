@@ -3090,6 +3090,7 @@ function boardRefreshUnbilled_(ss) {
   }
 
   const unpaid = boardUnpaidInvoiceCases_(ss);
+  boardTraceUnpaid_(unpaid);
   const base = ss.getUrl().split('#')[0] + '#gid=' + (ships ? ships.getSheetId() : 0) + '&range=A';
   const rows = cases.getLastRow() - 1;
   const caseIds = cases.getRange(2, BOARD_COL.caseId, rows, 1).getValues();
@@ -3120,6 +3121,25 @@ function boardRefreshUnbilled_(ss) {
       return [value.build()];
     })
   );
+}
+
+/**
+ * 未入金として拾えた案件を、変わったときだけ記録に残す。
+ *
+ * 請求済の返送があるのに案件ボードへ「未入金あり」が出ない、という
+ * 原因の分からない食い違いがあった。**次に起きたとき、どちらが欠けているか分かるようにする。**
+ * 毎回は書かない。中身が前回と変わったときだけ。
+ */
+function boardTraceUnpaid_(unpaid) {
+  try {
+    const ids = Object.keys(unpaid).sort().join(',');
+    const props = PropertiesService.getScriptProperties();
+    if (props.getProperty('UNPAID_TRACE') === ids) return;
+    props.setProperty('UNPAID_TRACE', ids);
+    boardLog_('請求', '未入金として拾えた案件: ' + (ids || '（なし）'));
+  } catch (err) {
+    // 記録に失敗しても本体は止めない
+  }
 }
 
 /**
