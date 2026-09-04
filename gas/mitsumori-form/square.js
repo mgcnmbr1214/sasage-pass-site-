@@ -798,8 +798,10 @@ function squareVerifyInvoiceId_(ss, caseRow) {
   if (!invoiceId) return '';
   if (!squareGetToken_()) return invoiceId;
 
-  const invoice = squareGetInvoice_(invoiceId);
-  if (invoice && invoice.status !== 'CANCELED') return invoiceId;
+  const got = squareTryGetInvoice_(invoiceId);
+  if (got.invoice && got.invoice.status !== 'CANCELED') return invoiceId;
+  // 取れなかっただけなら記録は残す。消すと請求書とのつながりが切れる
+  if (!got.invoice && !got.missing) return invoiceId;
 
   sheet.getRange(caseRow, BOARD_COL.invoiceId).setValue('');
   boardLog_('Square', sheet.getRange(caseRow, BOARD_COL.caseId).getValue() +
@@ -945,13 +947,30 @@ function squareCreateFeeOrder_(locationId, customerId) {
   return data.order;
 }
 
-function squareGetInvoice_(invoiceId) {
+/**
+ * 請求書を取り出す。**「取れなかった」と「Squareに無い」を区別する。**
+ *
+ * 以前はどちらも null を返していたため、通信が一時的に失敗しただけで
+ * 「請求書が消えた」と判断し、送信済みの請求書を取消にしていた。
+ * 実際に古川様の8月分がそれで取消になり、返送が未請求に戻っている。
+ *
+ * missing が true なのは、Squareが「そんな請求書は無い」と答えたときだけ。
+ */
+function squareTryGetInvoice_(invoiceId) {
   try {
-    return squareFetch_('GET', '/invoices/' + invoiceId).invoice || null;
+    return { invoice: squareFetch_('GET', '/invoices/' + invoiceId).invoice || null, missing: false };
   } catch (err) {
-    boardLog_('Square', '請求書の取得に失敗: ' + err.message);
-    return null;
+    const message = String(err.message || '');
+    const missing = message.indexOf('(404)') >= 0 || message.indexOf('NOT_FOUND') >= 0;
+    if (!missing) {
+      boardLog_('Square', '請求書の状態を確認できませんでした（次回また確認します）: ' + message);
+    }
+    return { invoice: null, missing: missing };
   }
+}
+
+function squareGetInvoice_(invoiceId) {
+  return squareTryGetInvoice_(invoiceId).invoice;
 }
 
 function squareDashboardUrl_(invoiceId) {
@@ -1000,6 +1019,9 @@ function squareGetOrder_(orderId) {
   }
 }
 
+/** 一時的な失敗で諦めない回数。帯域の上限などは、少し待てば直る。 */
+const SQUARE_FETCH_TRIES = 3;
+
 function squareFetch_(method, path, payload) {
   const token = squareGetToken_();
   if (!token) throw new Error('Squareのアクセストークンが未登録です。');
@@ -1015,13 +1037,33 @@ function squareFetch_(method, path, payload) {
   };
   if (payload) options.payload = JSON.stringify(payload);
 
-  const response = UrlFetchApp.fetch(SQUARE_API_BASE + path, options);
-  const code = response.getResponseCode();
-  const text = response.getContentText();
-  if (code < 200 || code >= 300) {
-    throw new Error('Square APIエラー (' + code + ') ' + path + '\n' + text.slice(0, 500));
+  // **一時的な失敗を「無い」と取り違えないこと。**
+  // 帯域の上限に当たっただけで請求書が消えたと判断し、
+  // 送信済みの請求書を取消にしてしまったことがある。まず数回試す
+  let last = '';
+  for (let attempt = 1; attempt <= SQUARE_FETCH_TRIES; attempt++) {
+    let response = null;
+    try {
+      response = UrlFetchApp.fetch(SQUARE_API_BASE + path, options);
+    } catch (err) {
+      last = 'Squareに接続できませんでした: ' + err.message;
+      if (attempt < SQUARE_FETCH_TRIES) { Utilities.sleep(attempt * 1500); continue; }
+      throw new Error(last);
+    }
+
+    const code = response.getResponseCode();
+    const text = response.getContentText();
+    if (code >= 200 && code < 300) return JSON.parse(text);
+
+    last = 'Square APIエラー (' + code + ') ' + path + '\n' + text.slice(0, 500);
+    // 混み合っているときとSquare側の不具合は、時間をおけば直る
+    if ((code === 429 || code >= 500) && attempt < SQUARE_FETCH_TRIES) {
+      Utilities.sleep(attempt * 1500);
+      continue;
+    }
+    throw new Error(last);
   }
-  return JSON.parse(text);
+  throw new Error(last);
 }
 
 // ------------------------------------------------------------
@@ -1265,6 +1307,39 @@ function squareYen_(amount) {
  * 返送履歴の状態も一緒に進める。
  * 送信済 → 請求済、支払い済 → 支払い済。取り消された請求書は未請求に戻す。
  */
+/**
+ * 請求書に含まれていた返送を、返送履歴から探し直して結び付ける。
+ *
+ * 取消と誤って判断したときに、返送側の請求書IDを消してしまっていた。
+ * 「対象の返送」に案件IDと日付が残っているので、そこから戻せる。
+ * すでに結び付いている行には触らない。
+ */
+function squareRelinkShipments_(ss, targets, invoiceId, month) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const wanted = {};
+  String(targets || '').split(String.fromCharCode(10)).forEach(function (line) {
+    const key = line.trim();
+    if (key) wanted[key] = true;
+  });
+  if (Object.keys(wanted).length === 0) return 0;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_SHIPMENT_HEADERS.length).getValues();
+  let linked = 0;
+  rows.forEach(function (row, i) {
+    if (String(row[BOARD_SHIPMENT_COL.invoiceId - 1] || '').trim()) return;
+    const key = String(row[BOARD_SHIPMENT_COL.caseId - 1] || '').trim() + ' ' +
+      boardFormatDate_(row[BOARD_SHIPMENT_COL.date - 1]);
+    if (!wanted[key]) return;
+    sheet.getRange(i + 2, BOARD_SHIPMENT_COL.invoiceId).setValue(invoiceId);
+    sheet.getRange(i + 2, BOARD_SHIPMENT_COL.billingMonth).setValue(month);
+    linked++;
+  });
+  if (linked > 0) boardLog_('請求', linked + ' 件の返送を請求書に結び付け直しました（' + invoiceId + '）');
+  return linked;
+}
+
 function squareRefreshInvoices(ss) {
   const target = ss || SpreadsheetApp.getActiveSpreadsheet();
   const sheet = target.getSheetByName(BOARD_SHEET_INVOICES);
@@ -1275,27 +1350,36 @@ function squareRefreshInvoices(ss) {
 
   rows.forEach(function (row, i) {
     const status = String(row[BOARD_INVOICE_COL.status - 1] || '').trim();
-    if (status === INVOICE_STATUS_PAID || status === INVOICE_STATUS_CANCELED) return;
+    // **取消も見直す。** 誤って取消にしたものが、そのまま埋もれないようにする
+    if (status === INVOICE_STATUS_PAID) return;
     const invoiceId = String(row[BOARD_INVOICE_COL.invoiceId - 1] || '').trim();
     if (!invoiceId) return;
 
-    const invoice = squareGetInvoice_(invoiceId);
-    if (!invoice) {
-      // Squareから消えている。請求のやり直しができるよう未請求に戻す
+    const got = squareTryGetInvoice_(invoiceId);
+    if (!got.invoice) {
+      // 取れなかっただけかもしれない。**Squareが「無い」と答えたときだけ**取消にする
+      if (!got.missing || status === INVOICE_STATUS_CANCELED) return;
       sheet.getRange(i + 2, BOARD_INVOICE_COL.status).setValue(INVOICE_STATUS_CANCELED);
       squareResetShipments_(target, invoiceId);
       moved.push(row[BOARD_INVOICE_COL.customer - 1] + '→取消');
       return;
     }
 
-    const next = squareInvoiceStateLabel_(invoice.status);
+    const next = squareInvoiceStateLabel_(got.invoice.status);
+    if (next === status) return;
+
     if (next === INVOICE_STATUS_CANCELED) {
       sheet.getRange(i + 2, BOARD_INVOICE_COL.status).setValue(next);
       squareResetShipments_(target, invoiceId);
       moved.push(row[BOARD_INVOICE_COL.customer - 1] + '→取消');
       return;
     }
-    if (next === status) return;
+
+    // 取消から戻るときは、切れてしまった返送との結び付きも直す
+    if (status === INVOICE_STATUS_CANCELED) {
+      squareRelinkShipments_(target, row[BOARD_INVOICE_COL.targets - 1], invoiceId,
+        row[BOARD_INVOICE_COL.month - 1]);
+    }
 
     sheet.getRange(i + 2, BOARD_INVOICE_COL.status).setValue(next);
     if (next === INVOICE_STATUS_SENT) {
@@ -1347,8 +1431,8 @@ function squareResetShipments_(ss, invoiceId) {
   sheet.getRange(2, BOARD_SHIPMENT_COL.invoiceId, sheet.getLastRow() - 1, 1).getValues()
     .forEach(function (row, i) {
       if (String(row[0] || '').trim() !== invoiceId) return;
+      // 請求書IDは残す。**消すとどの請求に含まれていたか分からなくなり、戻せない**
       sheet.getRange(i + 2, BOARD_SHIPMENT_COL.status).setValue(SHIP_STATUS_SENT);
-      sheet.getRange(i + 2, BOARD_SHIPMENT_COL.invoiceId).setValue('');
       sheet.getRange(i + 2, BOARD_SHIPMENT_COL.billingMonth).setValue('');
     });
 }
