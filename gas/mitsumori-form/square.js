@@ -414,7 +414,7 @@ function squareCheckCompletions() {
 
   rows.forEach(function (row, i) {
     if (String(row[BOARD_COL.status - 1] || '').trim() !== BOARD_STATUS_SIGNING) return;
-    if (row[BOARD_COL.signedAt - 1]) return;
+    if (boardCustomerSignedAt_(ss, row[BOARD_COL.customerId - 1])) return;
 
     const customer = boardFindCustomer_(ss, row[BOARD_COL.customerId - 1]);
     if (!customer || !boardIsEmail_(customer.email)) return;
@@ -439,7 +439,13 @@ function squareCheckCompletions() {
       return;
     }
 
-    sheet.getRange(i + 2, BOARD_COL.signedAt).setValue(signedAt);
+    // 署名日は顧客タブへ書く。案件ごとに持つものではない
+    const customerRow = boardFindCustomerRow_(ss, row[BOARD_COL.customerId - 1]);
+    if (customerRow) {
+      const cell = ss.getSheetByName(BOARD_SHEET_CUSTOMERS)
+        .getRange(customerRow.row, BOARD_CUSTOMER_COL.signedAt);
+      if (!cell.getValue()) cell.setValue(signedAt);
+    }
     sheet.getRange(i + 2, BOARD_COL.status).setValue('発送待ち');
     boardSetTodoFormula_(sheet, i + 2);
     boardSetOwnerFormula_(sheet, i + 2);

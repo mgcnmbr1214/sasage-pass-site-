@@ -975,7 +975,8 @@ function mailBuildCaseContext_(row, expectedCustomerId) {
       : v[BOARD_COL.qty - 1]),
     firstQty: text(customerPlan.firstQty),
     missing: missing.map(function (m) { return String(m); }),
-    signedAt: text(boardToInputDate_(v[BOARD_COL.signedAt - 1])),
+    // 署名日は顧客タブが正。案件ボードには持たない
+    signedAt: text(boardToInputDate_(boardCustomerSignedAt_(ss, customerId))),
     invoiceId: text(invoiceId),
     invoiceStatus: text(invoice ? invoice.status : ''),
     invoiceUrl: text(invoiceId ? squareDashboardUrl_(invoiceId) : ''),
@@ -992,9 +993,18 @@ function mailSaveCaseFields(caseRow, data) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const row = Number(caseRow);
 
+  const customerId = sheet.getRange(row, BOARD_COL.customerId).getValue();
+
   Object.keys(data || {}).forEach(function (key) {
     const field = BOARD_CASE_FIELDS[key];
-    if (!field || !field.col) return;   // 案件ボードに列が無い項目（返送の点数など）は保存しない
+    if (!field) return;
+
+    // 署名日のように、お客様のものは顧客タブへ書く
+    if (field.customerCol) {
+      mailSaveCustomerField_(ss, customerId, field, data[key]);
+      return;
+    }
+    if (!field.col) return;   // 案件ボードに列が無い項目（返送の点数など）は保存しない
     const col = BOARD_COL[field.col];
     if (!col) return;
     const value = data[key];
@@ -1030,6 +1040,16 @@ function mailRequireShipmentFields_(values, fields) {
     throw new Error('「' + missing.join('」「') + '」が入力されていません。\n' +
       '返送の記録に必要です。入力してから保存してください。');
   }
+}
+
+/** お客様に紐づく項目を顧客タブへ書く。案件ボードには置かないもの。 */
+function mailSaveCustomerField_(ss, customerId, field, value) {
+  const found = boardFindCustomerRow_(ss, String(customerId || '').trim());
+  if (!found) return;
+  const col = BOARD_CUSTOMER_COL[field.customerCol];
+  if (!col) return;
+  ss.getSheetByName(BOARD_SHEET_CUSTOMERS).getRange(found.row, col)
+    .setValue(field.type === 'date' ? boardFromInputDate_(value) : value);
 }
 
 /** 返送の入力欄を、テンプレートの差し込み名に置き換える。 */

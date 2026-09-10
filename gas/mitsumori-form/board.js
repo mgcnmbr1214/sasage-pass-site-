@@ -91,7 +91,7 @@ const BOARD_CASE_HEADERS = [
   '案件ID', 'ステータス', 'お客様の登録状況', '対応者', 'お客様', '依頼日', '予定点数', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
   '未返信', '未請求の返送',
   '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール', '単価',
-  '請求書送付日', 'Square請求書ID', '署名・支払確認日',
+  '請求書送付日', 'Square請求書ID',
   '追跡番号', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
@@ -100,8 +100,8 @@ const BOARD_COL = {
   startDate: 8, dueFrom: 9, dueTo: 10, todo: 11,
   unreplied: 12, unbilled: 13,
   customerId: 14, detail: 15, formInquiry: 16, lastInbound: 17, lastOutbound: 18, unitPrice: 19,
-  invoiceSent: 20, invoiceId: 21, signedAt: 22,
-  tracking: 23, teamNote: 24, guideDraftAt: 25, lastContact: 26, memo: 27, sourceRow: 28
+  invoiceSent: 20, invoiceId: 21,
+  tracking: 22, teamNote: 23, guideDraftAt: 24, lastContact: 25, memo: 26, sourceRow: 27
 };
 
 /**
@@ -271,7 +271,8 @@ const BOARD_CASE_FIELDS = {
   dueFrom: { label: '納期予定（自）', type: 'date', col: 'dueFrom' },
   dueTo: { label: '納期予定（至）', type: 'date', col: 'dueTo' },
   qty: { label: '予定点数', type: 'number', col: 'qty' },
-  signedAt: { label: '署名・支払確認日', type: 'date', col: 'signedAt' },
+  // 署名日はお客様のもの。顧客タブへ書く（案件ボードには置かない）
+  signedAt: { label: '署名・支払確認日', type: 'date', customerCol: 'signedAt' },
   // 返送のときだけ使う。案件ボードには書かず、返送履歴に残す。
   // 案件ボードの「追跡番号」はお客様から弊社への発送のものなので、上書きしない
   shipQty: { label: '返送した点数', type: 'number', col: '' },
@@ -688,12 +689,49 @@ function boardMigrateCases_(ss) {
   boardSyncColumns_(sheet);
 
   // 引き直したあとに中身を書き換える。順番を逆にすると別の列を潰す
+  // 署名日はお客様のもの。顧客タブへ移してから案件ボードの列を消す
+  headers = boardMoveSignedAtToCustomers_(ss, sheet, headers);
+
   boardRenameStatuses_(sheet);
 
   // 顧客タブに受け皿ができてから移す
   boardMigrateCustomers_(ss);
   boardMoveFirstPlanToCustomers_(ss);
   boardSyncColumns_(sheet);
+}
+
+/**
+ * 案件ボードの「署名・支払確認日」を顧客タブへ移し、列を消す。
+ *
+ * 契約は一度きりのお客様の情報で、依頼ごとに持つものではない。
+ * 案件ボードには**依頼ごとに変わるものだけ**を置く。
+ */
+function boardMoveSignedAtToCustomers_(ss, sheet, headers) {
+  const col = headers.indexOf('署名・支払確認日') + 1;
+  if (!col) return headers;
+
+  const idCol = headers.indexOf('顧客ID') + 1;
+  const customers = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  let moved = 0;
+
+  if (idCol && customers && sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues()
+      .forEach(function (row) {
+        const value = row[col - 1];
+        if (!value) return;
+        const found = boardFindCustomerRow_(ss, String(row[idCol - 1] || '').trim());
+        if (!found) return;
+        const cell = customers.getRange(found.row, BOARD_CUSTOMER_COL.signedAt);
+        if (cell.getValue()) return;   // 既に入っていれば触らない
+        cell.setValue(value);
+        moved++;
+      });
+  }
+
+  sheet.deleteColumn(col);
+  boardLog_('移行', '署名・支払確認日を顧客タブへ移しました（' + moved + '件）');
+  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
 }
 
 /** 見出しの名前を変える。変更後の見出し配列を返す。 */
@@ -884,6 +922,12 @@ function boardRestorePastRequests_(ss) {
   });
 
   return restored;
+}
+
+/** そのお客様の契約書署名日。案件ボードには持たず、顧客タブだけが持つ。 */
+function boardCustomerSignedAt_(ss, customerId) {
+  const found = boardFindCustomerRow_(ss, String(customerId || '').trim());
+  return found ? found.values[BOARD_CUSTOMER_COL.signedAt - 1] : '';
 }
 
 /** そのお客様の、いちばん新しい依頼より前の行から、最新メールの欄を空にする。 */
@@ -1137,7 +1181,7 @@ const BOARD_CASE_WIDTHS = {
   caseId: 90, status: 130, registration: 105, owner: 70, customer: 150, orderedAt: 95, qty: 70,
   startDate: 95, dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
   customerId: 70, detail: 160, formInquiry: 160, lastInbound: 200, lastOutbound: 200, unitPrice: 70,
-  invoiceSent: 95, invoiceId: 110, signedAt: 95,
+  invoiceSent: 95, invoiceId: 110,
   tracking: 130, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
 };
 
@@ -1193,7 +1237,7 @@ function boardApplyCaseFormatting_(sheet) {
   sheet.setConditionalFormatRules(rules);
 
   [BOARD_COL.startDate, BOARD_COL.dueFrom, BOARD_COL.dueTo, BOARD_COL.invoiceSent,
-   BOARD_COL.signedAt, BOARD_COL.guideDraftAt, BOARD_COL.lastContact].forEach(function (col) {
+   BOARD_COL.guideDraftAt, BOARD_COL.lastContact].forEach(function (col) {
     // 日付列のみ書式を揃える
     sheet.getRange(2, col, maxRows, 1).setNumberFormat('yyyy/mm/dd');
   });
@@ -2540,7 +2584,7 @@ function boardDedupeMails_(ss) {
 }
 
 /** 手入力された値が入っている列。重複を消してよいかの判断に使う。 */
-const BOARD_MANUAL_COLS = ['startDate', 'dueFrom', 'dueTo', 'qty', 'signedAt',
+const BOARD_MANUAL_COLS = ['startDate', 'dueFrom', 'dueTo', 'qty',
   'invoiceId', 'invoiceSent', 'tracking', 'teamNote', 'memo'];
 
 /**
@@ -3443,11 +3487,10 @@ function boardRefreshRegistration_(ss) {
   rows.forEach(function (row, i) {
     if (!String(row[BOARD_COL.caseId - 1] || '').trim()) return;
     const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
-    const key = customerId + '|' + (row[BOARD_COL.signedAt - 1] ? '1' : '0');
-    if (cache[key] === undefined) {
-      cache[key] = boardRegistrationOf_(ss, customerId, row[BOARD_COL.signedAt - 1]);
+    if (cache[customerId] === undefined) {
+      cache[customerId] = boardRegistrationOf_(ss, customerId);
     }
-    const next = cache[key];
+    const next = cache[customerId];
     if (next === String(row[BOARD_COL.registration - 1] || '').trim()) return;
 
     sheet.getRange(i + 2, BOARD_COL.registration).setValue(next);
@@ -3464,16 +3507,15 @@ function boardRefreshRegistration_(ss) {
  * 署名・支払確認日が入っていれば契約済み。カード登録と契約書署名は初回だけなので、
  * 以降のご依頼は支払い・署名待ちを飛ばして進む。
  */
-function boardRegistrationOf_(ss, customerId, signedAt) {
+function boardRegistrationOf_(ss, customerId) {
   if (!customerId) return BOARD_REG_UNKNOWN;
   const customer = boardFindCustomerRow_(ss, customerId);
   if (!customer) return BOARD_REG_UNKNOWN;
 
   // **契約はお客様のもの。依頼ごとに違ってはいけない。**
-  // 案件行の署名・支払確認日だけを見ていたころは、同じお客様なのに
-  // 過去の依頼が「情報不足」、いまの依頼が「契約済み」と食い違っていた。
-  // 顧客タブの契約書署名日を正とし、案件側の記録は古いデータ用の控え
-  if (customer.values[BOARD_CUSTOMER_COL.signedAt - 1] || signedAt) return BOARD_REG_SIGNED;
+  // 案件行にも署名日を持っていたころは、同じお客様なのに
+  // 過去の依頼が「情報不足」、いまの依頼が「契約済み」と食い違っていた
+  if (customer.values[BOARD_CUSTOMER_COL.signedAt - 1]) return BOARD_REG_SIGNED;
   return boardEvaluateReadiness_(ss, customerId).ready ? BOARD_REG_OK : BOARD_REG_SHORT;
 }
 
@@ -3720,7 +3762,7 @@ function boardSetTodoFormula_(sheet, row) {
     cell(BOARD_COL.unreplied) + '<>"","メールに返信する",' +
     b + '="' + BOARD_STATUS_NEW + '",IF(' + ready + ',"依頼確定メールを送る","不足情報のご返信待ち"),' +
     b + '="' + BOARD_STATUS_SIGNING + '",IF(' + cell(BOARD_COL.invoiceSent) + '="","請求書を送る",' +
-      'IF(' + cell(BOARD_COL.signedAt) + '<>"","お客様のご発送待ち",' +
+      'IF(' + reg + '="' + BOARD_REG_SIGNED + '","お客様のご発送待ち",' +
       '"支払い情報の登録・署名待ち"&' + elapsedFrom(cell(BOARD_COL.invoiceSent)) + ')),' +
     b + '="' + BOARD_STATUS_WAITING_SHIP + '","お客様のご発送待ち"&' + elapsedFrom(ordered) + ',' +
     b + '="' + BOARD_STATUS_SHIPPED + '",IF(' + from + '="","受取準備（納期の返信）",' +
