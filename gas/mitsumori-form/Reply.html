@@ -65,6 +65,10 @@
   .inv-state { font-size: 12.5px; color: #5A6A8A; margin-bottom: 2px; }
   .steps-text { font-size: 12px; color: #5A6A8A; line-height: 1.9; white-space: pre-wrap; background: #fff; border-radius: 8px; padding: 8px 11px; margin: 8px 0 0; }
   .hint { font-size: 11.5px; color: #8A97B8; margin-top: 6px; line-height: 1.6; }
+  .cases { margin-bottom: 8px; }
+  .cases label { font-size: 12px; color: #3D4A66; display: block; margin-bottom: 4px; }
+  .cases select { width: 100%; font-size: 12.5px; padding: 5px 7px;
+    border: 1px solid #D8E0F5; border-radius: 5px; }
   .when { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .when label { font-size: 12px; color: #3D4A66; display: flex; align-items: center; gap: 5px; }
   .when input[type=datetime-local] { font-size: 12px; padding: 4px 6px;
@@ -103,6 +107,12 @@
   var current = null;
   var ctx = null;
   var lastApplied = null;
+  /**
+   * 画面で選ばれた依頼の行番号。
+   * 同じお客様に依頼が複数あるとき、**どれに記録するかを決める**。
+   * 0 のあいだは、いちばん新しい依頼が選ばれる。
+   */
+  var caseRow = 0;
   /**
    * 入力欄にいま入っている値の控え。
    *
@@ -303,7 +313,7 @@
         busy(false);
         loadContext(type);
       }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
-        .mailComposeWithType(current.row, el('rtype').value, fields);
+        .mailComposeWithType(current.row, el('rtype').value, fields, caseRow);
     });
   }
 
@@ -348,10 +358,37 @@
         : 'お客様の内容と回答方針をもとに、AIが返信案を作ります。') + '</div>';
   }
 
+  /**
+   * どの依頼に記録するかの選択欄。1件しかなければ出さない。
+   * **返送の記録や納期が誤った依頼に付くのを防ぐためのもの。**
+   */
+  function casesBlock() {
+    if (!ctx || !ctx.cases || ctx.cases.length < 2) return '';
+    return '<div class="cases"><label>どのご依頼への対応か</label>' +
+      '<select id="caseSelect">' + ctx.cases.map(function (c) {
+        var parts = [c.caseId, c.status];
+        if (c.orderedAt) parts.push(c.orderedAt + ' 依頼');
+        if (c.qty) parts.push(c.qty + '点');
+        return '<option value="' + c.caseRow + '"' +
+          (c.caseRow === ctx.caseRow ? ' selected' : '') + '>' +
+          esc(parts.join('　／　')) + '</option>';
+      }).join('') + '</select></div>';
+  }
+
+  function bindCaseSelect(type) {
+    var sel = el('caseSelect');
+    if (!sel) return;
+    sel.addEventListener('change', function () {
+      caseRow = Number(sel.value);
+      loadContext(type);
+    });
+  }
+
   function renderExtras(type) {
     var box = el('extras');
     if (!type || (type.fields.length === 0 && !type.invoice)) {
-      box.innerHTML = composeBlock(type);
+      box.innerHTML = casesBlock() + composeBlock(type);
+      bindCaseSelect(type);
       bindCompose();
       updateApprove();
       return;
@@ -378,7 +415,8 @@
       return;
     }
 
-    var html = '<div class="extras"><div class="extras-title">この対応に必要な入力（案件 ' + esc(ctx.caseId) + '）</div>';
+    var html = casesBlock() +
+      '<div class="extras"><div class="extras-title">この対応に必要な入力（案件 ' + esc(ctx.caseId) + '）</div>';
     type.fields.forEach(function (f) {
       html += '<label class="ex-label">' + esc(f.label) +
         (type.requireKeys.indexOf(f.key) >= 0 ? ' <span style="color:#e5484d">*</span>' : '') + '</label>' +
@@ -410,6 +448,7 @@
         '<button class="b-sub" id="btnInvSent">送信しました</button></div></div>';
     }
     box.innerHTML = html + '</div>' + (type.fields.length > 0 ? '' : composeBlock(type));
+    bindCaseSelect(type);
     bindCompose();
 
     if (type.fields.length > 0) {
@@ -506,7 +545,7 @@
         updateApprove();
       }
       show('err', e.message);
-    }).mailGetCaseContext(current.row, current.customerId);
+    }).mailGetCaseContext(current.row, current.customerId, caseRow);
   }
 
   function show(kind, text) {
@@ -562,8 +601,10 @@
 
   function select(index) {
     current = items[index];
-    // 添付は選んだメールごとのもの。持ち越すと関係ない相手に送ってしまう
+    // 添付と依頼の選択は、選んだメールごとのもの。
+    // 持ち越すと関係ない相手や別の依頼に付いてしまう
     attachments = [];
+    caseRow = 0;
     reading = 0;
     el('main').innerHTML =
       '<div class="card"><h3>最新のメール</h3>' +
@@ -650,7 +691,7 @@
         busy(false);
         reload(true);
       }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
-        .mailRegenerate(current.row);
+        .mailRegenerate(current.row, caseRow);
     });
 
     el('btnSave').addEventListener('click', function () {
@@ -694,10 +735,10 @@
         var failed = function (e) { show('err', e.message); busy(false); };
         if (later) {
           google.script.run.withSuccessHandler(done).withFailureHandler(failed)
-            .mailScheduleReply(current.row, body, fields, attachments, when);
+            .mailScheduleReply(current.row, body, fields, attachments, when, caseRow);
         } else {
           google.script.run.withSuccessHandler(done).withFailureHandler(failed)
-            .mailSendReply(current.row, body, fields, attachments);
+            .mailSendReply(current.row, body, fields, attachments, caseRow);
         }
       }).withFailureHandler(function (e) { show('err', e.message); busy(false); })
         .mailGetSendPreview(current.row);

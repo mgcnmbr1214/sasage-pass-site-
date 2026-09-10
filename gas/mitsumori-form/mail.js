@@ -905,16 +905,16 @@ function mailGetResponseTypes() {
  * 画面まで届かないことがある（画面には「応答がありません」としか出ず、原因が追えない）。
  * 何が起きても必ずオブジェクトを返し、失敗した理由は reason に入れて画面とログに出す。
  */
-function mailGetCaseContext(row, expectedCustomerId) {
+function mailGetCaseContext(row, expectedCustomerId, caseRow) {
   try {
-    return mailBuildCaseContext_(row, expectedCustomerId);
+    return mailBuildCaseContext_(row, expectedCustomerId, caseRow);
   } catch (err) {
     boardLog_('②画面', '案件情報の作成に失敗しました: ' + err.message);
     return { caseRow: 0, reason: err.message };
   }
 }
 
-function mailBuildCaseContext_(row, expectedCustomerId) {
+function mailBuildCaseContext_(row, expectedCustomerId, wantedCaseRow) {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
@@ -930,7 +930,12 @@ function mailBuildCaseContext_(row, expectedCustomerId) {
     return { caseRow: 0, stale: true };
   }
 
-  const caseRow = boardFindLatestCaseRow_(ss, customerId);
+  // 同じお客様に依頼が複数あることがある。画面で選ばれたものを優先し、
+  // 選ばれていなければいちばん新しい依頼にする
+  const caseList = boardListCases_(ss, customerId);
+  const wanted = Number(wantedCaseRow || 0);
+  const chosen = caseList.filter(function (c) { return c.caseRow === wanted; })[0];
+  const caseRow = chosen ? chosen.caseRow : boardFindLatestCaseRow_(ss, customerId);
   if (!caseRow) {
     boardLog_('②画面', '案件が見つかりません（顧客ID ' + (customerId || '空') + '）');
     return { caseRow: 0, customerId: customerId };
@@ -960,6 +965,13 @@ function mailBuildCaseContext_(row, expectedCustomerId) {
 
   return {
     caseRow: caseRow,
+    // 画面に案件の選択肢を出す。1件なら選ばせない
+    cases: caseList.map(function (c) {
+      return {
+        caseRow: c.caseRow, caseId: c.caseId, status: c.status,
+        orderedAt: String(c.orderedAt || ''), qty: String(c.qty || '')
+      };
+    }),
     caseId: text(v[BOARD_COL.caseId - 1]),
     caseStatus: text(v[BOARD_COL.status - 1]),
     registration: text(v[BOARD_COL.registration - 1]),
@@ -1075,7 +1087,7 @@ function mailApplyResponseType(row, typeId) {
  * 対応種別のテンプレートを土台に、お客様の問い合わせ内容へ合わせた返信案をAIが作る。
  * テンプレートが無い「通常の返信」では、方針と実例だけを頼りに書く。
  */
-function mailComposeWithType(row, typeId, fields) {
+function mailComposeWithType(row, typeId, fields, wantedCaseRow) {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const apiKey = mailGetApiKey_();
@@ -1083,6 +1095,7 @@ function mailComposeWithType(row, typeId, fields) {
 
   const type = boardFindResponseType_(typeId);
   if (!type) throw new Error('対応種別を選んでください。');
+  // 差し込む依頼内容・納期は、画面で選ばれた依頼のもの
 
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   const r = Number(row);
@@ -1091,7 +1104,7 @@ function mailComposeWithType(row, typeId, fields) {
 
   let template = '';
   if (type.template) {
-    const caseRow = boardFindLatestCaseRow_(ss, customerId);
+    const caseRow = mailResolveCaseRow_(ss, customerId, wantedCaseRow);
     if (!caseRow) throw new Error('このお客様の案件が案件ボードに見つかりません。');
     // 画面で入力した内容を先に保存し、そのうえで文面へ差し込む
     if (fields && Object.keys(fields).length > 0) mailSaveCaseFields(caseRow, fields);
@@ -1160,7 +1173,7 @@ function mailSaveText(row, text) {
  * 文面を作り直したいときや、対応種別を変えたあとに使う。
  * これまでの修正指示は引き継いで生成する。
  */
-function mailRegenerate(row) {
+function mailRegenerate(row, wantedCaseRow) {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const apiKey = mailGetApiKey_();
@@ -1177,7 +1190,7 @@ function mailRegenerate(row) {
   let template = '';
   const type = boardFindResponseTypeByName_(values[BOARD_MAIL_COL.responseType - 1]);
   if (type && type.template) {
-    const caseRow = boardFindLatestCaseRow_(ss, customerId);
+    const caseRow = mailResolveCaseRow_(ss, customerId, wantedCaseRow);
     if (caseRow) template = boardBuildTemplateText_(ss, caseRow, type.template).body;
   }
 
@@ -1279,14 +1292,14 @@ function mailBuildAttachments_(files) {
  * 実際には送信済みの返送が何度実行しても「下書き」のまま取り残された。
  * 自分で送れば、送ったことを確かめる必要がない。
  */
-function mailSendReply(row, text, fields, files) {
+function mailSendReply(row, text, fields, files, caseRow) {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
   const r = Number(row);
   const values = sheet.getRange(r, 1, 1, BOARD_MAIL_HEADERS.length).getValues()[0];
   mailValidateBeforeSend_(ss, values, text, fields);
-  return mailDeliver_(ss, sheet, r, values, text, fields, mailBuildAttachments_(files));
+  return mailDeliver_(ss, sheet, r, values, text, fields, mailBuildAttachments_(files), caseRow);
 }
 
 /**
@@ -1297,7 +1310,7 @@ function mailSendReply(row, text, fields, files) {
  * 送ったかどうかをGmailに問い合わせるのではなく、自分の予定を自分で読むだけなので、
  * 下書きのときのような取りこぼしは起きない。
  */
-function mailScheduleReply(row, text, fields, files, sendAt) {
+function mailScheduleReply(row, text, fields, files, sendAt, caseRow) {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
@@ -1318,7 +1331,7 @@ function mailScheduleReply(row, text, fields, files, sendAt) {
   sheet.getRange(r, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SCHEDULED);
   sheet.getRange(r, BOARD_MAIL_COL.sendAt).setValue(when);
   // 添付と入力欄は、送るときまで預かる。画面はもう開いていない
-  sheet.getRange(r, BOARD_MAIL_COL.hold).setValue(mailHold_(files, fields));
+  sheet.getRange(r, BOARD_MAIL_COL.hold).setValue(mailHold_(files, fields, caseRow));
 
   boardRefreshUnreplied_(ss);
   const label = Utilities.formatDate(when, Session.getScriptTimeZone(), 'M月d日 HH:mm');
@@ -1368,7 +1381,7 @@ function mailSendScheduled_(ss) {
     try {
       const hold = mailTakeHold_(values);
       mailValidateBeforeSend_(ss, values, text, hold.fields);
-      mailDeliver_(ss, sheet, r, values, text, hold.fields, hold.attachments);
+      mailDeliver_(ss, sheet, r, values, text, hold.fields, hold.attachments, hold.caseRow);
       mailReleaseHold_(sheet, r);
       sent++;
     } catch (err) {
@@ -1402,7 +1415,7 @@ function mailValidateBeforeSend_(ss, values, text, fields) {
 }
 
 /** 実際に送って、記録を残す。今すぐ送るときも、予約の時刻が来たときもここを通る。 */
-function mailDeliver_(ss, sheet, r, values, text, fields, attachments) {
+function mailDeliver_(ss, sheet, r, values, text, fields, attachments, wantedCaseRow) {
   const preview = mailSendPreview_(ss, values);
 
   const options = { name: 'ササゲパス' };
@@ -1444,8 +1457,10 @@ function mailDeliver_(ss, sheet, r, values, text, fields, attachments) {
   const type = boardFindResponseTypeByName_(values[BOARD_MAIL_COL.responseType - 1]);
   let statusNote = '';
   if (type) {
-    const caseRow = boardFindLatestCaseRow_(ss, values[BOARD_MAIL_COL.customerId - 1]);
-    if (caseRow) {
+    // 画面で選ばれた依頼に記録する。選ばれていなければいちばん新しい依頼
+    const target = mailResolveCaseRow_(ss, values[BOARD_MAIL_COL.customerId - 1], wantedCaseRow);
+    if (target) {
+      const caseRow = target;
       const cases = ss.getSheetByName(BOARD_SHEET_CASES);
       if (type.status) {
         cases.getRange(caseRow, BOARD_COL.status).setValue(type.status);
@@ -1518,12 +1533,12 @@ const MAIL_SCHEDULED_PER_RUN = 10;
  * 10分ごとの自動チェックが止まるため、それは割に合わない。
  * 添付が要るメールは、その場で送っていただく。
  */
-function mailHold_(files, fields) {
+function mailHold_(files, fields, caseRow) {
   if ((files || []).length > 0) {
     throw new Error('添付ファイルのあるメールは予約できません。' + '\n' +
       '今すぐ送るか、添付を外して予約してください。');
   }
-  return JSON.stringify({ fields: fields || {} });
+  return JSON.stringify({ fields: fields || {}, caseRow: Number(caseRow || 0) });
 }
 
 /** 預かっていた入力欄の値を取り出す。 */
@@ -1531,7 +1546,8 @@ function mailTakeHold_(values) {
   const raw = String(values[BOARD_MAIL_COL.hold - 1] || '').trim();
   if (!raw) return { attachments: [], fields: {} };
   try {
-    return { attachments: [], fields: JSON.parse(raw).fields || {} };
+    const held = JSON.parse(raw);
+    return { attachments: [], fields: held.fields || {}, caseRow: held.caseRow || 0 };
   } catch (err) {
     boardLog_('②送信予約', '預かった内容を読めませんでした: ' + err.message);
     return { attachments: [], fields: {} };
@@ -1580,6 +1596,23 @@ function mailReplyTarget_(values, to) {
     boardLog_('②送信', 'スレッドを開けませんでした: ' + err.message);
   }
   return null;
+}
+
+/**
+ * どの依頼に記録するかを決める。
+ *
+ * **画面で選ばれた依頼を優先する。** 同じお客様に依頼が複数あると、
+ * いちばん新しいものに決め打ちしていては、返送の記録が誤った依頼に付く。
+ * 選ばれた行がそのお客様のものでなければ、安全側に倒して最新を使う。
+ */
+function mailResolveCaseRow_(ss, customerId, caseRow) {
+  const wanted = Number(caseRow || 0);
+  if (wanted) {
+    const hit = boardListCases_(ss, customerId).filter(function (c) { return c.caseRow === wanted; })[0];
+    if (hit) return hit.caseRow;
+    boardLog_('②画面', '選ばれた案件がこのお客様のものではありません（行 ' + wanted + '）');
+  }
+  return boardFindLatestCaseRow_(ss, customerId);
 }
 
 /** 送った直後のメールをスレッドから拾い直す。記録に残すIDと時刻に使う。 */

@@ -974,6 +974,38 @@ function boardCountCases_(ss) {
     .filter(function (row) { return String(row[0] || '').trim(); }).length;
 }
 
+/**
+ * そのお客様の依頼を、新しい順に並べて返す。「対応を選ぶ」の案件選びに使う。
+ *
+ * **見送りだけは外す。** 返送済も出す。返送のあとに続けて連絡することがあるため。
+ */
+function boardListCases_(ss, customerId) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  const out = [];
+  if (!sheet || sheet.getLastRow() < 2 || !customerId) return out;
+
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues()
+    .forEach(function (row, i) {
+      if (String(row[BOARD_COL.customerId - 1] || '').trim() !== String(customerId).trim()) return;
+      const caseId = String(row[BOARD_COL.caseId - 1] || '').trim();
+      if (!caseId) return;
+      if (String(row[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_CLOSED) return;
+
+      const parts = boardCaseIdParts_(caseId);
+      out.push({
+        caseRow: i + 2,
+        caseId: caseId,
+        status: String(row[BOARD_COL.status - 1] || '').trim(),
+        orderedAt: boardFormatDate_(row[BOARD_COL.orderedAt - 1]),
+        qty: String(row[BOARD_COL.qty - 1] == null ? '' : row[BOARD_COL.qty - 1]),
+        rank: parts.number * 1000 + parts.branch
+      });
+    });
+
+  out.sort(function (a, b) { return b.rank - a.rank; });
+  return out;
+}
+
 /** 案件IDで案件ボードの行を探す。 */
 function boardFindCaseById_(sheet, caseId) {
   if (sheet.getLastRow() < 2) return null;
