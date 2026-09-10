@@ -886,6 +886,24 @@ function boardRestorePastRequests_(ss) {
   return restored;
 }
 
+/** そのお客様の、いちばん新しい依頼より前の行から、最新メールの欄を空にする。 */
+function boardClearOldMailCells_(sheet, customerId, keepRow) {
+  if (sheet.getLastRow() < 2) return 0;
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  let cleared = 0;
+
+  rows.forEach(function (row, i) {
+    if (i + 2 === keepRow) return;
+    if (String(row[BOARD_COL.customerId - 1] || '').trim() !== String(customerId).trim()) return;
+    [BOARD_COL.lastInbound, BOARD_COL.lastOutbound].forEach(function (col) {
+      if (!String(row[col - 1] || '').trim()) return;
+      sheet.getRange(i + 2, col).clearContent();
+      cleared++;
+    });
+  });
+  return cleared;
+}
+
 /** 案件IDで案件ボードの行を探す。 */
 function boardFindCaseById_(sheet, caseId) {
   if (sheet.getLastRow() < 2) return null;
@@ -2803,6 +2821,10 @@ function boardRefreshInquiries_(ss) {
 
     if (boardWriteMailCell_(sheet, row, BOARD_COL.lastInbound, inbound[customerId])) updated++;
     if (boardWriteMailCell_(sheet, row, BOARD_COL.lastOutbound, outbound[customerId])) updated++;
+    // 過去の依頼の行に古い本文を残さない。
+    // **その依頼のやりとりではなく、次の依頼が始まった時点でたまたま最後だった本文**
+    // でしかなく、依頼ごとの記録と取り違えるもとになる
+    updated += boardClearOldMailCells_(sheet, customerId, row);
 
     // 最終連絡日は、受信・送信のうち新しいほうに合わせる
     const dates = [inbound[customerId], outbound[customerId]]
@@ -3444,8 +3466,14 @@ function boardRefreshRegistration_(ss) {
  */
 function boardRegistrationOf_(ss, customerId, signedAt) {
   if (!customerId) return BOARD_REG_UNKNOWN;
-  if (signedAt) return BOARD_REG_SIGNED;
-  if (!boardFindCustomerRow_(ss, customerId)) return BOARD_REG_UNKNOWN;
+  const customer = boardFindCustomerRow_(ss, customerId);
+  if (!customer) return BOARD_REG_UNKNOWN;
+
+  // **契約はお客様のもの。依頼ごとに違ってはいけない。**
+  // 案件行の署名・支払確認日だけを見ていたころは、同じお客様なのに
+  // 過去の依頼が「情報不足」、いまの依頼が「契約済み」と食い違っていた。
+  // 顧客タブの契約書署名日を正とし、案件側の記録は古いデータ用の控え
+  if (customer.values[BOARD_CUSTOMER_COL.signedAt - 1] || signedAt) return BOARD_REG_SIGNED;
   return boardEvaluateReadiness_(ss, customerId).ready ? BOARD_REG_OK : BOARD_REG_SHORT;
 }
 
