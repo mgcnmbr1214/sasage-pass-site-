@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>ササゲパス ご依頼フォーム</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 0 0 40px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic', sans-serif;
+    background: #F6F8FE; color: #1F2A44; line-height: 1.7; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 0 16px; }
+  header { background: #fff; border-bottom: 1px solid #E4EAF7; padding: 18px 0; margin-bottom: 20px; }
+  header .wrap { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 17px; margin: 0; }
+  .who { font-size: 13px; color: #5A6A8A; }
+
+  .card { background: #fff; border: 1px solid #E4EAF7; border-radius: 10px;
+    padding: 18px 18px 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 14.5px; margin: 0 0 4px; }
+  .card .lead { font-size: 12.5px; color: #5A6A8A; margin: 0 0 14px; }
+
+  .menu { border-top: 1px solid #EEF2FF; padding: 12px 0 4px; }
+  .menu:first-of-type { border-top: 0; }
+  .menu-name { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .opt { display: block; font-size: 13px; padding: 4px 0; }
+  .opt input { margin-right: 7px; }
+  .subs { margin: 2px 0 8px 24px; padding-left: 10px; border-left: 2px solid #EEF2FF; }
+  .subs .opt { font-size: 12.5px; color: #3D4A66; }
+  textarea, input[type=text], input[type=number] { width: 100%; font-size: 13px;
+    padding: 8px 10px; border: 1px solid #D8E0F5; border-radius: 6px; font-family: inherit; }
+  textarea { min-height: 76px; resize: vertical; }
+  label.field { display: block; font-size: 12.5px; color: #3D4A66; margin: 12px 0 4px; }
+  .qty { max-width: 140px; }
+
+  .note { font-size: 12.5px; border-radius: 8px; padding: 11px 13px; margin: 12px 0;
+    white-space: pre-wrap; }
+  .note-warn { background: #FEF6E7; border: 1px solid #F5DFB0; color: #7A5310; }
+  .note-plain { background: #F4F7FE; border: 1px solid #E0E8F8; color: #3D4A66; }
+
+  .info { font-size: 13px; }
+  .info div { padding: 5px 0; border-top: 1px solid #F1F5FD; display: flex; gap: 10px; }
+  .info div:first-child { border-top: 0; }
+  .info dt { color: #7A8AA8; width: 8.5em; flex: none; font-size: 12.5px; }
+
+  button { font-size: 14px; font-weight: 600; padding: 12px 18px; border-radius: 8px;
+    border: 0; background: #3B6EF8; color: #fff; cursor: pointer; width: 100%; }
+  button:disabled { background: #B9C6E4; cursor: default; }
+  .msg { font-size: 13px; border-radius: 8px; padding: 11px 13px; margin-top: 12px;
+    display: none; white-space: pre-wrap; }
+  .msg-ok { background: #E8F5EC; border: 1px solid #BFE3C9; color: #1D6B33; }
+  .msg-err { background: #FDECEC; border: 1px solid #F3C4C4; color: #A32D2D; }
+  .locked { opacity: .55; }
+  .center { text-align: center; color: #5A6A8A; font-size: 13px; padding: 40px 0; }
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>ササゲパス　ご依頼フォーム</h1>
+  <span class="who" id="who"></span>
+</div></header>
+
+<div class="wrap" id="main"><div class="center">読み込んでいます...</div></div>
+
+<script>
+  var CUSTOMER_ID = '<?= customerId ?>';
+  var FORM_KEY = '<?= formKey ?>';
+  var state = null;
+
+  function el(id) { return document.getElementById(id); }
+  function esc(v) {
+    return String(v == null ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function show(box, kind, text) {
+    var m = el(box);
+    if (!m) return;
+    m.className = 'msg msg-' + kind;
+    m.textContent = text;
+    m.style.display = 'block';
+  }
+
+  /** 前回と同じものが選ばれた状態で描く。毎回選び直さなくてよいように。 */
+  function menusHtml() {
+    var picked = state.selected || { options: {}, subChoices: {}, texts: {} };
+    return state.menus.map(function (menu) {
+      var chosen = picked.options[menu.id] || [];
+      var rows = menu.items.map(function (item) {
+        if (item.type === 'text') {
+          var value = (picked.texts[menu.id] || {})[item.id] || '';
+          return '<label class="field">' + esc(item.name) + '</label>' +
+            '<textarea data-text="' + esc(menu.id) + '|' + esc(item.id) + '" placeholder="' +
+            esc(item.placeholder) + '">' + esc(value) + '</textarea>';
+        }
+        var type = menu.selectionType === 'single' ? 'radio' : 'checkbox';
+        var on = chosen.indexOf(item.id) >= 0;
+        var html = '<label class="opt"><input type="' + type + '" name="m_' + esc(menu.id) + '"' +
+          ' data-opt="' + esc(menu.id) + '|' + esc(item.id) + '"' + (on ? ' checked' : '') + '>' +
+          esc(item.name) + '</label>';
+
+        if (item.subChoices.length > 0) {
+          var subs = ((picked.subChoices[menu.id] || {})[item.id]) || [];
+          var subType = item.subChoiceSelectionType === 'single' ? 'radio' : 'checkbox';
+          html += '<div class="subs" data-subs="' + esc(menu.id) + '|' + esc(item.id) + '">' +
+            item.subChoices.map(function (c) {
+              return '<label class="opt"><input type="' + subType + '" name="s_' +
+                esc(menu.id) + '_' + esc(item.id) + '"' +
+                ' data-sub="' + esc(menu.id) + '|' + esc(item.id) + '|' + esc(c.id) + '"' +
+                (subs.indexOf(c.id) >= 0 ? ' checked' : '') + '>' + esc(c.name) + '</label>';
+            }).join('') + '</div>';
+        }
+        return html;
+      }).join('');
+      return '<div class="menu"><div class="menu-name">' + esc(menu.name) + '</div>' + rows + '</div>';
+    }).join('');
+  }
+
+  function collect() {
+    var out = { options: {}, subChoices: {}, texts: {} };
+    Array.prototype.forEach.call(document.querySelectorAll('[data-opt]'), function (input) {
+      if (!input.checked) return;
+      var p = input.getAttribute('data-opt').split('|');
+      if (!out.options[p[0]]) out.options[p[0]] = [];
+      out.options[p[0]].push(p[1]);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-sub]'), function (input) {
+      if (!input.checked) return;
+      var p = input.getAttribute('data-sub').split('|');
+      if (!out.subChoices[p[0]]) out.subChoices[p[0]] = {};
+      if (!out.subChoices[p[0]][p[1]]) out.subChoices[p[0]][p[1]] = [];
+      out.subChoices[p[0]][p[1]].push(p[2]);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-text]'), function (area) {
+      var p = area.getAttribute('data-text').split('|');
+      if (!area.value.trim()) return;
+      if (!out.texts[p[0]]) out.texts[p[0]] = {};
+      out.texts[p[0]][p[1]] = area.value.trim();
+    });
+    return out;
+  }
+
+  function infoHtml() {
+    var c = state.customer;
+    var rows = [
+      ['ストア名', c.storeName], ['会社名・屋号', c.company], ['代表者名義', c.representative],
+      ['ご請求先', c.billing], ['返送先', c.returnTo],
+      ['返送先 宛名', c.returnName], ['返送先 電話番号', c.returnTel]
+    ].filter(function (r) { return r[1]; });
+    return '<div class="info">' + rows.map(function (r) {
+      return '<div><dt>' + esc(r[0]) + '</dt><span>' + esc(r[1]) + '</span></div>';
+    }).join('') + '</div>' +
+      '<div class="note note-plain">' + esc(state.notes.profile) + '</div>';
+  }
+
+  function shipToHtml() {
+    var s = state.shipTo;
+    if (!s) return '';
+    var rows = [
+      ['営業所コード', s.officeCode], ['営業所名', s.office],
+      ['郵便番号', s.zip ? '〒' + s.zip : ''], ['宛名', s.name],
+      ['電話番号', s.tel], ['品名', s.item]
+    ].filter(function (r) { return r[1]; });
+    return '<div class="note note-plain"><b>ご発送先（ヤマト運輸「営業所止め」）</b></div>' +
+      '<div class="info">' + rows.map(function (r) {
+        return '<div><dt>' + esc(r[0]) + '</dt><span>' + esc(r[1]) + '</span></div>';
+      }).join('') + '</div>';
+  }
+
+  function carriersHtml() {
+    return state.carriers.map(function (c) {
+      var on = state.current && state.current.carrier === c.name;
+      return '<label class="opt"><input type="radio" name="carrier" value="' + esc(c.id) + '"' +
+        (on ? ' checked' : '') + '>' + esc(c.name) +
+        (c.digits.length ? '（' + c.digits.join('桁／') + '桁）' : '') + '</label>';
+    }).join('');
+  }
+
+  function render() {
+    var cur = state.current;
+    var shipped = cur && cur.status !== '支払い・署名待ち' && cur.status !== '発送待ち';
+
+    el('who').textContent = (state.customer.company || state.customer.name) + ' 様';
+
+    var html =
+      '<div class="card"><h2>1. ご依頼内容</h2>' +
+      '<p class="lead">前回と同じ内容をあらかじめ選んでいます。変更があればお直しください。</p>' +
+      menusHtml() +
+      '<label class="field">ご依頼予定数</label>' +
+      '<input type="number" class="qty" id="qty" min="1" value="' +
+        esc(cur ? cur.qty : '') + '">' +
+      '<label class="field">備考（ご要望など）</label>' +
+      '<textarea id="note">' + esc(cur ? cur.note : '') + '</textarea>' +
+      '<div class="note note-plain">' + esc(state.notes.newMenu) + '</div>' +
+      '<div class="note note-plain">' + esc(state.notes.due) + '</div>' +
+      '<div style="margin-top:14px"><button id="btnRequest">' +
+        (cur ? 'ご依頼内容を更新する' : 'この内容で依頼する') + '</button></div>' +
+      '<div class="msg" id="msgRequest"></div></div>' +
+
+      '<div class="card"><h2>2. ご登録内容</h2>' + infoHtml() + '</div>' +
+
+      '<div class="card' + (state.signed ? '' : ' locked') + '"><h2>3. ご発送情報</h2>' +
+      (state.signed
+        ? '<p class="lead">ご発送後、追跡番号をお知らせください。ここまでで依頼が完了します。</p>' +
+          '<div class="note note-warn">⚠ ' + esc(state.notes.tracking) + '</div>' +
+          shipToHtml() +
+          '<label class="field">運送業者</label>' + carriersHtml() +
+          '<label class="field">追跡番号</label>' +
+          '<input type="text" id="tracking" value="' + esc(cur ? cur.tracking : '') + '">' +
+          '<div style="margin-top:14px"><button id="btnShipping"' +
+            (cur ? '' : ' disabled') + '>発送情報を送信する</button></div>'
+        : '<p class="lead">カードのご登録と契約書へのご署名が完了しますと、' +
+          'こちらからご発送情報をお送りいただけるようになります。</p>' +
+          '<div class="note note-plain">お客様情報のご送信後、2〜3日以内にSquareより' +
+          'お手続きのご案内をお送りいたします。</div>') +
+      '<div class="msg" id="msgShipping"></div></div>';
+
+    el('main').innerHTML = html;
+
+    if (shipped) {
+      show('msgRequest', 'ok', 'ご依頼を承っております（' + cur.caseId + '）。' +
+        '内容の変更をご希望の場合は、お手数ですがメールにてご連絡ください。');
+    }
+    bind();
+  }
+
+  function bind() {
+    var btn = el('btnRequest');
+    if (btn) btn.addEventListener('click', function () {
+      var payload = collect();
+      payload.c = CUSTOMER_ID;
+      payload.k = FORM_KEY;
+      payload.qty = el('qty').value;
+      payload.note = el('note').value;
+      btn.disabled = true;
+      show('msgRequest', 'ok', '送信しています...');
+      google.script.run
+        .withSuccessHandler(function (r) {
+          show('msgRequest', 'ok', 'ご依頼を承りました（' + r.caseId + '）。' +
+            '\n続けて、ご発送後に追跡番号をお知らせください。');
+          load();
+        })
+        .withFailureHandler(function (e) { show('msgRequest', 'err', e.message); btn.disabled = false; })
+        .orderSubmitRequest(payload);
+    });
+
+    var ship = el('btnShipping');
+    if (ship) ship.addEventListener('click', function () {
+      var carrier = document.querySelector('input[name=carrier]:checked');
+      if (!carrier) { show('msgShipping', 'err', '運送業者をお選びください。'); return; }
+      ship.disabled = true;
+      show('msgShipping', 'ok', '送信しています...');
+      google.script.run
+        .withSuccessHandler(function () {
+          show('msgShipping', 'ok', 'ありがとうございます。ご依頼が完了いたしました。' +
+            '\nお荷物の到着後、あらためて納期をご連絡いたします。');
+          load();
+        })
+        .withFailureHandler(function (e) { show('msgShipping', 'err', e.message); ship.disabled = false; })
+        .orderSubmitShipping({
+          c: CUSTOMER_ID, k: FORM_KEY,
+          carrier: carrier.value, tracking: el('tracking').value
+        });
+    });
+  }
+
+  function load() {
+    google.script.run.withSuccessHandler(function (data) {
+      if (!data || !data.ok) {
+        el('main').innerHTML = '<div class="card"><div class="center">' +
+          esc((data && data.reason) || '読み込めませんでした。') + '</div></div>';
+        return;
+      }
+      state = data;
+      render();
+    }).withFailureHandler(function (e) {
+      el('main').innerHTML = '<div class="card"><div class="center">' + esc(e.message) + '</div></div>';
+    }).orderGetState(CUSTOMER_ID, FORM_KEY);
+  }
+
+  load();
+</script>
+</body>
+</html>

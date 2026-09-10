@@ -976,7 +976,7 @@ function mailBuildCaseContext_(row, expectedCustomerId, wantedCaseRow) {
     caseStatus: text(v[BOARD_COL.status - 1]),
     registration: text(v[BOARD_COL.registration - 1]),
     repeatCustomer: boardIsRepeatCustomer_(v[BOARD_COL.registration - 1]),
-    startDate: text(boardToInputDate_(v[BOARD_COL.startDate - 1])),
+
     // 初回の見立ては、案件ではなくお客様のもの。顧客タブから読む
     firstDate: text(boardFormatDate_(customerPlan.firstDate) || customerPlan.firstDate),
     dueFrom: text(boardToInputDate_(v[BOARD_COL.dueFrom - 1])),

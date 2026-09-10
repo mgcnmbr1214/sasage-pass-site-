@@ -182,11 +182,14 @@ function shipBuildTeamNote_(row, customer, tracking, result) {
   ];
 
   if (tracking) {
+    // 運送業者が分かっていれば、その業者の追跡ページを出す
+    const carrier = String(row[BOARD_COL.carrier - 1] || '').trim();
+    const url = orderTrackingUrl_(carrier, tracking) ||
+      (/^\d[\d-]{10,}$/.test(tracking)
+        ? SHIP_YAMATO_URL + tracking.replace(/-/g, '') : '');
     lines.push('■ 追跡番号');
-    lines.push('　' + tracking);
-    if (/^\d[\d-]{10,}$/.test(tracking)) {
-      lines.push('　' + SHIP_YAMATO_URL + tracking.replace(/-/g, ''));
-    }
+    lines.push('　' + (carrier ? carrier + '　' : '') + tracking);
+    if (url) lines.push('　' + url);
   } else {
     lines.push('■ 追跡番号');
     lines.push('　未取得（お客様に確認が必要）');

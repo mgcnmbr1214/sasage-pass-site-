@@ -88,20 +88,20 @@ const BOARD_REG_DONE = [BOARD_REG_SIGNED];
 
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
-  '案件ID', 'ステータス', 'お客様の登録状況', '対応者', 'お客様', '依頼日', '予定点数', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
+  '案件ID', 'ステータス', 'お客様の登録状況', '対応者', 'お客様', '依頼日', '予定点数', '納期予定（自）', '納期予定（至）', '次にやること',
   '未返信', '未請求の返送',
   '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール', '単価',
   '請求書送付日', 'Square請求書ID',
-  '追跡番号', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
+  '運送業者', '追跡番号', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
 const BOARD_COL = {
   caseId: 1, status: 2, registration: 3, owner: 4, customer: 5, orderedAt: 6, qty: 7,
-  startDate: 8, dueFrom: 9, dueTo: 10, todo: 11,
-  unreplied: 12, unbilled: 13,
-  customerId: 14, detail: 15, formInquiry: 16, lastInbound: 17, lastOutbound: 18, unitPrice: 19,
-  invoiceSent: 20, invoiceId: 21,
-  tracking: 22, teamNote: 23, guideDraftAt: 24, lastContact: 25, memo: 26, sourceRow: 27
+  dueFrom: 8, dueTo: 9, todo: 10,
+  unreplied: 11, unbilled: 12,
+  customerId: 13, detail: 14, formInquiry: 15, lastInbound: 16, lastOutbound: 17, unitPrice: 18,
+  invoiceSent: 19, invoiceId: 20,
+  carrier: 21, tracking: 22, teamNote: 23, guideDraftAt: 24, lastContact: 25, memo: 26, sourceRow: 27
 };
 
 /**
@@ -216,8 +216,8 @@ const BOARD_RESPONSE_TYPES = [
   {
     id: 'T2', name: '依頼確定・初回（受付開始日・納期に加え、支払い方法の登録と発送をご案内します）',
     template: 'T2', status: BOARD_STATUS_SIGNING,
-    fields: ['startDate', 'dueFrom', 'dueTo', 'qty'], invoice: true,
-    requires: ['startDate', 'dueFrom'],
+    fields: ['dueFrom', 'dueTo', 'qty'], invoice: true,
+    requires: ['dueFrom'],
     stamp: 'guideDraftAt',
     forRegistration: 'first'
   },
@@ -225,8 +225,8 @@ const BOARD_RESPONSE_TYPES = [
     // カード登録と契約書署名は初回だけ。2回目以降はその案内も登録手数料も要らない
     id: 'T2B', name: '依頼確定・2回目以降（受付開始日・納期を回答し、発送をご案内します）',
     template: 'T2B', status: BOARD_STATUS_WAITING_SHIP,
-    fields: ['startDate', 'dueFrom', 'dueTo', 'qty'], invoice: false,
-    requires: ['startDate', 'dueFrom'],
+    fields: ['dueFrom', 'dueTo', 'qty'], invoice: false,
+    requires: ['dueFrom'],
     stamp: 'guideDraftAt',
     forRegistration: 'repeat'
   },
@@ -267,7 +267,7 @@ const BOARD_TEMPLATE_PLACEHOLDER = /【ここに[^】]*】/;
 
 /** 対応種別ごとに出す入力欄の定義。 */
 const BOARD_CASE_FIELDS = {
-  startDate: { label: '受付開始日', type: 'date', col: 'startDate' },
+
   dueFrom: { label: '納期予定（自）', type: 'date', col: 'dueFrom' },
   dueTo: { label: '納期予定（至）', type: 'date', col: 'dueTo' },
   qty: { label: '予定点数', type: 'number', col: 'qty' },
@@ -336,7 +336,7 @@ function boardFindResponseType_(id) {
 const BOARD_SHEET_SHIPMENTS = '返送履歴';
 const BOARD_SHIPMENT_HEADERS = [
   '送信日時', '案件ID', '顧客ID', 'お客様', '点数', '単価', '金額（税抜）', '返送追跡番号',
-  '状態', '請求月', 'Square請求書ID', '依頼内容', '受付開始日', '納期予定', '件名', '本文',
+  '状態', '請求月', 'Square請求書ID', '依頼内容', '依頼日', '納期予定', '件名', '本文',
   'GmailスレッドID', 'GmailメッセージID'
 ];
 const BOARD_SHIPMENT_COL = {
@@ -679,6 +679,16 @@ function boardMigrateCases_(ss) {
     boardLog_('移行', '案件ボードの 対応不要 列を削除しました（メール履歴へ移動）');
   }
   headers = boardInsertColumnAfter_(sheet, headers, 'お客様', '依頼日');
+  headers = boardInsertColumnAfter_(sheet, headers, 'Square請求書ID', '運送業者');
+
+  // 受付開始日は使わなくなった。納期の目安はメールでお伝えする
+  const startCol = headers.indexOf('受付開始日');
+  if (startCol >= 0) {
+    sheet.deleteColumn(startCol + 1);
+    headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+      .map(function (h) { return String(h || '').trim(); });
+    boardLog_('移行', '案件ボードの 受付開始日 列を削除しました');
+  }
   headers = boardRenameColumn_(sheet, headers, '最新のお問い合わせ内容', 'フォームの問い合わせ内容');
   headers = boardRenameColumn_(sheet, headers, '最新のメール内容', '最新の受信メール');
   headers = boardInsertColumnAfter_(sheet, headers, '依頼内容', 'フォームの問い合わせ内容');
@@ -1243,10 +1253,10 @@ const BOARD_UNPAID_LABEL = '未入金あり';
 /** 列の幅。並べ替えても効くよう、位置ではなく列の意味で指定する。 */
 const BOARD_CASE_WIDTHS = {
   caseId: 90, status: 130, registration: 105, owner: 70, customer: 150, orderedAt: 95, qty: 70,
-  startDate: 95, dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
+  dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
   customerId: 70, detail: 160, formInquiry: 160, lastInbound: 200, lastOutbound: 200, unitPrice: 70,
   invoiceSent: 95, invoiceId: 110,
-  tracking: 130, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
+  carrier: 100, tracking: 130, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
 };
 
 function boardApplyCaseFormatting_(sheet) {
@@ -1300,7 +1310,7 @@ function boardApplyCaseFormatting_(sheet) {
 
   sheet.setConditionalFormatRules(rules);
 
-  [BOARD_COL.startDate, BOARD_COL.dueFrom, BOARD_COL.dueTo, BOARD_COL.invoiceSent,
+  [BOARD_COL.dueFrom, BOARD_COL.dueTo, BOARD_COL.invoiceSent,
    BOARD_COL.guideDraftAt, BOARD_COL.lastContact].forEach(function (col) {
     // 日付列のみ書式を揃える
     sheet.getRange(2, col, maxRows, 1).setNumberFormat('yyyy/mm/dd');
@@ -2648,7 +2658,7 @@ function boardDedupeMails_(ss) {
 }
 
 /** 手入力された値が入っている列。重複を消してよいかの判断に使う。 */
-const BOARD_MANUAL_COLS = ['startDate', 'dueFrom', 'dueTo', 'qty',
+const BOARD_MANUAL_COLS = ['dueFrom', 'dueTo', 'qty',
   'invoiceId', 'invoiceSent', 'tracking', 'teamNote', 'memo'];
 
 /**
@@ -3945,7 +3955,7 @@ function boardGetActiveCase() {
     status: v[BOARD_COL.status - 1],
     customer: v[BOARD_COL.customer - 1],
     qty: v[BOARD_COL.qty - 1],
-    startDate: boardToInputDate_(v[BOARD_COL.startDate - 1]),
+
     dueFrom: boardToInputDate_(v[BOARD_COL.dueFrom - 1]),
     dueTo: boardToInputDate_(v[BOARD_COL.dueTo - 1]),
     todo: v[BOARD_COL.todo - 1],
@@ -3963,7 +3973,7 @@ function boardSaveCase(data) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const row = Number(data.row);
   sheet.getRange(row, BOARD_COL.qty).setValue(data.qty === '' ? '' : Number(data.qty));
-  sheet.getRange(row, BOARD_COL.startDate).setValue(boardFromInputDate_(data.startDate));
+
   sheet.getRange(row, BOARD_COL.dueFrom).setValue(boardFromInputDate_(data.dueFrom));
   sheet.getRange(row, BOARD_COL.dueTo).setValue(boardFromInputDate_(data.dueTo));
   boardSetTodoFormula_(sheet, row);
@@ -4012,7 +4022,7 @@ function boardBuildTemplateText_(ss, caseRow, templateId, extra) {
     '依頼内容（料金なし）': boardDetailWithoutPrice_(v[BOARD_COL.detail - 1]),
     '予定点数': qty,
     '単価': v[BOARD_COL.unitPrice - 1],
-    '受付開始日': boardFormatDate_(v[BOARD_COL.startDate - 1]),
+
     '納期予定': boardFormatDateRange_(v[BOARD_COL.dueFrom - 1], v[BOARD_COL.dueTo - 1]),
     '営業所コード': settings['営業所コード'],
     '営業所名': settings['営業所名'],
@@ -4089,7 +4099,8 @@ function boardRecordShipment_(ss, caseRow, fields, mail) {
   // 送ったあとに呼ばれる。送信済みかどうかを確かめ直す必要はない
   values[BOARD_SHIPMENT_COL.status - 1] = SHIP_STATUS_SENT;
   values[BOARD_SHIPMENT_COL.detail - 1] = v[BOARD_COL.detail - 1];
-  values[BOARD_SHIPMENT_COL.startDate - 1] = v[BOARD_COL.startDate - 1];
+  // 受付開始日は持たなくなった。返送履歴には依頼日を凍結する
+  values[BOARD_SHIPMENT_COL.startDate - 1] = v[BOARD_COL.orderedAt - 1];
   values[BOARD_SHIPMENT_COL.due - 1] = boardFormatDateRange_(v[BOARD_COL.dueFrom - 1], v[BOARD_COL.dueTo - 1]);
   values[BOARD_SHIPMENT_COL.subject - 1] = (mail || {}).subject || '';
   values[BOARD_SHIPMENT_COL.body - 1] = (mail || {}).body || '';
@@ -4191,8 +4202,8 @@ function boardCreateGuideDraft(data) {
   boardSaveCase(data);
 
   const v = sheet.getRange(row, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
-  if (!v[BOARD_COL.startDate - 1] || !v[BOARD_COL.dueFrom - 1]) {
-    throw new Error('受付開始日と納期予定（自）を入力してください。');
+  if (!v[BOARD_COL.dueFrom - 1]) {
+    throw new Error('納期予定（自）を入力してください。');
   }
 
   const customerId = v[BOARD_COL.customerId - 1];
