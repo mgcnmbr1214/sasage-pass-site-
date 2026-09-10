@@ -483,6 +483,7 @@ function onOpen() {
 // ------------------------------------------------------------
 
 function boardSetup() {
+  const startedAt = new Date().getTime();
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -552,65 +553,41 @@ function boardSetup() {
     boardLog_('②エラー', '顧客情報の補完に失敗: ' + err.message);
   }
 
-  try {
-    boardArrangeCases_(ss);
-  } catch (err) {
-    boardLog_('②エラー', '案件の並べ替えに失敗: ' + err.message);
-  }
-  try {
-    boardIssueFormKeys_(ss);
-  } catch (err) {
-    boardLog_('②エラー', '依頼フォームの鍵の作成に失敗: ' + err.message);
-  }
-  try {
-    boardIssueFormKeys_(ss);
-  } catch (err) {
-    boardLog_('②エラー', '依頼フォームの鍵の作成に失敗: ' + err.message);
-  }
-  try {
-    squareRefreshRegistrations(ss);
-  } catch (err) {
-    boardLog_('②エラー', '署名とカードの確認に失敗: ' + err.message);
-  }
+  // ここから先は、10分ごとの自動チェックでも同じことをする。
+  // **時間切れで途中終了させない。** 残り時間が尽きたら飛ばし、あとを自動チェックに任せる
+  const deferred = [];
+  const step = function (label, fn) { boardSetupStep_(startedAt, label, deferred, fn); };
+
+  step('案件の並べ替え', function () { boardArrangeCases_(ss, true); });
+  step('依頼フォームの鍵の作成', function () { boardIssueFormKeys_(ss); });
+
+  // 移行は一度きり。飛ばすと次回まで直らないので、必ず実行する
   try {
     boardMigrateShipmentDrafts_(ss);
-  } catch (err) {
-    boardLog_('②エラー', '返送履歴の状態の移行に失敗: ' + err.message);
-  }
-  try {
     boardMigrateShipmentAmounts_(ss);
-  } catch (err) {
-    boardLog_('②エラー', '返送履歴の金額の移行に失敗: ' + err.message);
-  }
-  try {
     boardMigrateResponseTypes_(ss);
   } catch (err) {
-    boardLog_('②エラー', '対応種別の名称更新に失敗: ' + err.message);
+    boardLog_('②エラー', '返送履歴・対応種別の移行に失敗: ' + err.message);
   }
 
   let restated = 0;
-  try {
-    restated = boardRefreshRegistration_(ss);
-  } catch (err) {
-    boardLog_('②エラー', 'お客様の登録状況の更新に失敗: ' + err.message);
-  }
-  try {
+  step('署名とカードの確認', function () { squareRefreshRegistrations(ss); });
+  step('お客様の登録状況の更新', function () { restated = boardRefreshRegistration_(ss); });
+  step('返信文面の照合', function () {
     // Gmailから直接返信した分を拾い、返信文面の食い違いも直す
     mailRefreshSentStatus_(ss);
     mailSyncSentReplies_(ss);
-  } catch (err) {
-    boardLog_('②エラー', '返信文面の照合に失敗: ' + err.message);
-  }
-  try {
+  });
+  step('メール履歴の整形', function () {
     // 行の増減がすべて終わったあとに実行する
     boardApplyMailFormatting_(ss.getSheetByName(BOARD_SHEET_MAILS));
-  } catch (err) {
-    boardLog_('②エラー', 'メール履歴の整形に失敗: ' + err.message);
-  }
-  boardLog_('セットアップ', '初期セットアップを実行しました（取込 ' + imported + ' 件）');
+  });
+
+  boardLog_('セットアップ', '初期セットアップを実行しました（取込 ' + imported + ' 件）' +
+    (deferred.length > 0 ? '／自動チェックに回した処理: ' + deferred.join('、') : ''));
 
   SpreadsheetApp.getUi().alert(
-    'セットアップが完了しました。\n\n' +
+    'セットアップが完了しました。' + '\n\n' +
     'フォーム回答の取り込み：' + imported + ' 件' +
     (brokenFixed > 0 ? '\n列がずれた案件を削除：' + brokenFixed + ' 件' : '') +
     (deduped > 0 ? '\n重複した案件を削除：' + deduped + ' 件' : '') +
@@ -618,8 +595,34 @@ function boardSetup() {
     (mailDeduped > 0 ? '\n重複したメール履歴を削除：' + mailDeduped + ' 件' : '') +
     (backfilled > 0 ? '\n依頼内容へ月間予定数を追記：' + backfilled + ' 件' : '') +
     (restated > 0 ? '\nお客様の登録状況の更新：' + restated + ' 件' : '') +
+    (deferred.length > 0
+      ? '\n\n時間の都合で、次の処理は10分以内の自動チェックに回しました。' +
+        '\n　' + deferred.join('\n　')
+      : '') +
     '\n\n「案件ボード」タブをご確認ください。'
   );
+}
+
+/** 初期セットアップに使ってよい時間。Google側の上限（6分）より手前で切り上げる。 */
+const BOARD_SETUP_BUDGET_MS = 3.5 * 60 * 1000;
+
+/**
+ * 自動チェックでも行う処理を、時間が残っていれば実行する。
+ *
+ * **途中で強制終了させないための仕組み。** 6分を超えるとGoogleが実行を打ち切り、
+ * どこまで終わったのか分からないまま止まる。移行の途中で切れると危ない。
+ * 残り時間が尽きたぶんは飛ばし、何を飛ばしたかを画面とログに残す。
+ */
+function boardSetupStep_(startedAt, label, deferred, fn) {
+  if (new Date().getTime() - startedAt > BOARD_SETUP_BUDGET_MS) {
+    deferred.push(label);
+    return;
+  }
+  try {
+    fn();
+  } catch (err) {
+    boardLog_('②エラー', label + 'に失敗: ' + err.message);
+  }
 }
 
 /** 旧レイアウトからの移行。列の増減を伴うため、見出し書き換えより先に実行する。 */
@@ -820,7 +823,7 @@ function boardMoveFirstPlanToCustomers_(ss) {
  * **並びはスクリプトが決める。** 手で並べ替えても次のセットアップで戻る。
  * 各お客様の中は新しい依頼が上。折りたたむと最新の1件だけが見える。
  */
-function boardArrangeCases_(ss) {
+function boardArrangeCases_(ss, force) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   if (!sheet || sheet.getLastRow() < 3) return 0;
 
@@ -843,6 +846,8 @@ function boardArrangeCases_(ss) {
   const same = sorted.every(function (row, i) {
     return row[BOARD_COL.caseId - 1] === rows[i][BOARD_COL.caseId - 1];
   });
+  if (same && !force) return sorted.length;
+
   if (!same) {
     sheet.getRange(2, 1, sorted.length, width).setValues(sorted);
     // 数式は行番号を持つ。並べ替えたら必ず入れ直す
@@ -853,6 +858,7 @@ function boardArrangeCases_(ss) {
     boardLog_('表示', '案件をお客様ごとに並べ直しました');
   }
 
+  // グループの作り直しは重い。並びが変わったときと、セットアップのときだけ
   boardGroupCaseRows_(sheet, sorted);
   return sorted.length;
 }
@@ -3325,11 +3331,17 @@ function boardRefreshRegistration_(ss) {
 
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
   let changed = 0;
+  // 同じお客様が何行もある。1人につき一度だけ調べる
+  const cache = {};
 
   rows.forEach(function (row, i) {
     if (!String(row[BOARD_COL.caseId - 1] || '').trim()) return;
-    const next = boardRegistrationOf_(ss,
-      String(row[BOARD_COL.customerId - 1] || '').trim(), row[BOARD_COL.signedAt - 1]);
+    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
+    const key = customerId + '|' + (row[BOARD_COL.signedAt - 1] ? '1' : '0');
+    if (cache[key] === undefined) {
+      cache[key] = boardRegistrationOf_(ss, customerId, row[BOARD_COL.signedAt - 1]);
+    }
+    const next = cache[key];
     if (next === String(row[BOARD_COL.registration - 1] || '').trim()) return;
 
     sheet.getRange(i + 2, BOARD_COL.registration).setValue(next);
