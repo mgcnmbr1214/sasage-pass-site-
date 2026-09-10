@@ -518,6 +518,7 @@ function boardSetup() {
     boardLog_('②エラー', '編集トリガーの登録に失敗: ' + err.message);
   }
 
+  const casesBefore = boardCountCases_(ss);
   const brokenFixed = boardRepairBrokenCases_(ss);
   const deduped = boardDedupeCases_(ss);
   const repaired = boardMigrateMails_(ss);
@@ -588,6 +589,15 @@ function boardSetup() {
     // 行の増減がすべて終わったあとに実行する
     boardApplyMailFormatting_(ss.getSheetByName(BOARD_SHEET_MAILS));
   });
+
+  // **理由の分からない減りを見逃さない。** 削除する処理はすべて記録を残すので、
+  // 記録が無いのに減っていたら、どこかがおかしい
+  const casesAfter = boardCountCases_(ss);
+  const lost = casesBefore + imported - brokenFixed - deduped - casesAfter;
+  if (lost > 0) {
+    boardLog_('②エラー', '案件が ' + lost + ' 件、記録のないまま減っています（' +
+      casesBefore + '件 → ' + casesAfter + '件）。バックアップをご確認ください');
+  }
 
   boardLog_('セットアップ', '初期セットアップを実行しました（取込 ' + imported + ' 件）' +
     (deferred.length > 0 ? '／自動チェックに回した処理: ' + deferred.join('、') : ''));
@@ -889,14 +899,21 @@ function boardRestorePastRequests_(ss) {
     if (!caseId) return;
 
     const hit = boardFindCaseById_(cases, caseId);
-    if (!hit) return;
     // その行がまだ返送済なら、上書きされていない
-    if (String(hit.values[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_DONE) return;
+    if (hit && String(hit.values[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_DONE) return;
 
-    const customerId = String(hit.values[BOARD_COL.customerId - 1] || '').trim();
-    // いまの行を枝番へずらし、元の番号を過去の依頼に返す
-    const moved = boardNextCaseId_(cases, customerId);
-    cases.getRange(hit.row, BOARD_COL.caseId).setValue(moved);
+    const customerId = hit
+      ? String(hit.values[BOARD_COL.customerId - 1] || '').trim()
+      : String(ship[BOARD_SHIPMENT_COL.customerId - 1] || '').trim();
+    if (!customerId) return;
+
+    // 行が残っていれば枝番へずらして元の番号を返す。
+    // **行ごと無くなっている場合もある。** その場合はそのまま元の番号で戻す
+    let moved = '';
+    if (hit) {
+      moved = boardNextCaseId_(cases, customerId);
+      cases.getRange(hit.row, BOARD_COL.caseId).setValue(moved);
+    }
 
     const due = boardSplitDueRange_(ship[BOARD_SHIPMENT_COL.due - 1]);
     const created = boardAppendCase_(ss, {
@@ -918,7 +935,8 @@ function boardRestorePastRequests_(ss) {
     });
     if (!created) return;
     restored++;
-    boardLog_('移行', caseId + ' の過去のご依頼を復元し、いまの依頼を ' + moved + ' にしました');
+    boardLog_('移行', caseId + ' の過去のご依頼を復元しました' +
+      (moved ? '（いまの依頼は ' + moved + ' にしました）' : '（行ごと失われていました）'));
   });
 
   return restored;
@@ -948,6 +966,14 @@ function boardClearOldMailCells_(sheet, customerId, keepRow) {
   return cleared;
 }
 
+/** 案件ボードにある案件の数。黙って減っていないかを見張るために使う。 */
+function boardCountCases_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  return sheet.getRange(2, BOARD_COL.caseId, sheet.getLastRow() - 1, 1).getValues()
+    .filter(function (row) { return String(row[0] || '').trim(); }).length;
+}
+
 /** 案件IDで案件ボードの行を探す。 */
 function boardFindCaseById_(sheet, caseId) {
   if (sheet.getLastRow() < 2) return null;
@@ -973,8 +999,10 @@ function boardArrangeCases_(ss, force) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   if (!sheet || sheet.getLastRow() < 3) return 0;
 
-  const width = BOARD_CASE_HEADERS.length;
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues()
+  // シートの実際の幅で読む。**足りない幅で読むと、右側の列を書き戻すときに失う**
+  const width = Math.max(sheet.getLastColumn(), BOARD_CASE_HEADERS.length);
+  const total = sheet.getLastRow() - 1;
+  const rows = sheet.getRange(2, 1, total, width).getValues()
     .filter(function (row) { return String(row[BOARD_COL.caseId - 1] || '').trim(); });
   if (rows.length < 2) return 0;
 
@@ -996,6 +1024,10 @@ function boardArrangeCases_(ss, force) {
 
   if (!same) {
     sheet.getRange(2, 1, sorted.length, width).setValues(sorted);
+    // 空行を詰めたぶん、下に古い内容が残る。消さないと同じ案件が二重に見える
+    if (sorted.length < total) {
+      sheet.getRange(2 + sorted.length, 1, total - sorted.length, width).clearContent();
+    }
     // 数式は行番号を持つ。並べ替えたら必ず入れ直す
     for (let r = 2; r < 2 + sorted.length; r++) {
       boardSetTodoFormula_(sheet, r);
