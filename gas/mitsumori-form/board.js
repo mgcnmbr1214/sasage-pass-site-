@@ -26,7 +26,7 @@ const BOARD_SOURCE_SHEET = 'Responses';
 const BOARD_STATUS_NEW = '問合せ';
 const BOARD_STATUS_SIGNING = '支払い・署名待ち';
 const BOARD_STATUS_WAITING_SHIP = '発送待ち';
-const BOARD_STATUS_SHIPPED = '発送済み';
+const BOARD_STATUS_SHIPPED = '荷受待ち';
 const BOARD_STATUS_WORKING = '作業中';
 const BOARD_STATUS_DONE = '返送済';
 const BOARD_STATUS_CLOSED = '見送り';
@@ -52,7 +52,7 @@ const BOARD_STATUS_OWNER = {
   '問合せ': 'お客様',
   '支払い・署名待ち': 'お客様',
   '発送待ち': 'お客様',
-  '発送済み': '自分',
+  '荷受待ち': '自分',
   '作業中': '自分',
   '返送済': '完了',
   '見送り': '完了'
@@ -70,7 +70,8 @@ const BOARD_STATUS_RENAMES = {
   '返信済': BOARD_STATUS_NEW,
   '情報不足': BOARD_STATUS_NEW,
   '依頼確定前': BOARD_STATUS_NEW,
-  '依頼確定': BOARD_STATUS_WAITING_SHIP
+  '依頼確定': BOARD_STATUS_WAITING_SHIP,
+  '発送済み': BOARD_STATUS_SHIPPED
 };
 
 /**
@@ -87,7 +88,7 @@ const BOARD_REG_DONE = [BOARD_REG_SIGNED];
 
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
-  '案件ID', 'ステータス', 'お客様の登録状況', '対応者', 'お客様', '予定点数', '初回ご依頼予定数', '初回ご依頼予定日', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
+  '案件ID', 'ステータス', 'お客様の登録状況', '対応者', 'お客様', '依頼日', '予定点数', '受付開始日', '納期予定（自）', '納期予定（至）', '次にやること',
   '未返信', '未請求の返送',
   '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール', '単価',
   '請求書送付日', 'Square請求書ID', '署名・支払確認日',
@@ -95,28 +96,27 @@ const BOARD_CASE_HEADERS = [
 ];
 
 const BOARD_COL = {
-  caseId: 1, status: 2, registration: 3, owner: 4, customer: 5, qty: 6, firstQty: 7, firstDate: 8,
-  startDate: 9, dueFrom: 10, dueTo: 11, todo: 12,
-  unreplied: 13, unbilled: 14,
-  customerId: 15, detail: 16, formInquiry: 17, lastInbound: 18, lastOutbound: 19, unitPrice: 20,
-  invoiceSent: 21, invoiceId: 22, signedAt: 23,
-  tracking: 24, teamNote: 25, guideDraftAt: 26, lastContact: 27, memo: 28, sourceRow: 29
+  caseId: 1, status: 2, registration: 3, owner: 4, customer: 5, orderedAt: 6, qty: 7,
+  startDate: 8, dueFrom: 9, dueTo: 10, todo: 11,
+  unreplied: 12, unbilled: 13,
+  customerId: 14, detail: 15, formInquiry: 16, lastInbound: 17, lastOutbound: 18, unitPrice: 19,
+  invoiceSent: 20, invoiceId: 21, signedAt: 22,
+  tracking: 23, teamNote: 24, guideDraftAt: 25, lastContact: 26, memo: 27, sourceRow: 28
 };
 
 /**
- * 案件行を次のご依頼で使い回すときに消す、**その回だけの値**。
- * 消した値は返送履歴に凍結済みなので、履歴としては残る。
- * 単価・依頼内容・署名や登録手数料の記録は、お客様に一度きりのものなので残す。
+ * 次のご依頼で新しい行を作るとき、前の依頼から引き継ぐ値。
+ *
+ * **行は使い回さない。** 依頼ごとに1行を残すので、
+ * 前回の日付や追跡番号が次の依頼に紛れ込むことがなくなった。
  */
-const BOARD_CASE_REOPEN_CLEARED = [
-  'startDate', 'dueFrom', 'dueTo', 'qty', 'tracking', 'teamNote', 'guideDraftAt'
-];
+const BOARD_CASE_CARRIED = ['customer', 'customerId', 'detail', 'formInquiry', 'unitPrice', 'sourceRow'];
 
-/** 折りたたみグループにまとめる列。並びが変わっても、隣り合っている範囲ごとにまとめる。 */
-const BOARD_DETAIL_COLS = [
-  'firstQty', 'firstDate', 'customerId', 'detail', 'formInquiry', 'unitPrice',
-  'invoiceSent', 'invoiceId', 'signedAt', 'teamNote', 'guideDraftAt', 'lastContact', 'memo', 'sourceRow'
-];
+/**
+ * 折りたたむ列。**いまは畳まない。**
+ * 行をお客様ごとに畳むようにしたので、列まで畳むと折りたたみが二重になって分かりにくい。
+ */
+const BOARD_DETAIL_COLS = [];
 
 /** 案件ボードに載せる問い合わせ内容の最大文字数。全文はメール履歴で見る。 */
 const BOARD_INQUIRY_MAX = 400;
@@ -125,7 +125,7 @@ const BOARD_CUSTOMER_HEADERS = [
   '顧客ID', '会社名・屋号', '担当者名', 'メールアドレス', '電話番号',
   'ストア名', '代表者名義', '請求先 郵便番号', '請求先 住所',
   '返送先 郵便番号', '返送先 住所', '返送先 宛名', '返送先 電話番号',
-  '依頼内容', '月間予定数', '単価', '初回問い合わせ日', '最終更新日', 'メモ', 'Square顧客ID',
+  '依頼内容', '月間予定数', '初回ご依頼予定数', '初回ご依頼予定日', '単価', '初回問い合わせ日', '最終更新日', 'メモ', 'Square顧客ID',
   '契約書署名日', 'カード登録', '登録の確認日',
   '単価調整', '固定調整', '調整の理由', '依頼フォームの鍵'
 ];
@@ -134,9 +134,10 @@ const BOARD_CUSTOMER_COL = {
   id: 1, company: 2, name: 3, email: 4, tel: 5,
   storeName: 6, representative: 7, billZip: 8, billAddress: 9,
   returnZip: 10, returnAddress: 11, returnName: 12, returnTel: 13,
-  detail: 14, monthly: 15, unitPrice: 16, firstAt: 17, updatedAt: 18, memo: 19, squareId: 20,
-  signedAt: 21, card: 22, checkedAt: 23,
-  priceAdjust: 24, flatAdjust: 25, adjustNote: 26, formKey: 27
+  detail: 14, monthly: 15, firstQty: 16, firstDate: 17, unitPrice: 18, firstAt: 19, updatedAt: 20,
+  memo: 21, squareId: 22,
+  signedAt: 23, card: 24, checkedAt: 25,
+  priceAdjust: 26, flatAdjust: 27, adjustNote: 28, formKey: 29
 };
 
 /**
@@ -159,14 +160,17 @@ const BOARD_CUSTOMER_INTAKE = [
   { label: '返送先郵便番号', col: 'returnZip' },
   { label: '返送先住所', col: 'returnAddress' },
   { label: '返送先電話番号', col: 'returnTel' },
-  { label: '宛名', col: 'returnName' }
-];
-
-/** 見積もり回答で伺う項目のうち、案件ごとに保管するもの。 */
-const BOARD_CASE_INTAKE = [
+  { label: '宛名', col: 'returnName' },
+  // 初回の見立て。案件ではなくお客様のものなので、ここで持つ
   { label: '初回ご依頼予定数', col: 'firstQty' },
   { label: '初回ご依頼予定日', col: 'firstDate' }
 ];
+
+/**
+ * 見積もり回答で伺う項目のうち、案件ごとに保管するもの。
+ * **いまは無い。** 初回ご依頼予定数・予定日はお客様のものなので、顧客タブへ移した。
+ */
+const BOARD_CASE_INTAKE = [];
 
 /** 取り込みで探す見出しの一覧。コロンを付け忘れた行を拾うときに使う。 */
 const BOARD_INTAKE_LABELS = (function () {
@@ -549,6 +553,11 @@ function boardSetup() {
   }
 
   try {
+    boardArrangeCases_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '案件の並べ替えに失敗: ' + err.message);
+  }
+  try {
     boardIssueFormKeys_(ss);
   } catch (err) {
     boardLog_('②エラー', '依頼フォームの鍵の作成に失敗: ' + err.message);
@@ -650,8 +659,7 @@ function boardMigrateCases_(ss) {
       .map(function (h) { return String(h || '').trim(); });
     boardLog_('移行', '案件ボードの 対応不要 列を削除しました（メール履歴へ移動）');
   }
-  headers = boardInsertColumnAfter_(sheet, headers, '予定点数', '初回ご依頼予定数');
-  headers = boardInsertColumnAfter_(sheet, headers, '初回ご依頼予定数', '初回ご依頼予定日');
+  headers = boardInsertColumnAfter_(sheet, headers, 'お客様', '依頼日');
   headers = boardRenameColumn_(sheet, headers, '最新のお問い合わせ内容', 'フォームの問い合わせ内容');
   headers = boardRenameColumn_(sheet, headers, '最新のメール内容', '最新の受信メール');
   headers = boardInsertColumnAfter_(sheet, headers, '依頼内容', 'フォームの問い合わせ内容');
@@ -673,6 +681,11 @@ function boardMigrateCases_(ss) {
 
   // 引き直したあとに中身を書き換える。順番を逆にすると別の列を潰す
   boardRenameStatuses_(sheet);
+
+  // 顧客タブに受け皿ができてから移す
+  boardMigrateCustomers_(ss);
+  boardMoveFirstPlanToCustomers_(ss);
+  boardSyncColumns_(sheet);
 }
 
 /** 見出しの名前を変える。変更後の見出し配列を返す。 */
@@ -752,6 +765,131 @@ function boardMigrateMails_(ss) {
  * 移行のたびに列幅・条件付き書式・セルのメモが消えていた。
  * 足りない列を、見出しの名前を頼りに挿し込むだけにする。
  */
+/**
+ * 案件ボードにあった「初回ご依頼予定数・予定日」を顧客タブへ移す。
+ *
+ * これはお客様の見立てであって、依頼ごとの値ではない。
+ * 依頼が増えるたびに同じ値が並ぶのは無駄なので、お客様のほうで1つ持つ。
+ * **値を移してから列を消す。** 先に消すと元に戻せない。
+ */
+function boardMoveFirstPlanToCustomers_(ss) {
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  const customers = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  if (!cases || !customers || cases.getLastRow() < 2) return 0;
+
+  const headers = cases.getRange(1, 1, 1, cases.getLastColumn()).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+  const qtyCol = headers.indexOf('初回ご依頼予定数') + 1;
+  const dateCol = headers.indexOf('初回ご依頼予定日') + 1;
+  if (!qtyCol && !dateCol) return 0;
+
+  const idCol = headers.indexOf('顧客ID') + 1;
+  if (!idCol) return 0;
+
+  const rows = cases.getRange(2, 1, cases.getLastRow() - 1, cases.getLastColumn()).getValues();
+  let moved = 0;
+
+  rows.forEach(function (row) {
+    const customerId = String(row[idCol - 1] || '').trim();
+    if (!customerId) return;
+    const found = boardFindCustomerRow_(ss, customerId);
+    if (!found) return;
+
+    [[qtyCol, 'firstQty'], [dateCol, 'firstDate']].forEach(function (pair) {
+      if (!pair[0]) return;
+      const value = row[pair[0] - 1];
+      if (value === '' || value === null) return;
+      const cell = customers.getRange(found.row, BOARD_CUSTOMER_COL[pair[1]]);
+      if (String(cell.getValue() || '').trim()) return;   // 既に入っていれば触らない
+      cell.setValue(value);
+      moved++;
+    });
+  });
+
+  // 値を移し終えてから消す
+  [dateCol, qtyCol].sort(function (a, b) { return b - a; }).forEach(function (col) {
+    if (col) cases.deleteColumn(col);
+  });
+  boardLog_('移行', '初回ご依頼予定数・予定日を顧客タブへ移しました（' + moved + '件）');
+  return moved;
+}
+
+/**
+ * 案件をお客様ごとにまとめ、古い依頼を折りたたむ。
+ *
+ * **並びはスクリプトが決める。** 手で並べ替えても次のセットアップで戻る。
+ * 各お客様の中は新しい依頼が上。折りたたむと最新の1件だけが見える。
+ */
+function boardArrangeCases_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 3) return 0;
+
+  const width = BOARD_CASE_HEADERS.length;
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues()
+    .filter(function (row) { return String(row[BOARD_COL.caseId - 1] || '').trim(); });
+  if (rows.length < 2) return 0;
+
+  const rank = function (row) {
+    const parts = boardCaseIdParts_(row[BOARD_COL.caseId - 1]);
+    return parts.number * 1000 + parts.branch;
+  };
+  const sorted = rows.slice().sort(function (a, b) {
+    const ka = String(a[BOARD_COL.customerId - 1] || '');
+    const kb = String(b[BOARD_COL.customerId - 1] || '');
+    if (ka !== kb) return ka < kb ? -1 : 1;
+    return rank(b) - rank(a);   // 同じお客様の中は新しい依頼が上
+  });
+
+  const same = sorted.every(function (row, i) {
+    return row[BOARD_COL.caseId - 1] === rows[i][BOARD_COL.caseId - 1];
+  });
+  if (!same) {
+    sheet.getRange(2, 1, sorted.length, width).setValues(sorted);
+    // 数式は行番号を持つ。並べ替えたら必ず入れ直す
+    for (let r = 2; r < 2 + sorted.length; r++) {
+      boardSetTodoFormula_(sheet, r);
+      boardSetOwnerFormula_(sheet, r);
+    }
+    boardLog_('表示', '案件をお客様ごとに並べ直しました');
+  }
+
+  boardGroupCaseRows_(sheet, sorted);
+  return sorted.length;
+}
+
+/** お客様ごとに、2件目以降（＝古い依頼）を折りたたむ。 */
+function boardGroupCaseRows_(sheet, sorted) {
+  const last = sheet.getLastRow();
+  for (let i = 0; i < 5 && last >= 2; i++) {
+    try {
+      sheet.getRange(2, 1, last - 1, 1).shiftRowGroupDepth(-1);
+    } catch (err) {
+      break;
+    }
+  }
+
+  let start = 0;
+  const close = function (from, to) {
+    if (to <= from) return;
+    try {
+      sheet.getRange(from + 1, 1, to - from, 1).shiftRowGroupDepth(1);
+      sheet.getRowGroup(from + 1, 1).collapse();
+    } catch (err) {
+      boardLog_('表示', '行のグループ化に失敗: ' + err.message);
+    }
+  };
+
+  for (let i = 0; i < sorted.length; i++) {
+    const id = String(sorted[i][BOARD_COL.customerId - 1] || '');
+    const prev = i > 0 ? String(sorted[i - 1][BOARD_COL.customerId - 1] || '') : null;
+    if (id !== prev) {
+      if (start) close(start, i + 1);
+      start = i + 2;   // このお客様の先頭行（シート上の行番号）
+    }
+  }
+  if (start) close(start, sorted.length + 1);
+}
+
 function boardMigrateCustomers_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
   if (!sheet || sheet.getLastColumn() < 2) return;
@@ -888,7 +1026,7 @@ const BOARD_UNPAID_LABEL = '未入金あり';
 
 /** 列の幅。並べ替えても効くよう、位置ではなく列の意味で指定する。 */
 const BOARD_CASE_WIDTHS = {
-  caseId: 80, status: 130, registration: 105, owner: 70, customer: 150, qty: 70, firstQty: 100, firstDate: 95,
+  caseId: 90, status: 130, registration: 105, owner: 70, customer: 150, orderedAt: 95, qty: 70,
   startDate: 95, dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
   customerId: 70, detail: 160, formInquiry: 160, lastInbound: 200, lastOutbound: 200, unitPrice: 70,
   invoiceSent: 95, invoiceId: 110, signedAt: 95,
@@ -927,7 +1065,7 @@ function boardApplyCaseFormatting_(sheet) {
     .build());
 
   const todoRange = sheet.getRange(2, BOARD_COL.todo, maxRows, 1);
-  ['メールに返信する', '経過', '作業チームへ共有', '依頼確定メール'].forEach(function (word) {
+  ['メールに返信する', '経過', '受取準備', '作業チームへ共有', '請求書を送る', '依頼確定メール'].forEach(function (word) {
     rules.push(SpreadsheetApp.newConditionalFormatRule()
       .whenTextContains(word)
       .setFontColor('#A32D2D')
@@ -2436,25 +2574,24 @@ function boardImportResponses_(ss) {
       date: pick('date')
     });
 
-    const caseRow = cases.getLastRow() + 1;
-    const values = new Array(BOARD_CASE_HEADERS.length).fill('');
-    values[BOARD_COL.caseId - 1] = 'A' + boardPad_(caseRow - 1, 3);
-    values[BOARD_COL.status - 1] = '問合せ';
-    values[BOARD_COL.customer - 1] = company || name;
-    values[BOARD_COL.customerId - 1] = customerId;
     const monthly = boardMonthlyLabel_(pick('monthly'));
-    values[BOARD_COL.detail - 1] = monthly
-      ? (detail ? detail + '\n月間予定数：' + monthly : '月間予定数：' + monthly)
-      : detail;
-    values[BOARD_COL.formInquiry - 1] = boardTrimInquiry_(pick('inquiry'));
-    values[BOARD_COL.unitPrice - 1] = pick('unitPrice');
-    values[BOARD_COL.lastContact - 1] = pick('date');
-    values[BOARD_COL.sourceRow - 1] = sourceRow;
-
-    cases.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).setValues([values]);
-    boardSetTodoFormula_(cases, caseRow);
-    boardSetOwnerFormula_(cases, caseRow);
-    boardForceRowHeight_(cases, caseRow, 1);
+    const created = boardAppendCase_(ss, {
+      customerId: customerId,
+      status: '問合せ',
+      orderedAt: pick('date') || new Date(),
+      values: {
+        customer: company || name,
+        detail: monthly
+          ? (detail ? detail + String.fromCharCode(10) + '月間予定数：' + monthly : '月間予定数：' + monthly)
+          : detail,
+        formInquiry: boardTrimInquiry_(pick('inquiry')),
+        unitPrice: pick('unitPrice'),
+        lastContact: pick('date'),
+        sourceRow: sourceRow
+      }
+    });
+    if (!created) return;
+    const caseRow = created.row;
 
     // フォームに回答があった時点で「対応を選ぶ」の一覧にも載せる。
     // お客様からメールが届くまで待っていると、初回の返信が漏れるため。
@@ -2983,12 +3120,22 @@ function boardEvaluateReadiness_(ss, customerId) {
   const caseRow = boardFindLatestCaseRow_(ss, customerId);
   if (caseRow) {
     const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-    const firstQty = String(sheet.getRange(caseRow, BOARD_COL.firstQty).getValue() || '').trim();
+    const firstQty = String(customer.values[BOARD_CUSTOMER_COL.firstQty - 1] || '').trim();
     const qty = String(sheet.getRange(caseRow, BOARD_COL.qty).getValue() || '').trim();
     // 予定点数が既に入っていれば、初回ご依頼予定数は無くても進められる
     if (!firstQty && !qty) missing.push('初回ご依頼予定数');
   }
   return { ready: missing.length === 0, missing: missing };
+}
+
+/** お客様が答えた初回の見立て。案件ボードから顧客タブへ移した。 */
+function boardFindCustomerPlan_(ss, customerId) {
+  const found = boardFindCustomerRow_(ss, customerId);
+  if (!found) return { firstQty: '', firstDate: '' };
+  return {
+    firstQty: found.values[BOARD_CUSTOMER_COL.firstQty - 1],
+    firstDate: found.values[BOARD_CUSTOMER_COL.firstDate - 1]
+  };
 }
 
 function boardFindCustomerRow_(ss, customerId) {
@@ -3004,29 +3151,129 @@ function boardFindCustomerRow_(ss, customerId) {
 }
 
 /**
- * 返送まで終わった案件に新しいご連絡が届いたら、同じ行で次のご依頼を始める。
+ * 返送まで終わったお客様から新しいご連絡が届いたら、**次のご依頼の行を作る。**
  *
- * 案件行はお客様ごとに使い続ける。前回ぶんの日付が残っていると
- * 「次にやること」が終わった依頼を指してしまうので、その回だけの値を消す。
- * 消す値は返送履歴に凍結済みなので、請求の根拠も履歴も失われない。
+ * 以前は同じ行を使い回して「問合せ」に戻していた。そのため前回の日付や
+ * 追跡番号が次の依頼に紛れ込み、過去の依頼も残らなかった。
+ * 依頼ごとに1行にすれば、履歴がそのまま残る。
  */
-function boardReopenCase_(ss, customerId) {
+function boardStartNextRequest_(ss, customerId) {
   const row = boardFindLatestCaseRow_(ss, customerId);
   if (!row) return '';
 
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-  const status = String(sheet.getRange(row, BOARD_COL.status).getValue() || '').trim();
-  if (status !== BOARD_STATUS_DONE) return '';
+  const values = sheet.getRange(row, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
+  if (String(values[BOARD_COL.status - 1] || '').trim() !== BOARD_STATUS_DONE) return '';
 
-  sheet.getRange(row, BOARD_COL.status).setValue(BOARD_STATUS_NEW);
-  BOARD_CASE_REOPEN_CLEARED.forEach(function (key) {
-    if (BOARD_COL[key]) sheet.getRange(row, BOARD_COL[key]).clearContent();
+  const created = boardAppendCase_(ss, {
+    customerId: customerId,
+    status: BOARD_STATUS_NEW,
+    carryFrom: values
   });
-  boardSetTodoFormula_(sheet, row);
-  boardSetOwnerFormula_(sheet, row);
-  boardLog_('案件情報', sheet.getRange(row, BOARD_COL.caseId).getValue() +
-    ' に新しいご連絡が届いたため、次のご依頼として再開しました');
+  if (!created) return '';
+
+  boardLog_('案件情報', created.caseId + ' として次のご依頼を受け付けました（前回 ' +
+    values[BOARD_COL.caseId - 1] + '）');
   return BOARD_STATUS_NEW;
+}
+
+/**
+ * 案件を1行足す。**依頼ごとに1行。**
+ *
+ * 同じ瞬間に2件届いても取りこぼさないよう、書き込みは順番待ちにする。
+ * 順番待ちを入れないと、2つの実行が同じ行番号を読んで片方が上書きされ、
+ * 依頼が黙って消える。
+ */
+function boardAppendCase_(ss, options) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet) return null;
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (err) {
+    boardLog_('②エラー', '案件の追加が混み合っています: ' + err.message);
+    throw new Error('いま混み合っています。恐れ入りますが、もう一度お試しください。');
+  }
+
+  try {
+    const customerId = String(options.customerId || '').trim();
+    const values = new Array(BOARD_CASE_HEADERS.length).fill('');
+
+    // 前の依頼から引き継ぐ値。日付・点数・追跡番号は引き継がない
+    if (options.carryFrom) {
+      BOARD_CASE_CARRIED.forEach(function (key) {
+        values[BOARD_COL[key] - 1] = options.carryFrom[BOARD_COL[key] - 1];
+      });
+    }
+    Object.keys(options.values || {}).forEach(function (key) {
+      if (BOARD_COL[key]) values[BOARD_COL[key] - 1] = options.values[key];
+    });
+
+    values[BOARD_COL.caseId - 1] = boardNextCaseId_(sheet, customerId);
+    values[BOARD_COL.customerId - 1] = customerId;
+    values[BOARD_COL.status - 1] = options.status || BOARD_STATUS_NEW;
+    values[BOARD_COL.orderedAt - 1] = options.orderedAt || new Date();
+
+    const row = sheet.getLastRow() + 1;
+    sheet.getRange(row, 1, 1, BOARD_CASE_HEADERS.length).setValues([values]);
+    boardSetTodoFormula_(sheet, row);
+    boardSetOwnerFormula_(sheet, row);
+    boardForceRowHeight_(sheet, row, 1);
+    return { row: row, caseId: values[BOARD_COL.caseId - 1] };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 次の案件ID。
+ *
+ * そのお客様に案件が既にあれば**いちばん古い案件IDに枝番**を足す（A005 → A005-2）。
+ * 初めてのお客様には新しい番号を振る。
+ * **行番号からは作らない。** 並べ替えると番号が変わってしまう。
+ */
+function boardNextCaseId_(sheet, customerId) {
+  const rows = sheet.getLastRow() > 1
+    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues()
+    : [];
+
+  let parent = '';
+  let branch = 1;
+  let maxNumber = 0;
+
+  rows.forEach(function (row) {
+    const id = String(row[BOARD_COL.caseId - 1] || '').trim();
+    if (!id) return;
+
+    const m = id.match(/^A(\d+)(?:-(\d+))?$/);
+    if (m) maxNumber = Math.max(maxNumber, Number(m[1]));
+
+    if (String(row[BOARD_COL.customerId - 1] || '').trim() !== customerId) return;
+    if (!m) return;
+    const base = 'A' + m[1];
+    if (!parent || Number(m[1]) < Number(parent.slice(1))) parent = base;
+    if (base === parent || !parent) branch = Math.max(branch, Number(m[2] || 1));
+  });
+
+  if (!parent) return 'A' + boardPad_(maxNumber + 1, 3);
+
+  // 枝番は、その親を持つ行だけを数え直す
+  let last = 1;
+  rows.forEach(function (row) {
+    const id = String(row[BOARD_COL.caseId - 1] || '').trim();
+    const m = id.match(/^(A\d+)(?:-(\d+))?$/);
+    if (!m || m[1] !== parent) return;
+    last = Math.max(last, Number(m[2] || 1));
+  });
+  return parent + '-' + (last + 1);
+}
+
+/** 案件IDを「親」と「枝番」に分ける。並べ替えに使う。 */
+function boardCaseIdParts_(caseId) {
+  const m = String(caseId || '').trim().match(/^A(\d+)(?:-(\d+))?$/);
+  if (!m) return { number: 0, branch: 0 };
+  return { number: Number(m[1]), branch: Number(m[2] || 1) };
 }
 
 /**
@@ -3212,6 +3459,26 @@ function boardTraceUnpaid_(unpaid) {
   }
 }
 
+/** お客様ごとに、いちばん新しい依頼が何番目の行かを返す。 */
+function boardNewestCaseRows_(caseIds, customerIds, statuses) {
+  const best = {};
+  const found = {};
+  caseIds.forEach(function (row, i) {
+    const caseId = String(row[0] || '').trim();
+    if (!caseId) return;
+    if (BOARD_FINISHED_STATUSES.indexOf(String(statuses[i][0] || '').trim()) >= 0) return;
+    const customerId = String(customerIds[i][0] || '').trim();
+    if (!customerId) return;
+
+    const parts = boardCaseIdParts_(caseId);
+    const rank = parts.number * 1000 + parts.branch;
+    if (best[customerId] !== undefined && best[customerId] >= rank) return;
+    best[customerId] = rank;
+    found[customerId] = i;
+  });
+  return found;
+}
+
 /**
  * 請求書は送ったが、まだ入金が確認できていない案件。
  *
@@ -3274,12 +3541,16 @@ function boardRefreshUnreplied_(ss) {
   const customerIds = cases.getRange(2, BOARD_COL.customerId, rows, 1).getValues();
   const statuses = cases.getRange(2, BOARD_COL.status, rows, 1).getValues();
   const blank = SpreadsheetApp.newRichTextValue().setText('').build();
+  // メールはお客様に届く。依頼ごとの行に同じものを並べても仕方がないので、
+  // **そのお客様のいちばん新しい依頼にだけ**出す
+  const newest = boardNewestCaseRows_(caseIds, customerIds, statuses);
 
   cases.getRange(2, BOARD_COL.unreplied, rows, 1).setRichTextValues(
     caseIds.map(function (row, i) {
       if (!String(row[0] || '').trim()) return [blank];
       // 終わった案件には出さない。「対応を選ぶ」の一覧と同じ扱いにする
       if (BOARD_FINISHED_STATUSES.indexOf(String(statuses[i][0] || '').trim()) >= 0) return [blank];
+      if (newest[String(customerIds[i][0] || '').trim()] !== i) return [blank];
       const hits = open[String(customerIds[i][0] || '').trim()];
       if (!hits || hits.length === 0) return [blank];
 
@@ -3314,17 +3585,22 @@ function boardSetTodoFormula_(sheet, row) {
   const reg = cell(BOARD_COL.registration);
   const from = cell(BOARD_COL.dueFrom);
   const to = cell(BOARD_COL.dueTo);
-  const draft = cell(BOARD_COL.guideDraftAt);
+  const ordered = cell(BOARD_COL.orderedAt);
   const dueEnd = 'IF(' + to + '="",' + from + ',' + to + ')';
-  const elapsed = '" ("&TEXT(MAX(0,TODAY()-' + draft + '),"0")&"日経過)"';
+  // 放置に気づけるよう、待たせている日数を添える
+  const elapsedFrom = function (since) {
+    return 'IF(' + since + '="",""," ("&TEXT(MAX(0,TODAY()-' + since + '),"0")&"日経過)")';
+  };
   const ready = 'OR(' + reg + '="' + BOARD_REG_OK + '",' + reg + '="' + BOARD_REG_SIGNED + '")';
   const formula = '=IF(' + cell(BOARD_COL.caseId) + '="","",IFS(' +
     cell(BOARD_COL.unreplied) + '<>"","メールに返信する",' +
     b + '="' + BOARD_STATUS_NEW + '",IF(' + ready + ',"依頼確定メールを送る","不足情報のご返信待ち"),' +
-    b + '="' + BOARD_STATUS_SIGNING + '",IF(' + cell(BOARD_COL.signedAt) + '<>"","お客様のご発送待ち",' +
-      '"支払い情報の登録・署名待ち"&IF(' + draft + '="","",' + elapsed + ')),' +
-    b + '="' + BOARD_STATUS_WAITING_SHIP + '","お客様のご発送待ち",' +
-    b + '="' + BOARD_STATUS_SHIPPED + '","作業チームへ共有する",' +
+    b + '="' + BOARD_STATUS_SIGNING + '",IF(' + cell(BOARD_COL.invoiceSent) + '="","請求書を送る",' +
+      'IF(' + cell(BOARD_COL.signedAt) + '<>"","お客様のご発送待ち",' +
+      '"支払い情報の登録・署名待ち"&' + elapsedFrom(cell(BOARD_COL.invoiceSent)) + ')),' +
+    b + '="' + BOARD_STATUS_WAITING_SHIP + '","お客様のご発送待ち"&' + elapsedFrom(ordered) + ',' +
+    b + '="' + BOARD_STATUS_SHIPPED + '",IF(' + from + '="","受取準備（納期の返信）",' +
+      '"作業チームへ共有・荷受待ち"),' +
     b + '="' + BOARD_STATUS_WORKING + '","作業"&IF(' + from + '="","","（納期 "&TEXT(' + dueEnd + ',"m/d")&"）"),' +
     'TRUE,""))';
   sheet.getRange(row, BOARD_COL.todo).setFormula(formula);
@@ -3650,20 +3926,27 @@ function boardMigrateShipmentAmounts_(ss) {
 }
 
 /**
- * 顧客IDに紐づく最新の案件の行番号。見送りだけ除く。
+ * 顧客IDに紐づく、いちばん新しい依頼の行番号。見送りだけ除く。
  *
- * 返送済も返す。**返さないと、返送のあとに届いたご連絡で案件を再開できず、
- * 続けて送る返送のお知らせも記録できない。**
+ * **行の並びで決めない。** お客様ごとに並べ替えるので、行の位置は前後する。
+ * 枝番のいちばん大きいものが最新。
  */
 function boardFindLatestCaseRow_(ss, customerId) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   if (!sheet || sheet.getLastRow() < 2 || !customerId) return 0;
+
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
   let found = 0;
+  let best = -1;
+
   rows.forEach(function (row, i) {
     if (String(row[BOARD_COL.customerId - 1]).trim() !== String(customerId).trim()) return;
-    const status = String(row[BOARD_COL.status - 1] || '').trim();
-    if (status === BOARD_STATUS_CLOSED) return;
+    if (String(row[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_CLOSED) return;
+
+    const parts = boardCaseIdParts_(row[BOARD_COL.caseId - 1]);
+    const rank = parts.number * 1000 + parts.branch;
+    if (rank < best) return;
+    best = rank;
     found = i + 2;
   });
   return found;

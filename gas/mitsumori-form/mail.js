@@ -321,7 +321,7 @@ function mailScan_(options) {
         const raw = message.getPlainBody();
         boardApplyCustomerIntake_(ss, customer.email, boardExtractCustomerIntake_(raw));
         boardApplyCaseIntake_(ss, customer.customerId, boardExtractCaseIntake_(raw));
-        boardReopenCase_(ss, customer.customerId);
+        boardStartNextRequest_(ss, customer.customerId);
       } catch (err) {
         boardLog_('②エラー', '顧客情報の取込に失敗: ' + err.message);
       }
@@ -383,6 +383,11 @@ function mailScan_(options) {
     boardRefreshRegistration_(ss);
   } catch (err) {
     boardLog_('②エラー', 'お客様の登録状況の更新に失敗: ' + err.message);
+  }
+  try {
+    boardArrangeCases_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '案件の並べ替えに失敗: ' + err.message);
   }
   boardRefreshUnreplied_(ss);
   boardRefreshUnbilled_(ss);
@@ -950,6 +955,7 @@ function mailBuildCaseContext_(row, expectedCustomerId) {
 
   // セルの生の値は返さない。日付や数値のまま返すと画面まで届かないことがある
   const text = function (value) { return String(value == null ? '' : value); };
+  const customerPlan = boardFindCustomerPlan_(ss, customerId);
   const missing = boardEvaluateReadiness_(ss, customerId).missing || [];
 
   return {
@@ -958,18 +964,16 @@ function mailBuildCaseContext_(row, expectedCustomerId) {
     caseStatus: text(v[BOARD_COL.status - 1]),
     registration: text(v[BOARD_COL.registration - 1]),
     repeatCustomer: boardIsRepeatCustomer_(v[BOARD_COL.registration - 1]),
-    // 受付開始日が未入力なら、お客様が答えた初回ご依頼予定日を初期値にする
-    startDate: text(v[BOARD_COL.startDate - 1]
-      ? boardToInputDate_(v[BOARD_COL.startDate - 1])
-      : boardToInputDate_(boardParseDate_(v[BOARD_COL.firstDate - 1]))),
-    firstDate: text(boardFormatDate_(v[BOARD_COL.firstDate - 1]) || v[BOARD_COL.firstDate - 1]),
+    startDate: text(boardToInputDate_(v[BOARD_COL.startDate - 1])),
+    // 初回の見立ては、案件ではなくお客様のもの。顧客タブから読む
+    firstDate: text(boardFormatDate_(customerPlan.firstDate) || customerPlan.firstDate),
     dueFrom: text(boardToInputDate_(v[BOARD_COL.dueFrom - 1])),
     dueTo: text(boardToInputDate_(v[BOARD_COL.dueTo - 1])),
     // 予定点数が未入力なら、お客様が答えた初回ご依頼予定数を初期値にする
     qty: text(v[BOARD_COL.qty - 1] === '' || v[BOARD_COL.qty - 1] === null
-      ? boardExtractCount_(v[BOARD_COL.firstQty - 1])
+      ? boardExtractCount_(customerPlan.firstQty)
       : v[BOARD_COL.qty - 1]),
-    firstQty: text(v[BOARD_COL.firstQty - 1]),
+    firstQty: text(customerPlan.firstQty),
     missing: missing.map(function (m) { return String(m); }),
     signedAt: text(boardToInputDate_(v[BOARD_COL.signedAt - 1])),
     invoiceId: text(invoiceId),
@@ -1775,7 +1779,7 @@ function mailFindCaseSummary_(ss, customerId) {
       row[BOARD_COL.caseId - 1],
       'ステータス: ' + row[BOARD_COL.status - 1],
       '依頼内容: ' + (row[BOARD_COL.detail - 1] || '未確定'),
-      '受付開始日: ' + (boardFormatDate_(row[BOARD_COL.startDate - 1]) || '未定'),
+      '依頼日: ' + (boardFormatDate_(row[BOARD_COL.orderedAt - 1]) || '未記録'),
       '納期: ' + (boardFormatDateRange_(row[BOARD_COL.dueFrom - 1], row[BOARD_COL.dueTo - 1]) || '未定')
     ].join(' / '));
   });
