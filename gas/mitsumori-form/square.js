@@ -277,7 +277,11 @@ const SQUARE_SIGN_KEYWORD = '署名されました';
 const SQUARE_SIGN_KEYWORD_ALT = '署名済みの契約書';
 const SQUARE_SIGN_LOOKBACK_DAYS = 90;
 /** 署名とカードを見に行く間隔。毎回だとGmailとSquareを無駄に叩く。 */
-const SQUARE_REGISTRATION_CHECK_HOURS = 6;
+/**
+ * 署名もカードもそろっているお客様を見に行く間隔。
+ * こちらは有効期限切れに気づくためのもので、急がない。
+ */
+const SQUARE_REGISTRATION_CHECK_HOURS = 24;
 
 /**
  * 「支払い情報登録・契約書署名待ち」の案件について、
@@ -299,11 +303,18 @@ const SQUARE_REGISTRATION_CHECK_HOURS = 6;
  * Squareの画面で確認した日付を手で入れてもよい。**メールは見つけるきっかけにすぎない。**
  *
  * カードのほうはAPIで直接分かる。期限切れや無効化も読み取れる。
+ *
+ * **契約待ちのお客様は毎回見に行く。** 署名が済むまで依頼フォームの発送入力が
+ * 開かないため、検知が遅れるとお客様を待たせることになる。
+ * そろっている方は1日1回でよい（有効期限切れに気づくためのもの）。
  */
 function squareRefreshRegistrations(ss) {
   const book = ss || SpreadsheetApp.getActiveSpreadsheet();
   const sheet = book.getSheetByName(BOARD_SHEET_CUSTOMERS);
   if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  // 見送りだけのお客様まで毎回Gmailを探しに行かない
+  const active = squareActiveCustomerIds_(book);
 
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CUSTOMER_HEADERS.length).getValues();
   const now = new Date();
@@ -314,9 +325,13 @@ function squareRefreshRegistrations(ss) {
     const email = String(row[BOARD_CUSTOMER_COL.email - 1] || '').trim();
     if (!boardIsEmail_(email)) return;
 
-    // 毎回すべて問い合わせると、GmailもSquareも無駄に叩く
+    // 契約がまだ整っていない進行中のお客様は、毎回見に行く
+    const waiting = active[String(row[BOARD_CUSTOMER_COL.id - 1] || '').trim()] &&
+      (!row[BOARD_CUSTOMER_COL.signedAt - 1] ||
+        !String(row[BOARD_CUSTOMER_COL.card - 1] || '').trim());
+
     const checkedAt = row[BOARD_CUSTOMER_COL.checkedAt - 1];
-    if (checkedAt instanceof Date && checkedAt.getTime() > due) return;
+    if (!waiting && checkedAt instanceof Date && checkedAt.getTime() > due) return;
 
     const customer = {
       email: email,
@@ -345,6 +360,21 @@ function squareRefreshRegistrations(ss) {
   });
 
   return changed;
+}
+
+/** 進行中の案件があるお客様の顧客ID。見送りだけの方は含めない。 */
+function squareActiveCustomerIds_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  const found = {};
+  if (!sheet || sheet.getLastRow() < 2) return found;
+
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues()
+    .forEach(function (row) {
+      if (BOARD_FINISHED_STATUSES.indexOf(String(row[BOARD_COL.status - 1] || '').trim()) >= 0) return;
+      const id = String(row[BOARD_COL.customerId - 1] || '').trim();
+      if (id) found[id] = true;
+    });
+  return found;
 }
 
 /**

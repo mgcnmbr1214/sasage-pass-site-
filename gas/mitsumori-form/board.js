@@ -126,7 +126,8 @@ const BOARD_CUSTOMER_HEADERS = [
   'ストア名', '代表者名義', '請求先 郵便番号', '請求先 住所',
   '返送先 郵便番号', '返送先 住所', '返送先 宛名', '返送先 電話番号',
   '依頼内容', '月間予定数', '単価', '初回問い合わせ日', '最終更新日', 'メモ', 'Square顧客ID',
-  '契約書署名日', 'カード登録', '登録の確認日'
+  '契約書署名日', 'カード登録', '登録の確認日',
+  '単価調整', '固定調整', '調整の理由', '依頼フォームの鍵'
 ];
 
 const BOARD_CUSTOMER_COL = {
@@ -134,8 +135,16 @@ const BOARD_CUSTOMER_COL = {
   storeName: 6, representative: 7, billZip: 8, billAddress: 9,
   returnZip: 10, returnAddress: 11, returnName: 12, returnTel: 13,
   detail: 14, monthly: 15, unitPrice: 16, firstAt: 17, updatedAt: 18, memo: 19, squareId: 20,
-  signedAt: 21, card: 22, checkedAt: 23
+  signedAt: 21, card: 22, checkedAt: 23,
+  priceAdjust: 24, flatAdjust: 25, adjustNote: 26, formKey: 27
 };
+
+/**
+ * お客様ごとの割引・割増。請求書を作るときに効かせる。
+ * 単価調整は1点あたりの増減、固定調整はその請求全体の増減。
+ * **理由は請求書の明細に出す。** 何の値引きか分からない請求書は送れない。
+ */
+const BOARD_ADJUST_COLS = ['priceAdjust', 'flatAdjust', 'adjustNote'];
 
 /**
  * 見積もり回答（T1）でお伺いする項目と、顧客タブの列の対応。
@@ -540,6 +549,16 @@ function boardSetup() {
   }
 
   try {
+    boardIssueFormKeys_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '依頼フォームの鍵の作成に失敗: ' + err.message);
+  }
+  try {
+    boardIssueFormKeys_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '依頼フォームの鍵の作成に失敗: ' + err.message);
+  }
+  try {
     squareRefreshRegistrations(ss);
   } catch (err) {
     boardLog_('②エラー', '署名とカードの確認に失敗: ' + err.message);
@@ -726,33 +745,84 @@ function boardMigrateMails_(ss) {
 }
 
 /** 顧客タブに Square顧客ID 列が無ければ追加する。 */
+/**
+ * 顧客タブに足りない列を補う。
+ *
+ * **タブをまっさらにしない。** 以前は全部の値を読んで書き戻す方式だったため、
+ * 移行のたびに列幅・条件付き書式・セルのメモが消えていた。
+ * 足りない列を、見出しの名前を頼りに挿し込むだけにする。
+ */
 function boardMigrateCustomers_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
   if (!sheet || sheet.getLastColumn() < 2) return;
 
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+  const need = BOARD_CUSTOMER_HEADERS.length;
+  let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
     .map(function (h) { return String(h || '').trim(); });
   if (headers.join('\t') === BOARD_CUSTOMER_HEADERS.join('\t')) return;
 
-  // 見出し名を手がかりに、列が増えても順番が変わっても値を引き継ぐ
-  const index = {};
-  headers.forEach(function (h, i) { if (h) index[h] = i; });
+  const short = need - sheet.getMaxColumns();
+  if (short > 0) sheet.insertColumnsAfter(sheet.getMaxColumns(), short);
 
-  const rows = sheet.getLastRow() > 1
-    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues()
-    : [];
-  const moved = rows.map(function (row) {
-    return BOARD_CUSTOMER_HEADERS.map(function (h) {
-      return index[h] === undefined ? '' : row[index[h]];
-    });
+  // 途中に足す列は、名前で位置を決めて挿入する。そうしないと右側の中身がずれる
+  BOARD_CUSTOMER_HEADERS.forEach(function (name, i) {
+    if (i === 0 || headers.indexOf(name) >= 0) return;
+    if (headers.indexOf(BOARD_CUSTOMER_HEADERS[i - 1]) < 0) return;
+    headers = boardInsertColumnAfter_(sheet, headers, BOARD_CUSTOMER_HEADERS[i - 1], name);
   });
 
-  sheet.clear();
-  sheet.getRange(1, 1, 1, BOARD_CUSTOMER_HEADERS.length).setValues([BOARD_CUSTOMER_HEADERS]);
-  if (moved.length > 0) {
-    sheet.getRange(2, 1, moved.length, BOARD_CUSTOMER_HEADERS.length).setValues(moved);
+  // **中身の入っている列に、別の見出しを被せない。**
+  // 想定と違う並びなら、勝手に直さず知らせるだけにする
+  const now = sheet.getRange(1, 1, 1, need).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+  const wrong = BOARD_CUSTOMER_HEADERS.filter(function (name, i) {
+    return now[i] && now[i] !== name;
+  });
+  if (wrong.length > 0) {
+    boardLog_('移行', '顧客タブの列が想定と違うため、見出しの更新を見送りました（' + wrong.join('、') + '）');
+    return;
   }
-  boardLog_('移行', '顧客タブを新しい列構成に並べ直しました（' + moved.length + '件）');
+
+  sheet.getRange(1, 1, 1, need).setValues([BOARD_CUSTOMER_HEADERS]);
+  boardLog_('移行', '顧客タブの見出しを更新しました');
+}
+
+/**
+ * 依頼フォームのURLに付ける、推測できない文字列を配る。
+ *
+ * これが無いと、URLの顧客IDを書き換えるだけで別のお客様の登録内容が見えてしまう。
+ * **お客様の操作は何も変わらない。** URLをそのまま開くだけ。
+ * 顧客タブの鍵を空にすると、次のセットアップで作り直す。
+ */
+function boardIssueFormKeys_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const range = sheet.getRange(2, BOARD_CUSTOMER_COL.formKey, sheet.getLastRow() - 1, 1);
+  const values = range.getValues();
+  let made = 0;
+  const next = values.map(function (row) {
+    if (String(row[0] || '').trim()) return [row[0]];
+    made++;
+    return [boardRandomKey_()];
+  });
+
+  if (made > 0) {
+    range.setValues(next);
+    boardLog_('移行', '依頼フォームの鍵を ' + made + ' 件つくりました');
+  }
+  return made;
+}
+
+/** 読み間違えやすい文字（l・o・0・1）を避けた12文字。 */
+function boardRandomKey_() {
+  const chars = 'abcdefghijkmnpqrstuvwxyz23456789';
+  const hex = Utilities.getUuid().replace(/-/g, '');
+  let key = '';
+  for (let i = 0; i < 12; i++) {
+    key += chars.charAt(parseInt(hex.substr(i * 2, 2), 16) % chars.length);
+  }
+  return key;
 }
 
 /** 旧ステータス名を新名称へ置き換える。入力規則より先に実行する。 */
