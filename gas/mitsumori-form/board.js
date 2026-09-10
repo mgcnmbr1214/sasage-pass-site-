@@ -899,21 +899,22 @@ function boardRestorePastRequests_(ss) {
     if (!caseId) return;
 
     const hit = boardFindCaseById_(cases, caseId);
+    if (!hit) {
+      // **勝手に作り直さない。** 手で消された行かもしれない。
+      // 削除はご承認いただくものなので、気づけるように知らせるだけにする
+      boardLog_('整理', caseId + ' は返送履歴に記録がありますが、案件ボードに行がありません' +
+        '（請求はできています。行が必要であればお知らせください）');
+      return;
+    }
     // その行がまだ返送済なら、上書きされていない
-    if (hit && String(hit.values[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_DONE) return;
+    if (String(hit.values[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_DONE) return;
 
-    const customerId = hit
-      ? String(hit.values[BOARD_COL.customerId - 1] || '').trim()
-      : String(ship[BOARD_SHIPMENT_COL.customerId - 1] || '').trim();
+    const customerId = String(hit.values[BOARD_COL.customerId - 1] || '').trim();
     if (!customerId) return;
 
-    // 行が残っていれば枝番へずらして元の番号を返す。
-    // **行ごと無くなっている場合もある。** その場合はそのまま元の番号で戻す
-    let moved = '';
-    if (hit) {
-      moved = boardNextCaseId_(cases, customerId);
-      cases.getRange(hit.row, BOARD_COL.caseId).setValue(moved);
-    }
+    // いまの行を枝番へずらし、元の番号を過去の依頼に返す
+    const moved = boardNextCaseId_(cases, customerId);
+    cases.getRange(hit.row, BOARD_COL.caseId).setValue(moved);
 
     const due = boardSplitDueRange_(ship[BOARD_SHIPMENT_COL.due - 1]);
     const created = boardAppendCase_(ss, {
@@ -935,8 +936,7 @@ function boardRestorePastRequests_(ss) {
     });
     if (!created) return;
     restored++;
-    boardLog_('移行', caseId + ' の過去のご依頼を復元しました' +
-      (moved ? '（いまの依頼は ' + moved + ' にしました）' : '（行ごと失われていました）'));
+    boardLog_('移行', caseId + ' の過去のご依頼を復元し、いまの依頼を ' + moved + ' にしました');
   });
 
   return restored;
