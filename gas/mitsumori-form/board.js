@@ -558,6 +558,11 @@ function boardSetup() {
   const deferred = [];
   const step = function (label, fn) { boardSetupStep_(startedAt, label, deferred, fn); };
 
+  try {
+    boardRestorePastRequests_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '過去のご依頼の復元に失敗: ' + err.message);
+  }
   step('案件の並べ替え', function () { boardArrangeCases_(ss, true); });
   step('依頼フォームの鍵の作成', function () { boardIssueFormKeys_(ss); });
 
@@ -823,6 +828,85 @@ function boardMoveFirstPlanToCustomers_(ss) {
  * **並びはスクリプトが決める。** 手で並べ替えても次のセットアップで戻る。
  * 各お客様の中は新しい依頼が上。折りたたむと最新の1件だけが見える。
  */
+/**
+ * 返送履歴にあるのに、案件ボードから消えてしまった過去のご依頼を復元する。
+ *
+ * 行を使い回していたころ、次のご依頼が同じ行に上書きされ、前の依頼が消えた。
+ * 返送履歴には**返送した時点の依頼内容・点数・単価・納期が凍結**されているので、
+ * そこから戻せる。戻した行に元の案件IDを渡し、いまの行を枝番へずらす。
+ *
+ * 判断のしかたは単純で、**返送履歴に記録があるのに、その案件の行が
+ * 返送済になっていなければ、上書きされている。** 一度戻せば次からは何もしない。
+ */
+function boardRestorePastRequests_(ss) {
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  const ships = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!cases || !ships || cases.getLastRow() < 2 || ships.getLastRow() < 2) return 0;
+
+  const shipRows = ships.getRange(2, 1, ships.getLastRow() - 1, BOARD_SHIPMENT_HEADERS.length).getValues();
+  let restored = 0;
+
+  shipRows.forEach(function (ship) {
+    const caseId = String(ship[BOARD_SHIPMENT_COL.caseId - 1] || '').trim();
+    if (!caseId) return;
+
+    const hit = boardFindCaseById_(cases, caseId);
+    if (!hit) return;
+    // その行がまだ返送済なら、上書きされていない
+    if (String(hit.values[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_DONE) return;
+
+    const customerId = String(hit.values[BOARD_COL.customerId - 1] || '').trim();
+    // いまの行を枝番へずらし、元の番号を過去の依頼に返す
+    const moved = boardNextCaseId_(cases, customerId);
+    cases.getRange(hit.row, BOARD_COL.caseId).setValue(moved);
+
+    const due = boardSplitDueRange_(ship[BOARD_SHIPMENT_COL.due - 1]);
+    const created = boardAppendCase_(ss, {
+      customerId: customerId,
+      caseId: caseId,
+      status: BOARD_STATUS_DONE,
+      orderedAt: ship[BOARD_SHIPMENT_COL.startDate - 1] || ship[BOARD_SHIPMENT_COL.date - 1],
+      values: {
+        customer: ship[BOARD_SHIPMENT_COL.customer - 1],
+        qty: ship[BOARD_SHIPMENT_COL.qty - 1],
+        unitPrice: ship[BOARD_SHIPMENT_COL.unitPrice - 1],
+        detail: ship[BOARD_SHIPMENT_COL.detail - 1],
+        startDate: ship[BOARD_SHIPMENT_COL.startDate - 1],
+        dueFrom: due.from,
+        dueTo: due.to,
+        lastContact: ship[BOARD_SHIPMENT_COL.date - 1],
+        memo: '返送履歴から復元した過去のご依頼です。'
+      }
+    });
+    if (!created) return;
+    restored++;
+    boardLog_('移行', caseId + ' の過去のご依頼を復元し、いまの依頼を ' + moved + ' にしました');
+  });
+
+  return restored;
+}
+
+/** 案件IDで案件ボードの行を探す。 */
+function boardFindCaseById_(sheet, caseId) {
+  if (sheet.getLastRow() < 2) return null;
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][BOARD_COL.caseId - 1] || '').trim() === caseId) {
+      return { row: i + 2, values: rows[i] };
+    }
+  }
+  return null;
+}
+
+/** 「2026年8月24日 〜 2026年8月28日」を2つの日付に戻す。 */
+function boardSplitDueRange_(text) {
+  const parts = String(text == null ? '' : text).split('〜');
+  return {
+    from: boardParseDate_(parts[0]) || '',
+    to: parts.length > 1 ? (boardParseDate_(parts[1]) || '') : ''
+  };
+}
+
 function boardArrangeCases_(ss, force) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   if (!sheet || sheet.getLastRow() < 3) return 0;
@@ -3216,7 +3300,7 @@ function boardAppendCase_(ss, options) {
       if (BOARD_COL[key]) values[BOARD_COL[key] - 1] = options.values[key];
     });
 
-    values[BOARD_COL.caseId - 1] = boardNextCaseId_(sheet, customerId);
+    values[BOARD_COL.caseId - 1] = options.caseId || boardNextCaseId_(sheet, customerId);
     values[BOARD_COL.customerId - 1] = customerId;
     values[BOARD_COL.status - 1] = options.status || BOARD_STATUS_NEW;
     values[BOARD_COL.orderedAt - 1] = options.orderedAt || new Date();
