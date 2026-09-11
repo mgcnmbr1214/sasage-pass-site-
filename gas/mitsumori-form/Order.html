@@ -139,6 +139,13 @@
     return out;
   }
 
+  /** 料金の案内先。リンクにして押せるようにする。 */
+  function priceNote() {
+    var parts = state.notes.price.split('\n');
+    return esc(parts[0]) + '<br><a href="' + esc(parts[1]) + '" target="_blank">' +
+      esc(parts[1]) + '</a>';
+  }
+
   function infoHtml() {
     var c = state.customer;
     var rows = [
@@ -162,7 +169,10 @@
     ].filter(function (r) { return r[1]; });
     return '<div class="note note-plain"><b>ご発送先（ヤマト運輸「営業所止め」）</b></div>' +
       '<div class="info">' + rows.map(function (r) {
-        return '<div><dt>' + esc(r[0]) + '</dt><span>' + esc(r[1]) + '</span></div>';
+        return '<div><dt>' + esc(r[0]) + '</dt><span>' + esc(r[1]) +
+          (r[0] === '電話番号'
+            ? '<br><span style="color:#7A8AA8;font-size:12px">' + esc(state.notes.tel) + '</span>'
+            : '') + '</span></div>';
       }).join('') + '</div>';
   }
 
@@ -190,6 +200,7 @@
         esc(cur ? cur.qty : '') + '">' +
       '<label class="field">備考（ご要望など）</label>' +
       '<textarea id="note">' + esc(cur ? cur.note : '') + '</textarea>' +
+      '<div class="note note-plain">' + priceNote() + '</div>' +
       '<div class="note note-plain">' + esc(state.notes.newMenu) + '</div>' +
       '<div class="note note-plain">' + esc(state.notes.due) + '</div>' +
       '<div style="margin-top:14px"><button id="btnRequest">' +

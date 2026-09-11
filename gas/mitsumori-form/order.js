@@ -14,6 +14,9 @@
  * 催促は自動で送らず、経過日数を見て手動で判断する。
  */
 
+/** 料金と作業内容の案内先。依頼フォームでは金額を出さない。 */
+const ORDER_PRICE_URL = 'https://sasagepass.com/mitsumori/';
+
 /** URLに付ける鍵の長さ。顧客IDだけでは別のお客様の内容が見えてしまう。 */
 const ORDER_KEY_LENGTH = 12;
 
@@ -37,11 +40,17 @@ const ORDER_CARRIERS = [
 /** 画面に出す注意書き。テンプレートと違い、文面はここで持つ。 */
 const ORDER_NOTES = {
   tracking: '「追跡番号の送信」を必ず忘れずにお願いします。\n' +
-    'お荷物をお受け取りできない場合や、作業が後回しになる場合があります。',
-  due: '納期は目安です。お預かり後にあらためて詳しい納期をご連絡いたします。\n' +
+    'お荷物をお受け取りできない場合や、作業が後回しになる場合があります。\n' +
+    '同じ日に届くお荷物が複数ある場合は、そのうち1件だけで結構です。',
+  due: '納期はクリーニング＋撮影のみのご依頼で100点→およそ1週間前後が目安です。\n' +
+    'お預かり後にあらためて詳しい納期をご連絡いたします。\n' +
     '初回作業のご依頼や混雑時は通常より長くいただく場合がございます。',
   newMenu: '新しいメニューを追加された場合、準備にお時間をいただくことがございます。\n' +
     'お急ぎのときは発送前にメールでご相談ください。',
+  // この画面は料金を出さない。確かめたいときの行き先を必ず添える
+  price: '各メニューの料金や詳細に関してはこちらをご確認ください\n' + ORDER_PRICE_URL,
+  tel: '運送業者専用電話です。ササゲパス作業内容や納期のご案内は' +
+    'こちらでは承っておりません。',
   profile: 'ご登録内容の変更は、お手数ですがメールにてご連絡ください。'
 };
 
@@ -58,7 +67,9 @@ function orderRender_(params) {
   return template
     .evaluate()
     .setTitle('ササゲパス ご依頼フォーム')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    // 見積もりフォームと同じく、あとでサイト側へ埋め込めるようにしておく
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 /**
