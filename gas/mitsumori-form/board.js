@@ -500,8 +500,10 @@ function boardSetup() {
   boardUseCurrentColumns_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  boardMigrateCases_(ss);
-  boardMigrateCustomers_(ss);
+  boardWithLayoutLock_(function () {
+    boardMigrateCases_(ss);
+    boardMigrateCustomers_(ss);
+  });
   // 移行で列が動いている可能性があるため、必ず読み直してから先へ進む
   boardSyncColumns_(ss.getSheetByName(BOARD_SHEET_CASES));
 
@@ -731,6 +733,8 @@ function boardMigrateCases_(ss) {
     boardLog_('移行', '契約書作成日 列を削除しました');
   }
 
+  boardRemoveDuplicateCaseColumns_(sheet);
+
   // 列を足し引きしたので、BOARD_COL を実際の並びに引き直す。
   // これを忘れると、以降の処理がすべて1列ずれた場所を読み書きする
   boardSyncColumns_(sheet);
@@ -753,6 +757,51 @@ function boardMigrateCases_(ss) {
  * 契約は一度きりのお客様の情報で、依頼ごとに持つものではない。
  * 案件ボードには**依頼ごとに変わるものだけ**を置く。
  */
+/**
+ * 同じ見出しが二重に増えた列と、見出しの無い列を取り除く。
+ *
+ * 移行が同時に走ったせいで、単価調整・固定調整・請求見込みが何本も足された。
+ * **中身が入っている列は、絶対に消さない。** 消せるのは、
+ * 　・同じ見出しが左側にすでにある列
+ * 　・見出しが空の列
+ * のうち、2行目から下がすべて空のものだけ。
+ * 一度に何本も消える計算になったときは、判定のほうが壊れているとみなして中止する。
+ */
+function boardRemoveDuplicateCaseColumns_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return 0;
+
+  const headers = sheet.getRange(1, 1, 1, last).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+  const rows = Math.max(sheet.getLastRow() - 1, 0);
+
+  const seen = {};
+  const doomed = [];
+  headers.forEach(function (name, i) {
+    const col = i + 1;
+    if (name && !seen[name]) { seen[name] = true; return; }   // 最初の1本は残す
+    if (name && BOARD_COL_KEY_BY_HEADER[name] === undefined) return;   // 見覚えのない名前は触らない
+    if (rows > 0) {
+      const range = sheet.getRange(2, col, rows, 1);
+      const filled = range.getValues().some(function (r) { return String(r[0] || '').trim(); });
+      const hasFormula = range.getFormulas().some(function (r) { return String(r[0] || '').trim(); });
+      if (filled || hasFormula) return;   // 中身があるものは消さない
+    }
+    doomed.push({ col: col, name: name || '（見出しなし）' });
+  });
+
+  if (doomed.length === 0) return 0;
+  if (doomed.length > 10) {
+    boardLog_('移行', '消える列が ' + doomed.length + ' 本と多すぎるため、中止しました。列の構成を確認してください');
+    return 0;
+  }
+
+  doomed.slice().reverse().forEach(function (item) { sheet.deleteColumn(item.col); });
+  boardLog_('移行', '重複して増えた空の列を ' + doomed.length + ' 本削除しました（' +
+    doomed.map(function (d) { return d.name; }).join('、') + '）');
+  return doomed.length;
+}
+
 function boardMoveSignedAtToCustomers_(ss, sheet, headers) {
   const col = headers.indexOf('署名・支払確認日') + 1;
   if (!col) return headers;
@@ -1791,11 +1840,11 @@ const BOARD_DEFAULT_SETTINGS = [
 
 function boardDefaultInvoiceSteps_() {
   return [
-    '1. 下の［Squareで請求書を開く］を押します。',
+    '1. 下の［Squareで請求書を開く]を押します。',
     '2. 「編集」を開き、「添付ファイルとカスタムフィールド」を表示します。',
     '3. 「Square 契約書」→「新規の契約書」→「サービス利用規約」を選んで保存します。',
     '4. 内容を確認して請求書を送信します。',
-    '5. この画面に戻って［送信しました］を押します。'
+    '5. この画面に戻って［送信しました]を押します。'
   ].join('\n');
 }
 
@@ -2975,19 +3024,7 @@ function boardEnsureLayout_(ss) {
   // 必要な見出しがすべて揃っていれば、並び順は自由でよい
   if (boardSyncColumns_(sheet)) return true;
 
-  // **列の付け替えは、一度にひとつの処理だけ。**
-  // 10分ごとの取込と初期セットアップが重なり、同じ移行が同時に3つ走って
-  // 単価調整・固定調整・請求見込みが何本も足されたことがある。
-  // 鍵を取れなければ、直しているのは他方なので何もしない
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(60 * 1000);
-  } catch (err) {
-    boardLog_('移行', '他の処理が列を直している最中のため、今回は見送りました');
-    return false;
-  }
-
-  try {
+  return boardWithLayoutLock_(function () {
     // 待っている間に相手が直し終えていることがある。もう一度確かめてから動く
     if (boardSyncColumns_(sheet)) return true;
 
@@ -3000,7 +3037,35 @@ function boardEnsureLayout_(ss) {
     const ok = boardSyncColumns_(sheet);
     if (!ok) boardLog_('移行', '列構成を合わせられませんでした。初期セットアップを実行してください');
     return ok;
+  }) === true;
+}
+
+/** 列を付け替えている最中か。入れ子で鍵を二重に取らないための目印。 */
+let BOARD_LAYOUT_LOCKED = false;
+
+/**
+ * 列の付け替えを、一度にひとつだけ通す。
+ *
+ * **10分ごとの取込と初期セットアップが同じ瞬間に重なることがある。**
+ * 実際に同じ移行が3つ同時に走り、単価調整・固定調整・請求見込みが
+ * 何本も足された。鍵を取れなければ、直しているのは他方なので何もしない。
+ */
+function boardWithLayoutLock_(fn) {
+  if (BOARD_LAYOUT_LOCKED) return fn();   // 同じ実行の中の入れ子。鍵はもう持っている
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(60 * 1000);
+  } catch (err) {
+    boardLog_('移行', '他の処理が列を直している最中のため、今回は見送りました');
+    return null;
+  }
+
+  BOARD_LAYOUT_LOCKED = true;
+  try {
+    return fn();
   } finally {
+    BOARD_LAYOUT_LOCKED = false;
     lock.releaseLock();
   }
 }
