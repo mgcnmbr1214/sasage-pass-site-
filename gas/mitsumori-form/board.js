@@ -249,7 +249,10 @@ const BOARD_RESPONSE_TYPES = [
   },
   {
     id: 'T7', name: 'お預かり完了（商品の到着と点数をお知らせし、納期の目安を再度お伝えします）',
-    template: 'T7', status: '作業中', fields: ['receivedQty'], invoice: false, requires: []
+    // 点数が変われば納期も動く。**この場で直せないと、古い納期のまま送ってしまう。**
+    // 実際に、追加分を受け取って点数が増えたときに直す場所が無かった
+    template: 'T7', status: '作業中',
+    fields: ['receivedQty', 'dueFrom', 'dueTo'], invoice: false, requires: []
   },
   {
     id: 'T8', name: '作業完了・データ納品（納品リンクを共有し、返送とデータ保管についてお伝えします）',
