@@ -985,6 +985,11 @@ function mailBuildCaseContext_(row, expectedCustomerId, wantedCaseRow) {
     qty: text(v[BOARD_COL.qty - 1] === '' || v[BOARD_COL.qty - 1] === null
       ? boardExtractCount_(customerPlan.firstQty)
       : v[BOARD_COL.qty - 1]),
+    // お預かり・返送の点数は、ひとつ前の段階を初期値にする。
+    // 変わっていなければそのまま、変わっていればその場で直せる
+    receivedQty: text(v[BOARD_COL.receivedQty - 1] !== '' && v[BOARD_COL.receivedQty - 1] != null
+      ? v[BOARD_COL.receivedQty - 1] : v[BOARD_COL.qty - 1]),
+    shipQty: text(boardBestCount_(v)),
     firstQty: text(customerPlan.firstQty),
     missing: missing.map(function (m) { return String(m); }),
     // 署名日は顧客タブが正。案件ボードには持たない

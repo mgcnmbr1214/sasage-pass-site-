@@ -161,7 +161,9 @@ function orderSubmitRequest(payload) {
   sheet.getRange(caseRow, BOARD_COL.detail).setValue(detail);
   sheet.getRange(caseRow, BOARD_COL.qty).setValue(Number(qty));
   sheet.getRange(caseRow, BOARD_COL.orderedAt).setValue(new Date());
-  sheet.getRange(caseRow, BOARD_COL.memo).setValue(String(data.note || '').trim());
+  // 備考が空のときは消さない。こちらで書いた申し送りが、再送信で消えてしまう
+  const note = String(data.note || '').trim();
+  if (note) sheet.getRange(caseRow, BOARD_COL.memo).setValue(note);
   // 契約がまだなら発送に進めない。契約済みなら発送のご連絡待ち
   sheet.getRange(caseRow, BOARD_COL.status).setValue(
     customer.values[BOARD_CUSTOMER_COL.signedAt - 1] ? BOARD_STATUS_WAITING_SHIP : BOARD_STATUS_SIGNING);

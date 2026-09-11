@@ -166,11 +166,11 @@ function shipBuildTeamNote_(row, customer, tracking, result) {
     .map(function (line) { return '　・' + line; })
     .join(String.fromCharCode(10));
 
-  // **点数は案件ボードの予定点数を正とする。**
+  // **点数は案件ボードの数を正とする。**
   // 送り状の写真には「個数 1」（荷物の数）と書かれており、それを点数として
   // 読み取ってしまい、22点のご依頼が「1点」になったことがある。
-  // メールから読み取った数は、予定点数が空のときだけ使う
-  const planned = boardExtractCount_(row[BOARD_COL.qty - 1]);
+  // メールから読み取った数は、案件ボードが空のときだけ使う
+  const planned = boardBestCount_(row);
   const read = boardExtractCount_(result.quantity);
   const quantity = planned !== '' ? String(planned)
     : (read !== '' ? String(read) : String(result.quantity || '').trim());
@@ -198,7 +198,8 @@ function shipBuildTeamNote_(row, customer, tracking, result) {
   if (result.arrival) lines.push('　到着予定: ' + result.arrival);
   lines.push('');
   lines.push('■ 点数');
-  lines.push('　' + (quantity ? quantity + '点' : '未確定'));
+  lines.push('　' + (quantity ? quantity + '点' : '未確定') +
+    (boardExtractCount_(row[BOARD_COL.receivedQty - 1]) === '' ? '（お客様のご申告）' : '（お預かり後に確認済）'));
   lines.push('');
   lines.push('■ 納期予定');
   lines.push('　' + (due || '未定'));

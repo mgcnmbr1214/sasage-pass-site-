@@ -251,7 +251,8 @@
 
       '<div class="card' + (state.signed ? '' : ' locked') + '"><h2>3. ご発送情報</h2>' +
       (state.signed
-        ? '<p class="lead">ご発送後、追跡番号をお知らせください。ここまでで依頼が完了します。</p>' +
+        ? '<p class="lead">ご発送後、追跡番号をお知らせください。ここまでで依頼が完了します。<br>' +
+          '点数が変わった場合は、先に「1. ご依頼内容」の予定数を直して更新してください。</p>' +
           shipToHtml() +
           '<label class="field">運送業者</label>' + carriersHtml() +
           '<label class="field">追跡番号</label>' +

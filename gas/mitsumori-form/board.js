@@ -88,7 +88,9 @@ const BOARD_REG_DONE = [BOARD_REG_SIGNED];
 
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
-  '案件ID', 'ステータス', 'お客様の登録状況', '対応者', 'お客様', '依頼日', '予定点数', '納期予定（自）', '納期予定（至）', '次にやること',
+  '案件ID', 'ステータス', 'お客様の登録状況', '対応者', 'お客様', '依頼日',
+  '予定点数', 'お預かり点数', '返送点数',
+  '納期予定（自）', '納期予定（至）', '次にやること',
   '未返信', '未請求の返送',
   '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール', '単価',
   '請求書送付日', 'Square請求書ID',
@@ -96,12 +98,13 @@ const BOARD_CASE_HEADERS = [
 ];
 
 const BOARD_COL = {
-  caseId: 1, status: 2, registration: 3, owner: 4, customer: 5, orderedAt: 6, qty: 7,
-  dueFrom: 8, dueTo: 9, todo: 10,
-  unreplied: 11, unbilled: 12,
-  customerId: 13, detail: 14, formInquiry: 15, lastInbound: 16, lastOutbound: 17, unitPrice: 18,
-  invoiceSent: 19, invoiceId: 20,
-  carrier: 21, tracking: 22, teamNote: 23, guideDraftAt: 24, lastContact: 25, memo: 26, sourceRow: 27
+  caseId: 1, status: 2, registration: 3, owner: 4, customer: 5, orderedAt: 6,
+  qty: 7, receivedQty: 8, shippedQty: 9,
+  dueFrom: 10, dueTo: 11, todo: 12,
+  unreplied: 13, unbilled: 14,
+  customerId: 15, detail: 16, formInquiry: 17, lastInbound: 18, lastOutbound: 19, unitPrice: 20,
+  invoiceSent: 21, invoiceId: 22,
+  carrier: 23, tracking: 24, teamNote: 25, guideDraftAt: 26, lastContact: 27, memo: 28, sourceRow: 29
 };
 
 /**
@@ -244,7 +247,7 @@ const BOARD_RESPONSE_TYPES = [
   },
   {
     id: 'T7', name: 'お預かり完了（商品の到着と点数をお知らせし、納期の目安を再度お伝えします）',
-    template: 'T7', status: '作業中', fields: ['qty'], invoice: false, requires: []
+    template: 'T7', status: '作業中', fields: ['receivedQty'], invoice: false, requires: []
   },
   {
     id: 'T8', name: '作業完了・データ納品（納品リンクを共有し、返送とデータ保管についてお伝えします）',
@@ -271,11 +274,13 @@ const BOARD_CASE_FIELDS = {
   dueFrom: { label: '納期予定（自）', type: 'date', col: 'dueFrom' },
   dueTo: { label: '納期予定（至）', type: 'date', col: 'dueTo' },
   qty: { label: '予定点数', type: 'number', col: 'qty' },
+  // お預かりして実際に数えた点数。ご申告と違うことは珍しくないので、別の列に残す
+  receivedQty: { label: 'お預かり点数', type: 'number', col: 'receivedQty' },
   // 署名日はお客様のもの。顧客タブへ書く（案件ボードには置かない）
   signedAt: { label: '署名・支払確認日', type: 'date', customerCol: 'signedAt' },
-  // 返送のときだけ使う。案件ボードには書かず、返送履歴に残す。
+  // 返送の追跡番号は返送履歴だけに残す。
   // 案件ボードの「追跡番号」はお客様から弊社への発送のものなので、上書きしない
-  shipQty: { label: '返送した点数', type: 'number', col: '' },
+  shipQty: { label: '返送した点数', type: 'number', col: 'shippedQty' },
   shipTracking: { label: '返送の追跡番号', type: 'text', col: '' }
 };
 
@@ -569,6 +574,7 @@ function boardSetup() {
   }
   step('案件の並べ替え', function () { boardArrangeCases_(ss, true); });
   step('依頼フォームの鍵とURL', function () { boardIssueFormKeys_(ss); boardRefreshFormUrls_(ss); });
+  step('返送した点数の記入', function () { boardBackfillShippedCount_(ss); });
 
   // 移行は一度きり。飛ばすと次回まで直らないので、必ず実行する
   try {
@@ -700,6 +706,11 @@ function boardMigrateCases_(ss) {
   headers = boardInsertColumnAfter_(sheet, headers, '最新の受信メール', '最新の送信メール');
   headers = boardInsertColumnAfter_(sheet, headers, '請求書送付日', 'Square請求書ID');
   headers = boardInsertColumnAfter_(sheet, headers, '追跡番号', '作業チーム共有');
+
+  // 点数は3段階。お客様のご申告 → お預かりして数えた数 → 実際に返送した数。
+  // ひとつの列で上書きしていたので、**数が合わないときに どこで変わったのか追えなかった**
+  headers = boardInsertColumnAfter_(sheet, headers, '予定点数', 'お預かり点数');
+  headers = boardInsertColumnAfter_(sheet, headers, 'お預かり点数', '返送点数');
 
   // 契約書は請求書の作成時にその場で添付するため、事前作成の記録は不要になった
   const contract = headers.indexOf('契約書作成日');
@@ -938,7 +949,8 @@ function boardRestorePastRequests_(ss) {
       orderedAt: ship[BOARD_SHIPMENT_COL.startDate - 1] || ship[BOARD_SHIPMENT_COL.date - 1],
       values: {
         customer: ship[BOARD_SHIPMENT_COL.customer - 1],
-        qty: ship[BOARD_SHIPMENT_COL.qty - 1],
+        // 返送履歴に残っているのは、実際に返送した点数。ご申告の数は分からない
+        shippedQty: ship[BOARD_SHIPMENT_COL.qty - 1],
         unitPrice: ship[BOARD_SHIPMENT_COL.unitPrice - 1],
         detail: ship[BOARD_SHIPMENT_COL.detail - 1],
         startDate: ship[BOARD_SHIPMENT_COL.startDate - 1],
@@ -1298,7 +1310,8 @@ const BOARD_UNPAID_LABEL = '未入金あり';
 
 /** 列の幅。並べ替えても効くよう、位置ではなく列の意味で指定する。 */
 const BOARD_CASE_WIDTHS = {
-  caseId: 90, status: 130, registration: 105, owner: 70, customer: 150, orderedAt: 95, qty: 70,
+  caseId: 90, status: 130, registration: 105, owner: 70, customer: 150, orderedAt: 95,
+  qty: 70, receivedQty: 85, shippedQty: 70,
   dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
   customerId: 70, detail: 160, formInquiry: 160, lastInbound: 200, lastOutbound: 200, unitPrice: 70,
   invoiceSent: 95, invoiceId: 110,
@@ -1857,6 +1870,7 @@ function boardSetupTemplates_(ss) {
   boardMigrateDoneFormLink_(sheet);
   boardMigrateShipBackDetail_(sheet);
   boardMigrateQuoteTemplate_(sheet);
+  boardMigrateReceivedCount_(sheet);
 
   const last = sheet.getLastColumn();
   if (last > 1) {
@@ -2519,6 +2533,29 @@ function boardDefaultRemindShippingBody_() {
   ].join('\n');
 }
 
+/**
+ * お預かり完了（T7）の文面で、点数の差し込みを {{予定点数}} から {{点数}} に付け替える。
+ *
+ * {{予定点数}} はお客様のご申告のまま動かない。お預かりして数え直した結果と
+ * 食い違ったまま「◯点お預かりいたしました」と送ってしまう。
+ * **文面はお客様が書き換えているので、点数の差し込みだけを置き換える。**
+ */
+function boardMigrateReceivedCount_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return;
+
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
+  for (let c = 1; c < ids.length; c++) {
+    if (String(ids[c] || '').trim() !== 'T7') continue;
+    const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
+    const body = String(cell.getValue() || '');
+    if (body.indexOf('{{予定点数}}') < 0) return;
+    cell.setValue(body.split('{{予定点数}}').join('{{点数}}'));
+    boardLog_('移行', 'テンプレ T7 の点数を、実際にお預かりした点数に付け替えました');
+    return;
+  }
+}
+
 function boardDefaultReceivedBody_() {
   return [
     '{{会社名}}',
@@ -2526,7 +2563,7 @@ function boardDefaultReceivedBody_() {
     '',
     'お世話になっております。ササゲパス運営事務局です。',
     '',
-    '本日、商品を{{予定点数}}点お預かりいたしました。',
+    '本日、商品を{{点数}}点お預かりいたしました。',
     '{{納期予定}}を目安に作業を進め、完了次第あらためてご連絡いたします。',
     '',
     'どうぞよろしくお願い申し上げます。'
@@ -4239,6 +4276,61 @@ function boardDetailWithoutPrice_(text) {
     .trim();
 }
 
+/**
+ * すでに返送済の案件に、返送した点数を入れ直す。
+ *
+ * 返送点数の列を足すまで、返送した数は返送履歴にしか無かった。
+ * **空のままだと、新しい列が過去の案件では読めない。** 一度だけ埋める。
+ */
+function boardBackfillShippedCount_(ss) {
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  const ships = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!cases || !ships || cases.getLastRow() < 2 || ships.getLastRow() < 2) return 0;
+
+  const byCase = {};
+  ships.getRange(2, 1, ships.getLastRow() - 1, BOARD_SHIPMENT_HEADERS.length).getValues()
+    .forEach(function (ship) {
+      const caseId = String(ship[BOARD_SHIPMENT_COL.caseId - 1] || '').trim();
+      const qty = boardExtractCount_(ship[BOARD_SHIPMENT_COL.qty - 1]);
+      if (caseId && qty !== '') byCase[caseId] = qty;
+    });
+
+  const rows = cases.getLastRow() - 1;
+  const ids = cases.getRange(2, BOARD_COL.caseId, rows, 1).getValues();
+  const range = cases.getRange(2, BOARD_COL.shippedQty, rows, 1);
+  const current = range.getValues();
+
+  let filled = 0;
+  const next = ids.map(function (row, i) {
+    if (String(current[i][0] || '').trim()) return current[i];
+    const found = byCase[String(row[0] || '').trim()];
+    if (found === undefined) return current[i];
+    filled++;
+    return [Number(found)];
+  });
+
+  if (filled > 0) {
+    range.setValues(next);
+    boardLog_('移行', '返送済の案件 ' + filled + ' 件に、返送した点数を入れました');
+  }
+  return filled;
+}
+
+/**
+ * その案件で、いま分かっている いちばん確かな点数。
+ *
+ * 点数は ご申告 → お預かり → 返送 と３回動く。**後の段階ほど確かな数**なので、
+ * 入っているうちでいちばん後ろのものを返す。
+ */
+function boardBestCount_(v) {
+  const order = [BOARD_COL.shippedQty, BOARD_COL.receivedQty, BOARD_COL.qty];
+  for (let i = 0; i < order.length; i++) {
+    const found = boardExtractCount_(v[order[i] - 1]);
+    if (found !== '') return found;
+  }
+  return '';
+}
+
 function boardBuildTemplateText_(ss, caseRow, templateId, extra) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const v = sheet.getRange(Number(caseRow), 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
@@ -4250,14 +4342,18 @@ function boardBuildTemplateText_(ss, caseRow, templateId, extra) {
   if (!tpl) throw new Error('テンプレ ' + templateId + ' が見つかりません。「テンプレ」タブをご確認ください。');
 
   const settings = boardGetSettings_(ss);
-  const qty = v[BOARD_COL.qty - 1];
+  // {{点数}} は「いま分かっている いちばん確かな数」。
+  // 返送済なら返送した数、お預かり済ならお預かりした数、まだならご申告の数
+  const qty = boardBestCount_(v);
   const vars = {
     '会社名': customer.company,
     '担当者名': customer.name,
     '依頼内容': v[BOARD_COL.detail - 1],
     // 返送の連絡だけは料金抜きで出す。請求額と取り違えられないようにする
     '依頼内容（料金なし）': boardDetailWithoutPrice_(v[BOARD_COL.detail - 1]),
-    '予定点数': qty,
+    '予定点数': v[BOARD_COL.qty - 1],
+    'お預かり点数': v[BOARD_COL.receivedQty - 1],
+    '返送点数': v[BOARD_COL.shippedQty - 1],
     '単価': v[BOARD_COL.unitPrice - 1],
 
     '納期予定': boardFormatDateRange_(v[BOARD_COL.dueFrom - 1], v[BOARD_COL.dueTo - 1]),
@@ -4274,8 +4370,9 @@ function boardBuildTemplateText_(ss, caseRow, templateId, extra) {
   // 返送の点数や追跡番号など、案件ボードに列が無い値は画面から渡してもらう
   Object.keys(extra || {}).forEach(function (key) { vars[key] = extra[key]; });
 
-  // 変数名を変える前に作られたテンプレートも動くよう、古い名前も受け付ける
-  vars['点数'] = vars['予定点数'];
+  // 画面で入力された返送点数は、まだ列に書かれていないことがある。そちらを優先する
+  const typed = boardExtractCount_((extra || {})['返送点数']);
+  vars['点数'] = typed !== '' ? typed : qty;
 
   let body = String(tpl.body || '');
   // 中身が無い項目は、見出しごと行を消す
@@ -4283,7 +4380,7 @@ function boardBuildTemplateText_(ss, caseRow, templateId, extra) {
     if (String(vars[key] == null ? '' : vars[key]).trim()) return;
     body = boardDropLinesWith_(body, '{{' + key + '}}');
   });
-  if (qty === '' || qty === null || qty === undefined) {
+  if (qty === '') {
     ['{{予定点数}}', '{{点数}}'].forEach(function (needle) {
       body = boardDropLinesWith_(body, needle);
     });
