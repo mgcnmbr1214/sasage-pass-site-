@@ -92,7 +92,8 @@ const BOARD_CASE_HEADERS = [
   '予定点数', 'お預かり点数', '返送点数',
   '納期予定（自）', '納期予定（至）', '次にやること',
   '未返信', '未請求の返送',
-  '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール', '単価',
+  '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール',
+  '単価', '単価調整', '固定調整', '調整の理由', '請求見込み',
   '請求書送付日', 'Square請求書ID',
   '運送業者', '追跡番号', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
@@ -102,9 +103,10 @@ const BOARD_COL = {
   qty: 7, receivedQty: 8, shippedQty: 9,
   dueFrom: 10, dueTo: 11, todo: 12,
   unreplied: 13, unbilled: 14,
-  customerId: 15, detail: 16, formInquiry: 17, lastInbound: 18, lastOutbound: 19, unitPrice: 20,
-  invoiceSent: 21, invoiceId: 22,
-  carrier: 23, tracking: 24, teamNote: 25, guideDraftAt: 26, lastContact: 27, memo: 28, sourceRow: 29
+  customerId: 15, detail: 16, formInquiry: 17, lastInbound: 18, lastOutbound: 19,
+  unitPrice: 20, priceAdjust: 21, flatAdjust: 22, adjustNote: 23, estimate: 24,
+  invoiceSent: 25, invoiceId: 26,
+  carrier: 27, tracking: 28, teamNote: 29, guideDraftAt: 30, lastContact: 31, memo: 32, sourceRow: 33
 };
 
 /**
@@ -712,6 +714,13 @@ function boardMigrateCases_(ss) {
   headers = boardInsertColumnAfter_(sheet, headers, '予定点数', 'お預かり点数');
   headers = boardInsertColumnAfter_(sheet, headers, 'お預かり点数', '返送点数');
 
+  // 割引・割増は、お客様にずっと効くもの（顧客タブ）と、その依頼だけのもの（ここ）がある。
+  // **理由を一緒に置く。** 何の値引きか分からない請求書は送れない
+  headers = boardInsertColumnAfter_(sheet, headers, '単価', '単価調整');
+  headers = boardInsertColumnAfter_(sheet, headers, '単価調整', '固定調整');
+  headers = boardInsertColumnAfter_(sheet, headers, '固定調整', '調整の理由');
+  headers = boardInsertColumnAfter_(sheet, headers, '調整の理由', '請求見込み');
+
   // 契約書は請求書の作成時にその場で添付するため、事前作成の記録は不要になった
   const contract = headers.indexOf('契約書作成日');
   if (contract >= 0) {
@@ -1090,6 +1099,7 @@ function boardArrangeCases_(ss, force) {
     for (let r = 2; r < 2 + sorted.length; r++) {
       boardSetTodoFormula_(sheet, r);
       boardSetOwnerFormula_(sheet, r);
+      boardSetEstimateFormula_(sheet, r);
     }
     boardLog_('表示', '案件をお客様ごとに並べ直しました');
   }
@@ -1313,7 +1323,8 @@ const BOARD_CASE_WIDTHS = {
   caseId: 90, status: 130, registration: 105, owner: 70, customer: 150, orderedAt: 95,
   qty: 70, receivedQty: 85, shippedQty: 70,
   dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
-  customerId: 70, detail: 160, formInquiry: 160, lastInbound: 200, lastOutbound: 200, unitPrice: 70,
+  customerId: 70, detail: 160, formInquiry: 160, lastInbound: 200, lastOutbound: 200,
+  unitPrice: 70, priceAdjust: 75, flatAdjust: 75, adjustNote: 150, estimate: 100,
   invoiceSent: 95, invoiceId: 110,
   carrier: 100, tracking: 130, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
 };
@@ -1374,6 +1385,15 @@ function boardApplyCaseFormatting_(sheet) {
     // 日付列のみ書式を揃える
     sheet.getRange(2, col, maxRows, 1).setNumberFormat('yyyy/mm/dd');
   });
+
+  // 金額の列は円で揃える。マイナスも読めるように符号を出す
+  [BOARD_COL.unitPrice, BOARD_COL.priceAdjust, BOARD_COL.flatAdjust,
+   BOARD_COL.estimate].forEach(function (col) {
+    sheet.getRange(2, col, maxRows, 1).setNumberFormat('[$¥-411]#,##0;[$¥-411]-#,##0');
+  });
+  // 請求見込みは数式。手で書き換えないよう、色を落として右に寄せる
+  sheet.getRange(2, BOARD_COL.estimate, maxRows, 1)
+    .setHorizontalAlignment('right').setFontColor('#3D4A66');
 
   // 問い合わせ内容は折り返して読めるようにする
   // 長文の列は折り返さない。折り返すと1行が数十行分の高さになり一覧にならない
@@ -3567,6 +3587,7 @@ function boardRefreshFormulas_(sheet) {
     if (!String(sheet.getRange(row, BOARD_COL.caseId).getValue() || '').trim()) continue;
     boardSetTodoFormula_(sheet, row);
     boardSetOwnerFormula_(sheet, row);
+    boardSetEstimateFormula_(sheet, row);
   }
   boardRefreshUnreplied_(sheet.getParent());
 }
@@ -3723,6 +3744,7 @@ function boardAppendCase_(ss, options) {
     sheet.getRange(row, 1, 1, BOARD_CASE_HEADERS.length).setValues([values]);
     boardSetTodoFormula_(sheet, row);
     boardSetOwnerFormula_(sheet, row);
+    boardSetEstimateFormula_(sheet, row);
     boardForceRowHeight_(sheet, row, 1);
     return { row: row, caseId: values[BOARD_COL.caseId - 1] };
   } finally {
@@ -3876,6 +3898,43 @@ function boardIsRepeatCustomer_(registration) {
  * 次に動くのが自分かお客様かを、ステータスから自動で表示する。
  * 未返信のメールがあるあいだは、案件がどこまで進んでいても動くのは自分。
  */
+/**
+ * 「請求見込み」を数式で置く。
+ *
+ * **まだ請求はしない。見えるようにするだけ。** これまでは返送のときに
+ * 点数×単価で金額が決まり、割引・割増はどこにも効いていなかった。
+ * 先に数字を出して、送る前に目で確かめられるようにする。
+ *
+ * 　（単価 ＋ お客様の単価調整 ＋ この依頼の単価調整）× 点数
+ * 　＋ お客様の固定調整 ＋ この依頼の固定調整
+ *
+ * 単価が空なら顧客タブの単価を使う。点数は返送 → お預かり → ご申告の順。
+ * 数式にしてあるので、点数や調整を直せばその場で入れ替わる。
+ */
+function boardSetEstimateFormula_(sheet, row) {
+  const at = function (col) { return '$' + boardColLetter_(BOARD_COL[col]) + row; };
+  const num = function (ref) { return 'N(' + ref + ')'; };
+
+  // 顧客タブから、そのお客様にずっと効く単価と調整を引く
+  const lookup = function (col) {
+    return "IFERROR(VLOOKUP(" + at('customerId') + ",'" + BOARD_SHEET_CUSTOMERS + "'!$A:$" +
+      boardColLetter_(BOARD_CUSTOMER_HEADERS.length) + ',' + col + ',FALSE),0)';
+  };
+
+  const qty = 'IFS(' + num(at('shippedQty')) + '>0,' + num(at('shippedQty')) + ',' +
+    num(at('receivedQty')) + '>0,' + num(at('receivedQty')) + ',' +
+    'TRUE,' + num(at('qty')) + ')';
+  // 案件の単価が空のときだけ、顧客タブの単価を使う
+  const base = 'IF(' + at('unitPrice') + '="",' + num(lookup(BOARD_CUSTOMER_COL.unitPrice)) +
+    ',' + num(at('unitPrice')) + ')';
+  const unit = base + '+' + num(lookup(BOARD_CUSTOMER_COL.priceAdjust)) + '+' + num(at('priceAdjust'));
+  const flat = num(lookup(BOARD_CUSTOMER_COL.flatAdjust)) + '+' + num(at('flatAdjust'));
+
+  sheet.getRange(row, BOARD_COL.estimate).setFormula(
+    '=IF(OR(' + at('caseId') + '="",' + qty + '=0),"",ROUND((' + unit + ')*' + qty + '+' + flat + '))'
+  );
+}
+
 function boardSetOwnerFormula_(sheet, row) {
   const status = '$' + boardColLetter_(BOARD_COL.status) + row;
   const unreplied = '$' + boardColLetter_(BOARD_COL.unreplied) + row;
