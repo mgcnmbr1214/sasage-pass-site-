@@ -194,13 +194,13 @@
     var html =
       '<div class="card"><h2>1. ご依頼内容</h2>' +
       '<p class="lead">前回と同じ内容をあらかじめ選んでいます。変更があればお直しください。</p>' +
+      '<div class="note note-plain">' + priceNote() + '</div>' +
       menusHtml() +
       '<label class="field">ご依頼予定数</label>' +
       '<input type="number" class="qty" id="qty" min="1" value="' +
         esc(cur ? cur.qty : '') + '">' +
       '<label class="field">備考（ご要望など）</label>' +
       '<textarea id="note">' + esc(cur ? cur.note : '') + '</textarea>' +
-      '<div class="note note-plain">' + priceNote() + '</div>' +
       '<div class="note note-plain">' + esc(state.notes.newMenu) + '</div>' +
       '<div class="note note-plain">' + esc(state.notes.due) + '</div>' +
       '<div style="margin-top:14px"><button id="btnRequest">' +
@@ -212,11 +212,11 @@
       '<div class="card' + (state.signed ? '' : ' locked') + '"><h2>3. ご発送情報</h2>' +
       (state.signed
         ? '<p class="lead">ご発送後、追跡番号をお知らせください。ここまでで依頼が完了します。</p>' +
-          '<div class="note note-warn">⚠ ' + esc(state.notes.tracking) + '</div>' +
           shipToHtml() +
           '<label class="field">運送業者</label>' + carriersHtml() +
           '<label class="field">追跡番号</label>' +
           '<input type="text" id="tracking" value="' + esc(cur ? cur.tracking : '') + '">' +
+          '<div class="note note-warn">⚠ ' + esc(state.notes.tracking) + '</div>' +
           '<div style="margin-top:14px"><button id="btnShipping"' +
             (cur ? '' : ' disabled') + '>発送情報を送信する</button></div>'
         : '<p class="lead">カードのご登録と契約書へのご署名が完了しますと、' +
