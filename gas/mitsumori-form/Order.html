@@ -146,6 +146,45 @@
       esc(parts[1]) + '</a>';
   }
 
+  /**
+   * 初回だけ出す入力欄。**ここが済むまでご依頼に進めない。**
+   * 郵便番号を入れると住所を引いて埋める。打ち間違いを減らすため。
+   */
+  function profileFormHtml() {
+    return '<p class="lead">初回のみ、下記のご登録をお願いいたします。' +
+      'すべて必須です。</p>' +
+      state.profileFields.map(function (f) {
+        return '<label class="field">' + esc(f.label) + '</label>' +
+          '<input type="text" data-profile="' + esc(f.key) + '"' +
+          (f.zip ? ' data-zip="' + esc(f.zip) + '"' : '') +
+          ' value="' + esc(f.value) + '">';
+      }).join('') +
+      '<div class="note note-plain">ご登録いただいたあと、2〜3日以内にSquareより' +
+      'カードのご登録と契約書へのご署名のご案内をお送りいたします。' +
+      '\nお手続きの完了後、ご発送情報をご入力いただけるようになります。</div>';
+  }
+
+  function collectProfile() {
+    var out = {};
+    Array.prototype.forEach.call(document.querySelectorAll('[data-profile]'), function (input) {
+      out[input.getAttribute('data-profile')] = input.value.trim();
+    });
+    return out;
+  }
+
+  /** 郵便番号から住所を引いて、空の住所欄だけ埋める。上書きはしない。 */
+  function bindZip() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-zip]'), function (input) {
+      input.addEventListener('change', function () {
+        var target = document.querySelector('[data-profile="' + input.getAttribute('data-zip') + '"]');
+        if (!target || target.value.trim()) return;
+        google.script.run.withSuccessHandler(function (r) {
+          if (r && r.ok && !target.value.trim()) target.value = r.address;
+        }).orderLookupZip(input.value);
+      });
+    });
+  }
+
   function infoHtml() {
     var c = state.customer;
     var rows = [
@@ -207,7 +246,8 @@
         (cur ? 'ご依頼内容を更新する' : 'この内容で依頼する') + '</button></div>' +
       '<div class="msg" id="msgRequest"></div></div>' +
 
-      '<div class="card"><h2>2. ご登録内容</h2>' + infoHtml() + '</div>' +
+      '<div class="card"><h2>2. ご登録内容</h2>' +
+        (state.profileNeeded ? profileFormHtml() : infoHtml()) + '</div>' +
 
       '<div class="card' + (state.signed ? '' : ' locked') + '"><h2>3. ご発送情報</h2>' +
       (state.signed
@@ -232,6 +272,7 @@
         '内容の変更をご希望の場合は、お手数ですがメールにてご連絡ください。');
     }
     bind();
+    bindZip();
   }
 
   function bind() {
@@ -242,12 +283,17 @@
       payload.k = FORM_KEY;
       payload.qty = el('qty').value;
       payload.note = el('note').value;
+      if (state.profileNeeded) payload.profile = collectProfile();
       btn.disabled = true;
       show('msgRequest', 'ok', '送信しています...');
       google.script.run
         .withSuccessHandler(function (r) {
-          show('msgRequest', 'ok', 'ご依頼を承りました（' + r.caseId + '）。' +
-            '\n続けて、ご発送後に追跡番号をお知らせください。');
+          show('msgRequest', 'ok', r.firstTime
+            ? 'ご依頼とご登録を承りました（' + r.caseId + '）。' +
+              '\n2〜3日以内にSquareよりお手続きのご案内をお送りいたします。' +
+              '\nお手続きの完了後、ご発送情報をご入力いただけるようになります。'
+            : 'ご依頼を承りました（' + r.caseId + '）。' +
+              '\n続けて、ご発送後に追跡番号をお知らせください。');
           load();
         })
         .withFailureHandler(function (e) { show('msgRequest', 'err', e.message); btn.disabled = false; })

@@ -1989,6 +1989,24 @@ function boardMigrateDoneFormLink_(sheet) {
 }
 
 /**
+ * 「━━━」で囲まれた見出しから、次の見出しの手前までを差し替える。
+ * **その枠だけを入れ替える。** 前後に書き足された文章は残す。
+ */
+function boardReplaceBlock_(body, heading, block) {
+  const lines = String(body || '').split(String.fromCharCode(10));
+  const at = lines.findIndex(function (line) { return line.indexOf(heading) >= 0; });
+  if (at < 0) return body;
+
+  const from = at > 0 && lines[at - 1].indexOf('━') >= 0 ? at - 1 : at;
+  let to = lines.length;
+  for (let i = at + 2; i < lines.length; i++) {
+    if (lines[i].indexOf('━') >= 0 && lines[i + 1] && lines[i + 1].indexOf('■') >= 0) { to = i; break; }
+  }
+  return lines.slice(0, from).concat(block.split(String.fromCharCode(10)), lines.slice(to))
+    .join(String.fromCharCode(10));
+}
+
+/**
  * 締めのあいさつの手前に差し込む。見つからなければ末尾に足す。
  * **もとの行は消さない。**
  */
@@ -2137,12 +2155,15 @@ function boardMigrateQuoteTemplate_(sheet) {
     const before = body;
 
     body = body.replace('・テストのご依頼は10点から承っております。', boardQuoteTestLine_());
-    if (body.indexOf('■ ご依頼にあたって伺いたい情報') < 0) {
+    // 伺いたい情報の枠は、依頼フォームに置き換わった
+    if (body.indexOf('■ ご依頼にあたって伺いたい情報') >= 0) {
+      body = boardReplaceBlock_(body, '■ ご依頼にあたって伺いたい情報', boardQuoteIntakeBlock_());
+    } else if (body.indexOf('{{依頼フォームURL}}') < 0) {
       body = body.replace(
         'ご不明な点やご希望条件のご相談がございましたら',
         boardQuoteIntakeBlock_() + '\n\nご不明な点やご希望条件のご相談がございましたら'
       );
-      if (body.indexOf('■ ご依頼にあたって伺いたい情報') < 0) {
+      if (body.indexOf('{{依頼フォームURL}}') < 0) {
         body = body + '\n\n' + boardQuoteIntakeBlock_();
       }
     }
@@ -2387,29 +2408,33 @@ function boardQuoteTestLine_() {
 }
 
 /** ご依頼にあたって必ず伺う項目。返信からこの見出しを探して顧客タブへ取り込む。 */
+/**
+ * 見積もり回答（T1）に載せる、ご依頼の進め方。
+ *
+ * 以前はここに伺いたい情報を9項目並べ、**お客様の返信を読み取って**いた。
+ * 書き方がまちまちで取りこぼしが起き、郵便番号のコロンが抜けていただけで
+ * 案件が止まったこともある。依頼フォームで選んで入れていただく形に変えた。
+ */
 function boardQuoteIntakeBlock_() {
   return [
     '━━━━━━━━━━━━━━━━━━━━',
-    '■ ご依頼にあたって伺いたい情報',
+    '■ ご依頼の進め方',
     '━━━━━━━━━━━━━━━━━━━━',
-    'ご依頼をご希望の場合、ご請求と商品の返送に必要となりますので、',
-    '下記をこのメールへのご返信にてお知らせください。',
-    '恐れ入りますが、下の枠内をコピーして、各項目の後ろにご記入ください。',
+    'ご依頼をご希望の場合は、下記のご依頼フォームよりお進みください。',
     '',
-    '──────────────────',
-    '・ストア名（予定でも可）：',
-    '・会社名（個人事業主の方は個人名義）：',
-    '・代表者名義：',
-    '・請求先郵便番号：',
-    '・請求先住所（都道府県から建物名まで正確に）：',
+    '{{依頼フォームURL}}',
     '',
-    '・返送先郵便番号：',
-    '・返送先住所（都道府県から建物名まで正確に）：',
-    '・返送先電話番号：',
-    '・宛名：',
-    '──────────────────',
+    '初回のみ、ご請求と商品の返送に必要な情報のご登録をお願いしております。',
+    'フォームの案内に沿ってご入力いただけましたら、',
+    '2〜3日以内にSquareより、カードのご登録と契約書へのご署名のご案内をお送りいたします。',
     '',
-    '※請求先と返送先が同じ場合は、返送先の欄に「請求先と同じ」とご記入いただければ結構です。'
+    'お手続きの完了後、同じフォームから発送先をご確認いただけます。',
+    'ご発送後に運送業者と追跡番号をご入力いただいたところで、ご依頼の完了となります。',
+    '',
+    '次回以降は、前回と同じ内容をあらかじめお選びした状態で開きますので、',
+    '点数とご発送のご連絡だけで承ります。',
+    '',
+    '※このURLはお客様専用です。お手数ですが、お手元に保存してお使いください。'
   ].join('\n');
 }
 

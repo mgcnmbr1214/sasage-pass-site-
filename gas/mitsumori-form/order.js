@@ -101,6 +101,9 @@ function orderGetState(customerId, formKey) {
       menus: orderMenus_(),
       // 前回と同じ内容をあらかじめ選んでおく。毎回選び直さなくてよいように
       selected: orderPreviousSelection_(open || latest),
+      // 初回だけお客様情報を伺う。そろっていれば読むだけの表示に切り替わる
+      profileNeeded: orderProfileNeeded_(customer),
+      profileFields: orderProfileForm_(customer),
       current: open ? orderCaseView_(ss, open) : null,
       shipTo: orderShipTo_(settings, signed)
     };
@@ -151,6 +154,10 @@ function orderSubmitRequest(payload) {
     caseId = created.caseId;
   }
 
+  // 初回はお客様情報をここで登録する。以降は触らない
+  const firstTime = orderProfileNeeded_(customer);
+  if (firstTime) orderSaveProfile_(ss, customer, data.profile);
+
   sheet.getRange(caseRow, BOARD_COL.detail).setValue(detail);
   sheet.getRange(caseRow, BOARD_COL.qty).setValue(Number(qty));
   sheet.getRange(caseRow, BOARD_COL.orderedAt).setValue(new Date());
@@ -163,7 +170,10 @@ function orderSubmitRequest(payload) {
 
   boardLog_('依頼フォーム', caseId + ' のご依頼を受け付けました（' + qty + '点／' +
     customer.values[BOARD_CUSTOMER_COL.name - 1] + '）');
-  return { ok: true, caseId: caseId };
+
+  // 初回は契約書と登録手数料の請求書を用意する。**送るのは人が確かめてから**
+  if (firstTime) orderPrepareContract_(ss, caseRow, caseId);
+  return { ok: true, caseId: caseId, firstTime: firstTime };
 }
 
 /**
@@ -205,6 +215,90 @@ function orderSubmitShipping(payload) {
   return { ok: true, caseId: open.caseId };
 }
 
+/**
+ * 初回だけお伺いする、お客様の情報。
+ *
+ * これまでは見積もり回答（T1）に書き並べ、**お客様の返信を読み取って**いた。
+ * 書き方がまちまちで取りこぼしが起き、郵便番号のコロンが抜けていただけで
+ * 案件が止まったこともある。選んで入れていただく形にすれば、その心配がない。
+ *
+ * 顧客タブの列と1対1で対応させる。
+ */
+const ORDER_PROFILE_FIELDS = [
+  { key: 'storeName', label: 'ストア名（ご予定のものでも結構です）' },
+  { key: 'company', label: '会社名（個人事業主の方は個人名義）' },
+  { key: 'representative', label: '代表者名義' },
+  { key: 'billZip', label: 'ご請求先 郵便番号', zip: 'billAddress' },
+  { key: 'billAddress', label: 'ご請求先 住所（都道府県から建物名まで）' },
+  { key: 'returnZip', label: '返送先 郵便番号', zip: 'returnAddress' },
+  { key: 'returnAddress', label: '返送先 住所（都道府県から建物名まで）' },
+  { key: 'returnName', label: '返送先 宛名' },
+  { key: 'returnTel', label: '返送先 電話番号' }
+];
+
+/** お客様情報がまだそろっていないか。そろうまで初回の入力欄を出す。 */
+function orderProfileNeeded_(customer) {
+  return ORDER_PROFILE_FIELDS.some(function (f) {
+    return !String(customer.values[BOARD_CUSTOMER_COL[f.key] - 1] || '').trim();
+  });
+}
+
+/** 画面に出す初回の入力欄。すでに分かっている項目は初期値として埋めておく。 */
+function orderProfileForm_(customer) {
+  return ORDER_PROFILE_FIELDS.map(function (f) {
+    return {
+      key: f.key, label: f.label, zip: f.zip || '',
+      value: String(customer.values[BOARD_CUSTOMER_COL[f.key] - 1] || '')
+    };
+  });
+}
+
+/**
+ * お客様情報を顧客タブへ保存する。
+ *
+ * **書き込むのは、そろっていないときの1回だけ。**
+ * 一度登録したあとの変更はメールで承る。お客様の操作で
+ * 請求先が空になると、請求書が作れなくなる。
+ */
+function orderSaveProfile_(ss, customer, profile) {
+  const data = profile || {};
+  const missing = [];
+  ORDER_PROFILE_FIELDS.forEach(function (f) {
+    if (!String(data[f.key] || '').trim()) missing.push(f.label);
+  });
+  if (missing.length > 0) {
+    throw new Error('次の項目のご入力をお願いいたします。' + '\n' + '・' + missing.join('\n・'));
+  }
+
+  const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  ORDER_PROFILE_FIELDS.forEach(function (f) {
+    sheet.getRange(customer.row, BOARD_CUSTOMER_COL[f.key]).setValue(String(data[f.key]).trim());
+  });
+  sheet.getRange(customer.row, BOARD_CUSTOMER_COL.updatedAt).setValue(new Date());
+  boardLog_('依頼フォーム', customer.id + ' のお客様情報を登録しました');
+}
+
+/**
+ * 郵便番号から住所を引く。入力の手間と打ち間違いを減らす。
+ * 引けなくても入力は止めない。**住所は人が確かめるもの。**
+ */
+function orderLookupZip(zip) {
+  const digits = String(zip || '').replace(/[^0-9]/g, '');
+  if (digits.length !== 7) return { ok: false };
+  try {
+    const res = UrlFetchApp.fetch(
+      'https://zipcloud.ibsnet.co.jp/api/search?zipcode=' + digits,
+      { muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) return { ok: false };
+    const hit = (JSON.parse(res.getContentText()).results || [])[0];
+    if (!hit) return { ok: false };
+    return { ok: true, address: hit.address1 + hit.address2 + hit.address3 };
+  } catch (err) {
+    boardLog_('②画面', '郵便番号から住所を引けませんでした: ' + err.message);
+    return { ok: false };
+  }
+}
+
 /** URLの顧客IDと鍵が合っているか。合っていなければ何も返さない。 */
 function orderAuthorize_(ss, customerId, formKey) {
   const id = String(customerId || '').trim();
@@ -218,6 +312,22 @@ function orderAuthorize_(ss, customerId, formKey) {
     return null;
   }
   return { id: id, row: found.row, values: found.values };
+}
+
+/**
+ * 初回の契約書と登録手数料の請求書を、Squareに下書きとして用意する。
+ *
+ * **送信まではしない。** お客様に届くものなので、内容を確かめてから人が送る。
+ * ここで作っておかないと、こちらが気づくまでお客様が何日も待つことになる。
+ * 失敗しても依頼の受付は取り消さない。案件ボードに「請求書を送る」と出る
+ */
+function orderPrepareContract_(ss, caseRow, caseId) {
+  try {
+    squareCreateDraftForCase(caseRow);
+    boardLog_('依頼フォーム', caseId + ' の登録手数料の請求書を下書き作成しました');
+  } catch (err) {
+    boardLog_('②エラー', caseId + ' の請求書の下書き作成に失敗: ' + err.message);
+  }
 }
 
 /** まだ発送前のご依頼。あれば書き換え、無ければ新しく作る。 */
