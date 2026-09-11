@@ -622,6 +622,8 @@ function boardSetup() {
 }
 
 /** 初期セットアップに使ってよい時間。Google側の上限（6分）より手前で切り上げる。 */
+const BOARD_PROP_WEB_APP_URL = 'BOARD_WEB_APP_URL';
+
 const BOARD_SETUP_BUDGET_MS = 3.5 * 60 * 1000;
 
 /**
@@ -1190,6 +1192,14 @@ function boardIssueFormKeys_(ss) {
 function boardRefreshFormUrls_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
   if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  if (!PropertiesService.getScriptProperties().getProperty(BOARD_PROP_WEB_APP_URL)) {
+    boardLog_(
+      '移行',
+      'スクリプトプロパティ BOARD_WEB_APP_URL が空です。' +
+        'デプロイ画面のウェブアプリURLを入れてください（入れないと開けないURLになります）'
+    );
+  }
 
   const rows = sheet.getLastRow() - 1;
   const ids = sheet.getRange(2, BOARD_CUSTOMER_COL.id, rows, 1).getValues();
@@ -3557,16 +3567,33 @@ function boardEvaluateReadiness_(ss, customerId) {
  * **鍵が無ければ何も返さない。** 鍵の無いURLを送ると、開いても弾かれる。
  * 差し込み先の行は、中身が空なら自動で消える。
  */
+/**
+ * 公開中のウェブアプリのURL。
+ *
+ * **ScriptApp.getService().getUrl() は当てにならない。**
+ * 実際に公開しているデプロイとは別のIDを返すことがあり、その場合
+ * 「現在、ファイルを開くことができません」とだけ出て原因が分からない。
+ * スクリプトプロパティ BOARD_WEB_APP_URL に入れた実物を最優先で使う。
+ */
+function boardWebAppUrl_() {
+  const saved = String(
+    PropertiesService.getScriptProperties().getProperty(BOARD_PROP_WEB_APP_URL) || ''
+  ).trim();
+  if (saved) return saved.replace(/[?#].*$/, '');
+  try {
+    return String(ScriptApp.getService().getUrl() || '');
+  } catch (err) {
+    return '';
+  }
+}
+
 function boardOrderFormUrl_(customer) {
   const key = customer ? String(customer.formKey || '').trim() : '';
   if (!customer || !key) return '';
-  try {
-    return ScriptApp.getService().getUrl() +
-      '?page=order&cid=' + encodeURIComponent(customer.id) + '&k=' + encodeURIComponent(key);
-  } catch (err) {
-    boardLog_('②エラー', '依頼フォームのURLを作れませんでした: ' + err.message);
-    return '';
-  }
+  const base = boardWebAppUrl_();
+  if (!base) return '';
+  return base +
+    '?page=order&cid=' + encodeURIComponent(customer.id) + '&k=' + encodeURIComponent(key);
 }
 
 function boardFindCustomerPlan_(ss, customerId) {
