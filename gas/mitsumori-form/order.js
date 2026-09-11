@@ -45,10 +45,15 @@ const ORDER_NOTES = {
   profile: 'ご登録内容の変更は、お手数ですがメールにてご連絡ください。'
 };
 
-/** 依頼フォームを開く。doGet から呼ぶ。 */
+/**
+ * 依頼フォームを開く。doGet から呼ぶ。
+ *
+ * **顧客IDのパラメータ名は cid。** `c` はGoogle側が使っている名前で、
+ * `?c=…` を付けると画面まで届かず「ファイルを開くことができません」になる。
+ */
 function orderRender_(params) {
   const template = HtmlService.createTemplateFromFile('Order');
-  template.customerId = String(params.c || '').trim();
+  template.customerId = String(params.cid || '').trim();
   template.formKey = String(params.k || '').trim();
   return template
     .evaluate()
