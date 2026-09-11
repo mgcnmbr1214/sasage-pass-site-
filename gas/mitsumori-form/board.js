@@ -1973,32 +1973,34 @@ function boardMigrateDoneFormLink_(sheet) {
   if (last < 2) return;
 
   const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
-  const closing = 'どうぞよろしくお願い申し上げます。';
 
   for (let c = 1; c < ids.length; c++) {
     if (String(ids[c] || '').trim() !== 'T4') continue;
     const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
     const body = String(cell.getValue() || '');
     if (!body || body.indexOf('{{依頼フォームURL}}') >= 0) return;
-    if (body.indexOf(closing) < 0) return;
 
-    // 発送先をメールで案内していた段落は、フォームが受け持つので外す
-    const old = '商品のご発送をお願いいたします。発送先は前回のご案内のとおりです。';
-    let next = body;
-    if (next.indexOf(old) >= 0) {
-      next = next.split(String.fromCharCode(10))
-        .filter(function (line) {
-          return line.indexOf('商品のご発送をお願いいたします') < 0 &&
-            line.indexOf('送り状のお問い合わせ番号またはお控えの写真') < 0 &&
-            line.indexOf('ご発送後、本メールへのご返信にて') < 0 &&
-            line.indexOf('受付開始日') < 0;
-        }).join(String.fromCharCode(10));
-    }
-
-    cell.setValue(next.replace(closing, function () { return boardOrderFormBlock_() + closing; }));
+    // **手で書き換えた本文から、行を消さない。**
+    // 実際にT4は大きく書き換えられていた。要らなくなった段落は人が判断する
+    cell.setValue(boardInsertBeforeClosing_(body, boardOrderFormBlock_()));
     boardLog_('移行', 'テンプレ T4 に依頼フォームのご案内を追加しました');
     return;
   }
+}
+
+/**
+ * 締めのあいさつの手前に差し込む。見つからなければ末尾に足す。
+ * **もとの行は消さない。**
+ */
+function boardInsertBeforeClosing_(body, block) {
+  const lines = String(body || '').split(String.fromCharCode(10));
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (/よろしくお願い(いた)?し?ま?す|申し上げます/.test(lines[i])) {
+      lines.splice(i, 0, block);
+      return lines.join(String.fromCharCode(10));
+    }
+  }
+  return lines.join(String.fromCharCode(10)) + String.fromCharCode(10) + block;
 }
 
 /** T4に差し込む、依頼フォームのご案内。 */
@@ -4202,8 +4204,8 @@ function boardBuildTemplateText_(ss, caseRow, templateId, extra) {
   }
 
   return {
-    subject: boardFill_(tpl.subject, vars),
-    body: boardFill_(body, vars),
+    subject: boardDropUnknownVars_(boardFill_(tpl.subject, vars), templateId),
+    body: boardDropUnknownVars_(boardFill_(body, vars), templateId),
     customer: customer,
     values: v
   };
@@ -4449,6 +4451,30 @@ function boardGetSettings_(ss) {
     if (row[0]) out[String(row[0]).trim()] = row[1];
   });
   return out;
+}
+
+/**
+ * 差し込めなかった {{…}} が残っている行を落とす。
+ *
+ * **お客様に {{受付開始日}} のような文字列を見せない。**
+ * 使わなくなった項目をテンプレートが参照したままだと、そのまま届いてしまう。
+ * T4は自動送信なので、気づく機会がない。
+ */
+function boardDropUnknownVars_(text, templateId) {
+  const out = String(text || '');
+  if (out.indexOf('{{') < 0) return out;
+
+  const left = [];
+  const kept = out.split(String.fromCharCode(10)).filter(function (line) {
+    const found = line.match(/{{[^}]*}}/g);
+    if (!found) return true;
+    found.forEach(function (name) { if (left.indexOf(name) < 0) left.push(name); });
+    return false;
+  }).join(String.fromCharCode(10));
+
+  boardLog_('テンプレ', (templateId || '') + ' に差し込めない項目があるため、その行を外しました（' +
+    left.join('、') + '）');
+  return kept;
 }
 
 function boardFill_(text, vars) {
