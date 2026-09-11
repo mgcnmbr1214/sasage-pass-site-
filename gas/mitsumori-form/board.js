@@ -793,6 +793,10 @@ function boardRenameColumn_(sheet, headers, from, to) {
 
 /** after 列の直後に name 列が無ければ挿入する。挿入後の見出し配列を返す。 */
 function boardInsertColumnAfter_(sheet, headers, after, name) {
+  // **渡された控えではなく、いまのシートを見てから足す。**
+  // 控えが古いと、すでにある列をもう一本足してしまう
+  headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
   if (headers.indexOf(name) >= 0) return headers;
   const index = headers.indexOf(after);
   if (index < 0) return headers;
@@ -2971,15 +2975,34 @@ function boardEnsureLayout_(ss) {
   // 必要な見出しがすべて揃っていれば、並び順は自由でよい
   if (boardSyncColumns_(sheet)) return true;
 
-  boardLog_('移行', '案件ボードの列構成が古いため移行します');
-  boardMigrateCases_(ss);
-  boardMigrateCustomers_(ss);
-  if (boardSyncColumns_(sheet)) return true;
+  // **列の付け替えは、一度にひとつの処理だけ。**
+  // 10分ごとの取込と初期セットアップが重なり、同じ移行が同時に3つ走って
+  // 単価調整・固定調整・請求見込みが何本も足されたことがある。
+  // 鍵を取れなければ、直しているのは他方なので何もしない
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(60 * 1000);
+  } catch (err) {
+    boardLog_('移行', '他の処理が列を直している最中のため、今回は見送りました');
+    return false;
+  }
 
-  sheet.getRange(1, 1, 1, BOARD_CASE_HEADERS.length).setValues([BOARD_CASE_HEADERS]);
-  const ok = boardSyncColumns_(sheet);
-  if (!ok) boardLog_('移行', '列構成を合わせられませんでした。初期セットアップを実行してください');
-  return ok;
+  try {
+    // 待っている間に相手が直し終えていることがある。もう一度確かめてから動く
+    if (boardSyncColumns_(sheet)) return true;
+
+    boardLog_('移行', '案件ボードの列構成が古いため移行します');
+    boardMigrateCases_(ss);
+    boardMigrateCustomers_(ss);
+    if (boardSyncColumns_(sheet)) return true;
+
+    sheet.getRange(1, 1, 1, BOARD_CASE_HEADERS.length).setValues([BOARD_CASE_HEADERS]);
+    const ok = boardSyncColumns_(sheet);
+    if (!ok) boardLog_('移行', '列構成を合わせられませんでした。初期セットアップを実行してください');
+    return ok;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /** 既定の並び順から「見出し名 → 設定キー」の対応を作る。 */
