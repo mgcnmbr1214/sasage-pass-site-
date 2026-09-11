@@ -222,13 +222,13 @@ const BOARD_RESPONSE_TYPES = [
     forRegistration: 'first'
   },
   {
-    // カード登録と契約書署名は初回だけ。2回目以降はその案内も登録手数料も要らない
-    id: 'T2B', name: '依頼確定・2回目以降（受付開始日・納期を回答し、発送をご案内します）',
-    template: 'T2B', status: BOARD_STATUS_WAITING_SHIP,
+    // 追跡番号をいただいたあとに送る。**2回目以降はこれが依頼確定の代わり**。
+    // 発送先も支払い方法も、依頼フォームとSquareが受け持つ
+    id: 'T3', name: 'ご依頼を承りました（納期のご案内）',
+    template: 'T3', status: '',
     fields: ['dueFrom', 'dueTo', 'qty'], invoice: false,
     requires: ['dueFrom'],
-    stamp: 'guideDraftAt',
-    forRegistration: 'repeat'
+    stamp: 'guideDraftAt'
   },
   {
     id: 'T4', name: '手続き完了（支払いと署名の確認をお伝えし、発送をご案内します）',
@@ -286,6 +286,8 @@ const BOARD_CASE_FIELDS = {
  * 過去の行を「対応を選ぶ」で開いたときに種別が未選択に戻ってしまう。
  */
 const BOARD_RESPONSE_TYPE_RENAMES = {
+  '依頼確定・2回目以降（受付開始日・納期を回答し、発送をご案内します）':
+    'ご依頼を承りました（納期のご案内）',
   '依頼確定（受付開始日・納期を回答し、依頼内容・支払い・発送に関する事項を伝えます）':
     '依頼確定・初回（受付開始日・納期に加え、支払い方法の登録と発送をご案内します）',
   '案内メール（依頼確定時）':
@@ -1807,6 +1809,8 @@ function boardSetupTemplates_(ss) {
   boardMigrateQuoteTax_(sheet);
   boardMigrateTemplateNotes_(sheet);
   boardMigrateShipBackNextOrder_(sheet);
+  boardRemoveUnusedTemplates_(sheet);
+  boardMigrateDoneFormLink_(sheet);
   boardMigrateShipBackDetail_(sheet);
   boardMigrateQuoteTemplate_(sheet);
 
@@ -1858,6 +1862,27 @@ const BOARD_TEMPLATE_RENAMES = [
   { id: 'T2', from: '案内メール（依頼確定時）', to: '依頼確定' },
   { id: 'T2', from: '依頼確定', to: '依頼確定（初回）' }
 ];
+
+/**
+ * 使わなくなったテンプレを消す。
+ *
+ * T2B（依頼確定・2回目以降）は依頼フォームに置き換わった。
+ * **一度も使われていないことを確かめてある。** 中身を書き換えていれば残す。
+ */
+function boardRemoveUnusedTemplates_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return 0;
+
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
+  let removed = 0;
+  for (let c = ids.length - 1; c >= 1; c--) {
+    if (String(ids[c] || '').trim() !== 'T2B') continue;
+    sheet.deleteColumn(c + 1);
+    removed++;
+    boardLog_('移行', 'テンプレ T2B を削除しました（依頼フォームに置き換え）');
+  }
+  return removed;
+}
 
 function boardMigrateTemplateNames_(sheet) {
   const last = sheet.getLastColumn();
@@ -1934,6 +1959,69 @@ function boardMigrateShipBackDetail_(sheet) {
     boardLog_('移行', 'テンプレ T9 の依頼内容から料金表示を外しました');
     return;
   }
+}
+
+/**
+ * すでにあるT4に、依頼フォームのご案内を入れる。
+ *
+ * T4は**唯一の自動送信メール**。ここが古いままだと、契約が済んだお客様に
+ * 使えるようになったフォームを知らせられない。
+ * **手で書き換えた本文は壊さない。** 差し込みがまだ無いときだけ入れる。
+ */
+function boardMigrateDoneFormLink_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return;
+
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
+  const closing = 'どうぞよろしくお願い申し上げます。';
+
+  for (let c = 1; c < ids.length; c++) {
+    if (String(ids[c] || '').trim() !== 'T4') continue;
+    const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
+    const body = String(cell.getValue() || '');
+    if (!body || body.indexOf('{{依頼フォームURL}}') >= 0) return;
+    if (body.indexOf(closing) < 0) return;
+
+    // 発送先をメールで案内していた段落は、フォームが受け持つので外す
+    const old = '商品のご発送をお願いいたします。発送先は前回のご案内のとおりです。';
+    let next = body;
+    if (next.indexOf(old) >= 0) {
+      next = next.split(String.fromCharCode(10))
+        .filter(function (line) {
+          return line.indexOf('商品のご発送をお願いいたします') < 0 &&
+            line.indexOf('送り状のお問い合わせ番号またはお控えの写真') < 0 &&
+            line.indexOf('ご発送後、本メールへのご返信にて') < 0 &&
+            line.indexOf('受付開始日') < 0;
+        }).join(String.fromCharCode(10));
+    }
+
+    cell.setValue(next.replace(closing, function () { return boardOrderFormBlock_() + closing; }));
+    boardLog_('移行', 'テンプレ T4 に依頼フォームのご案内を追加しました');
+    return;
+  }
+}
+
+/** T4に差し込む、依頼フォームのご案内。 */
+function boardOrderFormBlock_() {
+  return [
+    'これより、下記のご依頼フォームをお使いいただけます。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ ご依頼フォーム',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '{{依頼フォームURL}}',
+    '',
+    '・発送先のご案内も、こちらに表示しております。',
+    '・ご発送後は、運送業者と追跡番号をこのフォームにご入力ください。',
+    '　そこまでで、ご依頼の完了となります。',
+    '・次回以降のご依頼も、このフォームからお送りいただけます。',
+    '　前回と同じ内容をあらかじめお選びした状態で開きますので、',
+    '　点数と発送予定のご入力だけで承ります。',
+    '',
+    'このURLはお客様専用です。お手数ですが、お手元に保存してお使いください。',
+    '',
+    ''
+  ].join('\n');
 }
 
 function boardMigrateShipBackNextOrder_(sheet) {
@@ -2080,7 +2168,7 @@ function boardSeedTemplates_(sheet) {
   const seeds = [
     ['T1', '見積もり回答', '【ササゲパス】お見積もりのご案内', boardDefaultQuoteBody_(), 'フォーム回答への初回返信'],
     ['T2', '依頼確定', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定（自）が未入力なら送信できない。予定点数が空なら該当行が自動で消える'],
-    ['T2B', '依頼確定（2回目以降）', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideRepeatBody_(), '契約済みのお客様向け。カード登録と署名のご案内を省き、登録手数料も作らない'],
+    ['T3', 'ご依頼を承りました（納期のご案内）', '【ササゲパス】ご依頼を承りました（納期のご案内）', boardDefaultDueNoticeBody_(), '追跡番号をいただいたあとに送る。納期予定（自）が未入力なら送信できない'],
     ['T4', '手続き完了のご連絡', '【ササゲパス】お手続きを確認いたしました', boardDefaultDoneBody_(), '署名・カード登録の確認後に送る'],
     ['T5', 'リマインド（手続き未完了）', '【ササゲパス】お手続きのご確認', boardDefaultRemindPaymentBody_(), '請求書を送ってから一定日数が経っても署名・支払いが確認できないとき'],
     ['T6', 'リマインド（追跡番号未着）', '【ササゲパス】ご発送状況のご確認', boardDefaultRemindShippingBody_(), '発送の連絡も荷物の到着もないとき'],
@@ -2105,6 +2193,39 @@ function boardSeedTemplates_(sheet) {
  * カード登録と契約書署名は初回だけなので、その案内をまるごと省く。
  * 「初回のみ納期を長くいただく」旨の注記も外し、月々のご請求の説明を添える。
  */
+/**
+ * 納期のご案内（T3）。追跡番号をいただいたあとに送る。
+ *
+ * 発送先も支払い方法も書かない。**そこは依頼フォームとSquareが受け持つ。**
+ * ここでお伝えするのは、お預かりする内容と納期だけ。
+ */
+function boardDefaultDueNoticeBody_() {
+  return [
+    '{{会社名}}',
+    '{{担当者名}} 様',
+    '',
+    'お世話になっております。ササゲパス運営事務局です。',
+    'ご依頼と追跡番号のご連絡をいただき、ありがとうございます。',
+    '',
+    '下記の内容で承りましたので、ご確認をお願いいたします。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ お預かりする内容',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '　ご依頼内容　：{{依頼内容（料金なし）}}',
+    '　ご依頼点数　：{{予定点数}}点',
+    '　納期の目安　：{{納期予定}}',
+    '',
+    '　※お預かりした商品の状態により、前後する場合がございます。',
+    '　※{{メモ}}',
+    '',
+    '商品の到着後、あらためて検品の状況をご連絡いたします。',
+    '',
+    'ご不明な点がございましたら、本メールへのご返信にてお気軽にご連絡ください。',
+    '引き続きどうぞよろしくお願い申し上げます。'
+  ].join('\n');
+}
+
 function boardDefaultGuideRepeatBody_() {
   return [
     '{{会社名}}',
@@ -2465,14 +2586,24 @@ function boardDefaultDoneBody_() {
     '契約書へのご署名と決済情報のご登録を確認いたしました。',
     'ありがとうございます。',
     '',
-    '商品のご発送をお願いいたします。発送先は前回のご案内のとおりです。',
-    'ご発送後、本メールへのご返信にて、',
-    '送り状のお問い合わせ番号またはお控えの写真をお送りいただけますと幸いです。',
+    'これより、下記のご依頼フォームをお使いいただけます。',
     '',
-    '　受付開始日　：{{受付開始日}}',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ ご依頼フォーム',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '{{依頼フォームURL}}',
+    '',
+    '・発送先のご案内も、こちらに表示しております。',
+    '・ご発送後は、運送業者と追跡番号をこのフォームにご入力ください。',
+    '　そこまでで、ご依頼の完了となります。',
+    '・次回以降のご依頼も、このフォームからお送りいただけます。',
+    '　前回と同じ内容をあらかじめお選びした状態で開きますので、',
+    '　点数と発送予定のご入力だけで承ります。',
+    '',
     '　納期の目安　：{{納期予定}}',
-    '　※上記受付開始日に到着した際のおおよその目安です。',
     '　※初回のみ、ストア情報登録のため、通常より大幅に納期をいただいております。',
+    '',
+    'このURLはお客様専用です。お手数ですが、お手元に保存してお使いください。',
     '',
     'どうぞよろしくお願い申し上げます。'
   ].join('\n');
@@ -3359,6 +3490,24 @@ function boardEvaluateReadiness_(ss, customerId) {
 }
 
 /** お客様が答えた初回の見立て。案件ボードから顧客タブへ移した。 */
+/**
+ * そのお客様の依頼フォームのURL。
+ *
+ * **鍵が無ければ何も返さない。** 鍵の無いURLを送ると、開いても弾かれる。
+ * 差し込み先の行は、中身が空なら自動で消える。
+ */
+function boardOrderFormUrl_(customer) {
+  const key = customer ? String(customer.formKey || '').trim() : '';
+  if (!customer || !key) return '';
+  try {
+    return ScriptApp.getService().getUrl() +
+      '?page=order&cid=' + encodeURIComponent(customer.id) + '&k=' + encodeURIComponent(key);
+  } catch (err) {
+    boardLog_('②エラー', '依頼フォームのURLを作れませんでした: ' + err.message);
+    return '';
+  }
+}
+
 function boardFindCustomerPlan_(ss, customerId) {
   const found = boardFindCustomerRow_(ss, customerId);
   if (!found) return { firstQty: '', firstDate: '' };
@@ -4030,7 +4179,8 @@ function boardBuildTemplateText_(ss, caseRow, templateId, extra) {
     '発送先宛名': settings['発送先宛名'],
     '発送先TEL': settings['発送先TEL'],
     '品名': settings['品名'],
-    'メモ': v[BOARD_COL.memo - 1]
+    'メモ': v[BOARD_COL.memo - 1],
+    '依頼フォームURL': boardOrderFormUrl_(customer)
   };
 
   // 返送の点数や追跡番号など、案件ボードに列が無い値は画面から渡してもらう
@@ -4263,8 +4413,10 @@ function boardFindCustomer_(ss, customerId) {
         returnAddress: text('returnAddress'),
         returnName: text('returnName'),
         returnTel: text('returnTel'),
+        id: String(rows[i][BOARD_CUSTOMER_COL.id - 1] || '').trim(),
         unitPrice: rows[i][BOARD_CUSTOMER_COL.unitPrice - 1],
         squareId: text('squareId'),
+        formKey: text('formKey'),
         // 契約書の署名日は一度見つけたら残す。メールは90日で探せなくなる
         signedAt: rows[i][BOARD_CUSTOMER_COL.signedAt - 1],
         card: text('card')
