@@ -127,7 +127,7 @@ const BOARD_CUSTOMER_HEADERS = [
   '返送先 郵便番号', '返送先 住所', '返送先 宛名', '返送先 電話番号',
   '依頼内容', '月間予定数', '初回ご依頼予定数', '初回ご依頼予定日', '単価', '初回問い合わせ日', '最終更新日', 'メモ', 'Square顧客ID',
   '契約書署名日', 'カード登録', '登録の確認日',
-  '単価調整', '固定調整', '調整の理由', '依頼フォームの鍵'
+  '単価調整', '固定調整', '調整の理由', '依頼フォームの鍵', '依頼フォームURL'
 ];
 
 const BOARD_CUSTOMER_COL = {
@@ -137,7 +137,7 @@ const BOARD_CUSTOMER_COL = {
   detail: 14, monthly: 15, firstQty: 16, firstDate: 17, unitPrice: 18, firstAt: 19, updatedAt: 20,
   memo: 21, squareId: 22,
   signedAt: 23, card: 24, checkedAt: 25,
-  priceAdjust: 26, flatAdjust: 27, adjustNote: 28, formKey: 29
+  priceAdjust: 26, flatAdjust: 27, adjustNote: 28, formKey: 29, formUrl: 30
 };
 
 /**
@@ -568,7 +568,7 @@ function boardSetup() {
     boardLog_('②エラー', '過去のご依頼の復元に失敗: ' + err.message);
   }
   step('案件の並べ替え', function () { boardArrangeCases_(ss, true); });
-  step('依頼フォームの鍵の作成', function () { boardIssueFormKeys_(ss); });
+  step('依頼フォームの鍵とURL', function () { boardIssueFormKeys_(ss); boardRefreshFormUrls_(ss); });
 
   // 移行は一度きり。飛ばすと次回まで直らないので、必ず実行する
   try {
@@ -1178,6 +1178,40 @@ function boardIssueFormKeys_(ss) {
     boardLog_('移行', '依頼フォームの鍵を ' + made + ' 件つくりました');
   }
   return made;
+}
+
+/**
+ * 顧客タブに、そのお客様の依頼フォームのURLをそのまま書く。
+ *
+ * **鍵だけでは、こちらがすぐに開けない。** 状況を確かめたいときに
+ * URLを組み立て直すのは手間なので、押せる形で置いておく。
+ * デプロイのURLが変わったときのために、毎回書き直す。
+ */
+function boardRefreshFormUrls_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const rows = sheet.getLastRow() - 1;
+  const ids = sheet.getRange(2, BOARD_CUSTOMER_COL.id, rows, 1).getValues();
+  const keys = sheet.getRange(2, BOARD_CUSTOMER_COL.formKey, rows, 1).getValues();
+  const range = sheet.getRange(2, BOARD_CUSTOMER_COL.formUrl, rows, 1);
+  const current = range.getValues();
+
+  let changed = 0;
+  const next = ids.map(function (row, i) {
+    const url = boardOrderFormUrl_({
+      id: String(row[0] || '').trim(),
+      formKey: String(keys[i][0] || '').trim()
+    });
+    if (url !== String(current[i][0] || '')) changed++;
+    return [url];
+  });
+
+  if (changed > 0) {
+    range.setValues(next);
+    boardLog_('移行', '依頼フォームのURLを ' + changed + ' 件書き込みました');
+  }
+  return changed;
 }
 
 /** 読み間違えやすい文字（l・o・0・1）を避けた12文字。 */
