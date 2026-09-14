@@ -503,6 +503,7 @@ function boardSetup() {
     // **見出しを書き直す前に列をそろえる。** 順番を逆にすると中身がずれる
     boardRepairShipmentShift_(ss);
     boardMigrateShipments_(ss);
+    boardNormalizeBillingMonth_(ss);
   });
   // 移行で列が動いている可能性があるため、必ず読み直してから先へ進む
   boardSyncColumns_(ss.getSheetByName(BOARD_SHEET_CASES));
@@ -4815,6 +4816,36 @@ function boardRepairShipmentShift_(ss) {
   boardLog_('移行', '返送履歴のずれを ' + broken.length + ' 件戻しました（追跡番号は本文から ' +
     restored + ' 件復元）');
   return broken.length;
+}
+
+/**
+ * 請求月を「2026/08」という文字のまま持たせる。
+ *
+ * そのまま書き戻すと、スプレッドシートが日付と読み取って 2026/08/01 になる。
+ * 請求の判定には使っていないが、**台帳の見た目が変わるのは望ましくない。**
+ * 列そのものを文字の書式にしてから入れ直す。
+ */
+function boardNormalizeBillingMonth_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const range = sheet.getRange(2, BOARD_SHIPMENT_COL.billingMonth, sheet.getLastRow() - 1, 1);
+  const values = range.getValues();
+  let changed = 0;
+
+  const next = values.map(function (row) {
+    const value = row[0];
+    if (!(value instanceof Date)) return row;
+    changed++;
+    return [Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy/MM')];
+  });
+
+  range.setNumberFormat('@');
+  if (changed > 0) {
+    range.setValues(next);
+    boardLog_('移行', '請求月 ' + changed + ' 件を文字に戻しました');
+  }
+  return changed;
 }
 
 /** 送ったメールの本文から、返送の追跡番号を拾う。 */
