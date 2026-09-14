@@ -609,6 +609,7 @@ function boardSetup() {
   step('IDの整理', function () { priceTidyIds_(ss); });
   step('料金設計タブ', function () { priceRenderSheet_(ss); });
   step('割引・割増の見直し', function () { boardRepairCustomerAdjust_(ss); });
+  step('返送記録の取りこぼし', function () { boardRestoreShipments_(ss); });
   step('過去の案件の埋め戻し', function () { boardBackfillPastCases_(ss); });
   step('単価の計算', function () { priceRefreshUnitPrices_(ss); });
 
@@ -3373,6 +3374,100 @@ function boardTimeOf_(value) {
   return isNaN(time) ? 0 : time;
 }
 
+/**
+ * 返送のお知らせを送ったのに、返送履歴に記録が無い案件を戻す。
+ *
+ * **請求の台帳に載らなければ、請求されない。** メールはお客様に届いているのに、
+ * 記録だけが無い状態はいちばん危ない。実際、版の復元で1件消えた。
+ * 送信済みの文面から点数と追跡番号を読み、案件の返送点数と合うものだけ戻す。
+ */
+function boardRestoreShipments_(ss) {
+  const mails = ss.getSheetByName(BOARD_SHEET_MAILS);
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!mails || !cases || mails.getLastRow() < 2 || cases.getLastRow() < 2) return 0;
+
+  const type = boardFindResponseType_('T9');
+  if (!type) return 0;
+
+  const known = boardKnownShipmentKeys_(ss);
+  const rows = cases.getRange(2, 1, cases.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  const restored = [];
+
+  mails.getRange(2, 1, mails.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues()
+    .forEach(function (mail) {
+      if (String(mail[BOARD_MAIL_COL.responseType - 1] || '').trim() !== type.name) return;
+      const body = String(mail[BOARD_MAIL_COL.finalText - 1] || '');
+      if (!body) return;
+
+      const messageId = String(mail[BOARD_MAIL_COL.messageId - 1] || '').trim();
+      if (messageId && known.byMessage[messageId]) return;
+
+      const qty = boardCountFromShipBody_(body);
+      const tracking = boardTrackingFromBody_(body);
+      if (!qty) return;
+
+      const customerId = String(mail[BOARD_MAIL_COL.customerId - 1] || '').trim();
+      // **点数が一致する案件だけ。** どの依頼の返送か決められないものは触らない
+      const hits = rows.filter(function (row, i) {
+        row.__index = i;
+        if (String(row[BOARD_COL.customerId - 1] || '').trim() !== customerId) return false;
+        return Number(boardExtractCount_(row[BOARD_COL.shippedQty - 1])) === qty;
+      });
+      if (hits.length !== 1) return;
+
+      const caseId = String(hits[0][BOARD_COL.caseId - 1] || '').trim();
+      if (known.byCaseQty[caseId + '/' + qty]) return;
+
+      const added = boardRecordShipment_(ss, hits[0].__index + 2,
+        { shipQty: qty, shipTracking: tracking },
+        {
+          messageId: messageId,
+          subject: mail[BOARD_MAIL_COL.subject - 1],
+          body: body,
+          threadId: mail[BOARD_MAIL_COL.threadId - 1],
+          date: mail[BOARD_MAIL_COL.sentAt - 1] || mail[BOARD_MAIL_COL.date - 1]
+        });
+      if (!added) return;
+
+      // 返送まで終わっている案件は、ステータスもそろえる
+      const status = String(hits[0][BOARD_COL.status - 1] || '').trim();
+      if (status !== BOARD_STATUS_DONE && status !== BOARD_STATUS_CLOSED) {
+        cases.getRange(hits[0].__index + 2, BOARD_COL.status).setValue(BOARD_STATUS_DONE);
+        boardSetTodoFormula_(cases, hits[0].__index + 2);
+      }
+      restored.push(caseId + '（' + qty + '点）');
+    });
+
+  if (restored.length > 0) {
+    boardLog_('返送', '返送履歴から抜けていた記録を戻しました: ' + restored.join('、') +
+      '　請求の対象に入ります');
+    boardRefreshUnbilled_(ss);
+  }
+  return restored.length;
+}
+
+/** すでに返送履歴にある記録の目印。二重に作らないために使う。 */
+function boardKnownShipmentKeys_(ss) {
+  const out = { byMessage: {}, byCaseQty: {} };
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!sheet || sheet.getLastRow() < 2) return out;
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_SHIPMENT_HEADERS.length).getValues()
+    .forEach(function (row) {
+      const id = String(row[BOARD_SHIPMENT_COL.messageId - 1] || '').trim();
+      if (id) out.byMessage[id] = true;
+      const caseId = String(row[BOARD_SHIPMENT_COL.caseId - 1] || '').trim();
+      const qty = boardExtractCount_(row[BOARD_SHIPMENT_COL.qty - 1]);
+      if (caseId && qty !== '') out.byCaseQty[caseId + '/' + Number(qty)] = true;
+    });
+  return out;
+}
+
+/** 返送のお知らせの本文から、返送した点数を読む。 */
+function boardCountFromShipBody_(body) {
+  const hit = String(body || '').match(/点[\s　]*数[\s　]*[:：][\s　]*([0-9]+)/);
+  return hit ? Number(hit[1]) : 0;
+}
+
 /** 同じお客様の案件が、いくつあるか（見送りは数えない）。 */
 function boardCountCasesOf_(values, customerId) {
   let count = 0;
@@ -5161,7 +5256,7 @@ function boardRecordShipment_(ss, caseRow, fields, mail) {
   }
 
   const values = new Array(BOARD_SHIPMENT_HEADERS.length).fill('');
-  values[BOARD_SHIPMENT_COL.date - 1] = new Date();
+  values[BOARD_SHIPMENT_COL.date - 1] = (mail || {}).date || new Date();
   values[BOARD_SHIPMENT_COL.caseId - 1] = v[BOARD_COL.caseId - 1];
   values[BOARD_SHIPMENT_COL.customerId - 1] = customerId;
   values[BOARD_SHIPMENT_COL.customer - 1] = v[BOARD_COL.customer - 1];
