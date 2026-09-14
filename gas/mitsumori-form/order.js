@@ -471,6 +471,25 @@ function orderPreviousSelection_(hit) {
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+
+  // **控えがあれば、そちらを使う。** 依頼内容の文から名前で探す方法は、
+  // 依頼内容が空のときや、メニュー名を変えたあとでは何も選べない
+  const saved = String(sheet.getRange(hit.caseRow, BOARD_COL.selection).getValue() || '').trim();
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (parsed && parsed.options && Object.keys(parsed.options).length > 0) {
+        return {
+          options: parsed.options,
+          subChoices: parsed.subChoices || {},
+          texts: parsed.texts || {}
+        };
+      }
+    } catch (err) {
+      // 壊れていれば、下の文からの読み取りに任せる
+    }
+  }
+
   const detail = String(sheet.getRange(hit.caseRow, BOARD_COL.detail).getValue() || '');
   if (!detail) return empty;
 
