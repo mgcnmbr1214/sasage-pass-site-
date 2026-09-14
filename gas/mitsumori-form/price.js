@@ -547,7 +547,11 @@ function priceReloadSheet() {
  * 見送り以外の、そのお客様のいちばん新しい案件の選択内容で見る。
  * **進行中の案件が無くても拾う。** 次のご依頼でも同じ内容を選ばれるため。
  */
-function priceAffectedCustomers_(ss, before, after) {
+function priceAffectedCustomers_(ss, before, after, renames) {
+  // **控えに入っているのは付け替える前のID。**
+  // そのまま新しい料金表に当てると、付け替えた項目が見つからず単価が下がって見える
+  const map = {};
+  (renames || []).forEach(function (r) { map[r.from] = r.to; });
   const cases = ss.getSheetByName(BOARD_SHEET_CASES);
   if (!cases || cases.getLastRow() < 2) return [];
 
@@ -571,7 +575,7 @@ function priceAffectedCustomers_(ss, before, after) {
     if (Object.keys(selection.options || {}).length === 0) return;
 
     const was = priceBaseUnitPrice_(before, selection).price;
-    const now = priceBaseUnitPrice_(after, selection).price;
+    const now = priceBaseUnitPrice_(after, priceSwapSelection_(selection, map)).price;
     if (was === now) return;
 
     const customer = boardFindCustomerRow_(ss, customerId);
@@ -672,7 +676,7 @@ function priceBuildPreview_(ss) {
   return {
     changes: changes,
     renames: renames,
-    affected: (changes.length > 0 || renames.length > 0) ? priceAffectedCustomers_(ss, before, after) : [],
+    affected: (changes.length > 0 || renames.length > 0) ? priceAffectedCustomers_(ss, before, after, renames) : [],
     warning: priceTierWarning_(priceTierRows_(after))
   };
 }
@@ -843,6 +847,24 @@ function priceApplyRenames_(config, renames) {
   });
 }
 
+/** 選ばれた内容のIDを、付け替えの対応表で読み替えた写しを返す。 */
+function priceSwapSelection_(selection, map) {
+  const swap = function (id) { return map[id] || id; };
+  const options = {};
+  Object.keys((selection && selection.options) || {}).forEach(function (menuId) {
+    options[swap(menuId)] = (selection.options[menuId] || []).map(swap);
+  });
+  const subChoices = {};
+  Object.keys((selection && selection.subChoices) || {}).forEach(function (menuId) {
+    const inner = {};
+    Object.keys(selection.subChoices[menuId] || {}).forEach(function (itemId) {
+      inner[swap(itemId)] = (selection.subChoices[menuId][itemId] || []).map(swap);
+    });
+    subChoices[swap(menuId)] = inner;
+  });
+  return { options: options, subChoices: subChoices };
+}
+
 /**
  * 案件ボードの「選択の控え」を、新しいIDに書き換える。
  * **ここを忘れると、過去の依頼から単価が引けなくなる。**
@@ -866,21 +888,9 @@ function priceRewriteSelections_(ss, renames) {
     try { parsed = JSON.parse(raw); } catch (err) { return row; }
     if (!parsed || !parsed.options) return row;
 
-    const options = {};
-    Object.keys(parsed.options).forEach(function (menuId) {
-      options[swap(menuId)] = (parsed.options[menuId] || []).map(swap);
-    });
-    const subChoices = {};
-    Object.keys(parsed.subChoices || {}).forEach(function (menuId) {
-      const inner = {};
-      Object.keys(parsed.subChoices[menuId] || {}).forEach(function (itemId) {
-        inner[swap(itemId)] = (parsed.subChoices[menuId][itemId] || []).map(swap);
-      });
-      subChoices[swap(menuId)] = inner;
-    });
-
-    parsed.options = options;
-    parsed.subChoices = subChoices;
+    const swapped = priceSwapSelection_(parsed, map);
+    parsed.options = swapped.options;
+    parsed.subChoices = swapped.subChoices;
     const text = JSON.stringify(parsed);
     if (text === raw) return row;
     changed++;
