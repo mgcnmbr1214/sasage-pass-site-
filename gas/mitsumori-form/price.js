@@ -21,8 +21,6 @@ const PRICE_HISTORY_SHEET = '料金履歴';
 
 /** 「ボタン」を置く行。使い方の説明より下に置く。 */
 const PRICE_ROW_BUTTONS = 11;
-const PRICE_COL_UPDATE = 1;
-const PRICE_COL_RELOAD = 4;
 const PRICE_ROW_STAMP = 12;
 
 const PRICE_HEAD_MENUS = '■ メニューの単価';
@@ -36,11 +34,12 @@ const PRICE_HISTORY_HEADERS = ['日時', '変えた内容', '据え置いたお�
 const PRICE_GUIDE = [
   '【料金設計】ササゲパスの料金は、すべてこの表が大もとです。',
   '直せるのは、白い列（ID・単価・有効・下限点数・値）だけです。グレーの列（種別・名前）は直しても反映されません。',
+  'IDはどの行も自由に直せます。半角の英数字とアンダースコアで、分かりやすい名前を付けてください（例: photo_bg）。',
   '',
-  '　手順1　白い列を直す　　手順2　下の「料金の更新画面をひらく」に ✓ を入れる',
+  '　手順1　白い列を直す　　手順2　メニュー「ササゲパス」→「料金の更新画面をひらく」',
   '　手順3　出てきた画面で、何がどう変わるかを確かめる　　手順4　画面の「この内容で更新する」を押す',
   '',
-  '※ ✓ を入れただけでは、まだ何も変わりません。画面のボタンを押してはじめて書き換わります。',
+  '※ 表を直しただけでは、まだ何も変わりません。画面のボタンを押してはじめて書き換わります。',
   '※ 更新すると、見積もりフォームの表示価格・依頼フォーム・請求書の単価が、いっせいにこの表の値になります。',
   '※ 更新前の内容は「料金履歴」タブに丸ごと残ります。初期セットアップを実行すると、この表はいまの料金で書き直されます。'
 ];
@@ -76,19 +75,11 @@ function priceRenderSheet_(ss) {
   sheet.getRange(1, 1).setFontWeight('bold').setFontSize(12);
   sheet.getRange(1, 1, PRICE_GUIDE.length, 1).setFontColor('#3D4A66');
 
-  // ボタン
-  sheet.getRange(PRICE_ROW_BUTTONS, PRICE_COL_UPDATE)
-    .insertCheckboxes().setValue(false);
-  sheet.getRange(PRICE_ROW_BUTTONS, PRICE_COL_UPDATE + 1)
-    .setValue('← 料金の更新画面をひらく（まだ何も変わりません）').setFontWeight('bold').setFontColor('#A32D2D');
-  sheet.getRange(PRICE_ROW_BUTTONS, PRICE_COL_RELOAD)
-    .insertCheckboxes().setValue(false);
-  sheet.getRange(PRICE_ROW_BUTTONS, PRICE_COL_RELOAD + 1)
-    .setValue('← 表を読み込み直す（編集を捨てて、いまの料金に戻す）').setFontColor('#5A6A8A');
-  sheet.getRange(PRICE_ROW_BUTTONS - 1, 1)
-    .setValue('▼ ここが「ボタン」です。チェックを入れると画面が出て、チェックは自動で外れます。')
-    .setFontColor('#A32D2D').setFontWeight('bold');
-  sheet.getRange(PRICE_ROW_BUTTONS, 1, 1, width).setBackground('#F1EFE8');
+  // 直したあとにどこを押すのか。**シートの中で完結して読めるように**
+  sheet.getRange(PRICE_ROW_BUTTONS, 1)
+    .setValue('▶ 直したら　画面上のメニュー「ササゲパス」→「料金の更新画面をひらく」')
+    .setFontWeight('bold').setFontColor('#A32D2D').setFontSize(12);
+  sheet.getRange(PRICE_ROW_BUTTONS, 1, 1, width).setBackground('#FEF6E7');
 
   const history = ss.getSheetByName(PRICE_HISTORY_SHEET);
   const count = history && history.getLastRow() > 1 ? history.getLastRow() - 1 : 0;
@@ -149,7 +140,7 @@ function priceMenuRows_(config) {
       n++;
       rows.push(['オプション', item.id, '└ ' + item.name,
         Number(item.unitPrice || 0), item.enabled !== false,
-        priceIdHint_(item.id, menu.id + '_' + n) + priceOneLine_(item.description)]);
+        priceOneLine_(item.description)]);
 
       const mode = item.subChoicePricingMode;
       if (mode === 'count') {
@@ -161,8 +152,7 @@ function priceMenuRows_(config) {
           choice.id, '　└ ' + choice.name,
           mode === 'choice' ? Number(choice.unitPrice || 0) : '',
           choice.enabled !== false,
-          priceIdHint_(choice.id, menu.id + '_' + n + '_' + (k + 1)) +
-            (mode === 'choice' ? '' : '選んでも単価は変わりません')]);
+          mode === 'choice' ? '' : '選んでも単価は変わりません']);
       });
     });
   });
@@ -199,17 +189,6 @@ function priceTierWarning_(tierRows) {
   if (bad.length === 0) return '';
   return '⚠ 数量割引の下限点数が小さい順に並んでいません: ' + bad.join('、') +
     '　このままだと請求の割引が正しく決まりません。下限点数を直して「料金を更新する」を押してください。';
-}
-
-/**
- * 自動で作られたIDに、読みやすい名前の案を添える。
- *
- * `photo_option_bazsio7` のようなIDでは、表を見ても何のことか分からない。
- * ID欄は直せるようにしてあるので、案を出しておく。**勝手には付け替えない。**
- */
-function priceIdHint_(id, suggestion) {
-  if (!priceIsMachineId_(id)) return '';
-  return '【ID欄を直せます。例: ' + suggestion + '】　';
 }
 
 function priceNow_() {
@@ -515,34 +494,9 @@ function priceRestoreSelections_(ss) {
 // ------------------------------------------------------------
 
 /**
- * 料金設計タブのチェックボックスを「ボタン」として使う。
- *
- * **押しても、その場では何も書き換えない。** 画面をひらくだけ。
- * 以前はチェックした瞬間に書き換えていたため、動いたのかどうかも分からなかった。
- * 何が起きても分かるよう、押されたことは必ずログに残す。
+ * 編集を捨てて、いまの料金で表を書き直す。メニューから呼ぶ。
  */
-function priceOnEdit(e) {
-  if (!e || !e.range) return;
-  if (e.range.getSheet().getName() !== PRICE_SHEET) return;
-  if (e.range.getRow() !== PRICE_ROW_BUTTONS) return;
-
-  const col = e.range.getColumn();
-  if (col !== PRICE_COL_UPDATE && col !== PRICE_COL_RELOAD) return;
-  if (String(e.value) !== 'TRUE') return;
-
-  boardLog_('料金', (col === PRICE_COL_UPDATE ? '更新画面' : '読み込み直し') + 'のボタンが押されました');
-  try {
-    e.range.setValue(false);          // 先に戻す。画面を閉じたあとチェックが残らないように
-    if (col === PRICE_COL_UPDATE) priceOpenUpdate();
-    else priceReload_();
-  } catch (err) {
-    boardLog_('料金', 'エラー: ' + err.message);
-    SpreadsheetApp.getUi().alert('うまくいきませんでした。' + String.fromCharCode(10, 10) + err.message);
-  }
-}
-
-/** 編集を捨てて、いまの Config の値で表を書き直す。 */
-function priceReload_() {
+function priceReloadSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   priceRenderSheet_(ss);
   SpreadsheetApp.getUi().alert('いまの料金で表を書き直しました。');
@@ -904,4 +858,69 @@ function priceRewriteSelections_(ss, renames) {
 /** 自動で作られたIDか。読みやすい名前を勧めるかどうかの判断に使う。 */
 function priceIsMachineId_(id) {
   return /_(option|text|choice)_[a-z0-9]{4,}$/.test(String(id || ''));
+}
+
+// ------------------------------------------------------------
+// IDの整理
+// ------------------------------------------------------------
+
+/**
+ * 自動で作られたIDを、メニューに合わせた読みやすい名前に付け替える。
+ *
+ * 見積もりフォームが作るIDは `photo_option_bazsio7` のような形で、
+ * 表を見ても何のことか分からない。`photo_2` のようにメニューを頭に付け、
+ * 上から順に番号を振る。**手で付けたIDには触らない。**
+ * そのため、初期セットアップを何度実行しても同じ結果になる。
+ */
+function priceTidyIds_(ss) {
+  const config = getConfig_();
+  const used = {};
+  (config.menus || []).forEach(function (menu) {
+    used[menu.id] = true;
+    (menu.items || []).forEach(function (item) {
+      used[item.id] = true;
+      (item.subChoices || []).forEach(function (c) { used[c.id] = true; });
+    });
+  });
+
+  const pick = function (base) {
+    if (!used[base]) { used[base] = true; return base; }
+    for (let i = 2; i < 100; i++) {
+      if (!used[base + '_' + i]) { used[base + '_' + i] = true; return base + '_' + i; }
+    }
+    return '';
+  };
+
+  const renames = [];
+  (config.menus || []).forEach(function (menu) {
+    let option = 0;
+    let memo = 0;
+    (menu.items || []).forEach(function (item) {
+      const isText = item.type === 'text';
+      if (isText) memo++; else option++;
+      const base = isText ? menu.id + '_memo' + memo : menu.id + '_' + option;
+
+      if (priceIsMachineId_(item.id)) {
+        const to = pick(base);
+        if (to) renames.push({ from: item.id, to: to, name: menu.name + '：' + item.name });
+      }
+      (item.subChoices || []).forEach(function (choice, k) {
+        if (!priceIsMachineId_(choice.id)) return;
+        const to = pick(menu.id + '_' + option + '_' + (k + 1));
+        if (to) renames.push({ from: choice.id, to: to, name: menu.name + '：' + item.name + ' > ' + choice.name });
+      });
+    });
+  });
+
+  if (renames.length === 0) return 0;
+
+  priceApplyRenames_(config, renames);
+  const rewritten = priceRewriteSelections_(ss, renames);
+  writeConfig_(normalizeConfig_(config));
+
+  boardLog_('料金', 'IDを読みやすい名前に付け替えました（' + renames.length + ' 件）: ' +
+    renames.slice(0, 6).map(function (r) { return r.from + '→' + r.to; }).join('／') +
+    (renames.length > 6 ? ' ほか' : '') +
+    '　選択の控え ' + rewritten + ' 件も書き換えました');
+  return renames.length;
 }

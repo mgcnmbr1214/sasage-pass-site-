@@ -443,9 +443,6 @@ function boardOnEditInstalled_(e) {
   if (!e || !e.range) return;
   const sheet = e.range.getSheet();
 
-  // 料金設計タブのチェックボックスは「ボタン」。トリガーは増やさず、ここから振り分ける
-  if (sheet.getName() === PRICE_SHEET) { priceOnEdit(e); return; }
-
   if (sheet.getName() !== BOARD_SHEET_MAILS) return;
   if (e.range.getRow() < 2) return;
 
@@ -476,6 +473,7 @@ function onOpen() {
     .addItem('新着を今すぐ確認する', 'mailCheckNow')
     .addItem('今月の請求書を作成', 'squareCreateMonthlyInvoices')
     .addItem('料金の更新画面をひらく', 'priceOpenUpdate')
+    .addItem('料金設計タブを書き直す', 'priceReloadSheet')
     .addSeparator()
     .addSubMenu(ui.createMenu('別途対応メニュー')
       .addItem('受付開始日・納期・点数だけを入力する', 'boardOpenPanel')
@@ -588,6 +586,7 @@ function boardSetup() {
   step('依頼フォームの鍵とURL', function () { boardIssueFormKeys_(ss); boardRefreshFormUrls_(ss); });
   step('返送した点数の記入', function () { boardBackfillShippedCount_(ss); });
   step('選択の控えの復元', function () { priceRestoreSelections_(ss); });
+  step('IDの整理', function () { priceTidyIds_(ss); });
   step('料金設計タブ', function () { priceRenderSheet_(ss); });
 
   // 移行は一度きり。飛ばすと次回まで直らないので、必ず実行する
