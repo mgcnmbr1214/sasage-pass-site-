@@ -590,6 +590,7 @@ function boardSetup() {
   step('選択の控えの復元', function () { priceRestoreSelections_(ss); });
   step('IDの整理', function () { priceTidyIds_(ss); });
   step('料金設計タブ', function () { priceRenderSheet_(ss); });
+  step('割引・割増の見直し', function () { boardRepairCustomerAdjust_(ss); });
   step('単価の計算', function () { priceRefreshUnitPrices_(ss); });
 
   // 移行は一度きり。飛ばすと次回まで直らないので、必ず実行する
@@ -3262,6 +3263,38 @@ function boardEnsureLayout_(ss) {
   }) === true;
 }
 
+/**
+ * 顧客タブの「単価調整」「固定調整」から、数でないものを取り除く。
+ *
+ * 列を足したときのずれで、カード登録の文字や日付が紛れ込んでいた。
+ * 日付は数として扱われるため、請求見込みに 46,280 のような額が乗っていた。
+ * **調整額は必ず数。** 数でないものは、入っていること自体が誤り。
+ */
+function boardRepairCustomerAdjust_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const range = sheet.getRange(2, BOARD_CUSTOMER_COL.priceAdjust, sheet.getLastRow() - 1, 2);
+  const values = range.getValues();
+  const removed = [];
+
+  const next = values.map(function (row, i) {
+    return row.map(function (value, c) {
+      if (value === '' || value === null) return value;
+      if (typeof value === 'number') return value;   // 本物の調整額
+      removed.push((c === 0 ? '単価調整' : '固定調整') + ' 行' + (i + 2) + ': ' +
+        String(value).slice(0, 20));
+      return '';
+    });
+  });
+
+  if (removed.length === 0) return 0;
+  range.setValues(next);
+  boardLog_('移行', '顧客タブの割引・割増から、数でない値を ' + removed.length +
+    ' 件取り除きました（' + removed.slice(0, 4).join('／') + (removed.length > 4 ? ' ほか' : '') + '）');
+  return removed.length;
+}
+
 /** そろっていない見出しの名前。何が足りないのか分からないと直せない。 */
 function boardMissingCaseHeaders_(sheet) {
   const headers = sheet.getLastColumn() > 0
@@ -3544,6 +3577,25 @@ function boardRefreshInquiries_(ss) {
  * 顧客ごとの最新メールを1回の検索でまとめて取る。
  * direction が 'from' なら受信、'to' なら送信を対象にする。
  */
+/**
+ * 案件ボードに出す、メールの中身。
+ *
+ * **本文が無いメールがある。** 送り状の写真だけを送ってこられることがあり、
+ * そのときは日時だけが並んで「中身が消えた」ように見えていた。
+ * 本文が空なら、件名と添付の有無を代わりに出す。
+ */
+function boardMailSnippet_(message) {
+  const body = String(mailPlainBody_(message) || '').trim();
+  if (body) return body;
+
+  const subject = String(message.getSubject() || '').trim();
+  const files = message.getAttachments().map(function (a) { return a.getName(); });
+  const parts = ['（本文はありません）'];
+  if (subject) parts.push('件名: ' + subject);
+  if (files.length > 0) parts.push('添付: ' + files.join('、'));
+  return parts.join(String.fromCharCode(10));
+}
+
 function boardLatestMails_(byEmail, direction, customers) {
   const scope = direction === 'to' ? 'in:sent ' : '';
   const query = scope + 'newer_than:' + BOARD_INQUIRY_LOOKBACK_DAYS + 'd {' +
@@ -3568,7 +3620,7 @@ function boardLatestMails_(byEmail, direction, customers) {
       if (!hit) return;
       const id = byEmail[hit];
       if (!latest[id] || message.getDate() > latest[id].date) {
-        latest[id] = { date: message.getDate(), body: mailPlainBody_(message) };
+        latest[id] = { date: message.getDate(), body: boardMailSnippet_(message) };
       }
     });
   });
