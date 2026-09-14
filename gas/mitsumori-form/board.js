@@ -93,9 +93,9 @@ const BOARD_CASE_HEADERS = [
   '納期予定（自）', '納期予定（至）', '次にやること',
   '未返信', '未請求の返送',
   '顧客ID', '依頼内容', '選択の控え', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール',
-  '単価', '単価調整', '固定調整', '調整の理由', '請求見込み',
+  '単価', '単価調整', '固定調整', '調整の理由', '請求見込み', '単価の内訳',
   '請求書送付日', 'Square請求書ID',
-  '運送業者', '追跡番号', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
+  '運送業者', '追跡番号', '発送完了日', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
 const BOARD_COL = {
@@ -104,9 +104,10 @@ const BOARD_COL = {
   dueFrom: 10, dueTo: 11, todo: 12,
   unreplied: 13, unbilled: 14,
   customerId: 15, detail: 16, selection: 17, formInquiry: 18, lastInbound: 19, lastOutbound: 20,
-  unitPrice: 21, priceAdjust: 22, flatAdjust: 23, adjustNote: 24, estimate: 25,
-  invoiceSent: 26, invoiceId: 27,
-  carrier: 28, tracking: 29, teamNote: 30, guideDraftAt: 31, lastContact: 32, memo: 33, sourceRow: 34
+  unitPrice: 21, priceAdjust: 22, flatAdjust: 23, adjustNote: 24, estimate: 25, priceNote: 26,
+  invoiceSent: 27, invoiceId: 28,
+  carrier: 29, tracking: 30, shippedAt: 31, teamNote: 32,
+  guideDraftAt: 33, lastContact: 34, memo: 35, sourceRow: 36
 };
 
 /**
@@ -586,6 +587,7 @@ function boardSetup() {
   step('選択の控えの復元', function () { priceRestoreSelections_(ss); });
   step('IDの整理', function () { priceTidyIds_(ss); });
   step('料金設計タブ', function () { priceRenderSheet_(ss); });
+  step('単価の計算', function () { priceRefreshUnitPrices_(ss); });
 
   // 移行は一度きり。飛ばすと次回まで直らないので、必ず実行する
   try {
@@ -733,6 +735,11 @@ function boardMigrateCases_(ss) {
   // 依頼内容は人が読む文。**料金を計算し直すには、選ばれた項目のIDが要る。**
   // メニュー名を変えただけで単価が引けなくなる、ということが起きないように
   headers = boardInsertColumnAfter_(sheet, headers, '依頼内容', '選択の控え');
+
+  // 単価がどう決まったのかを残す。**あとから「なぜこの金額か」を説明できるように**
+  headers = boardInsertColumnAfter_(sheet, headers, '請求見込み', '単価の内訳');
+  // 数量割引の段は、お客様が発送した月で決まる。こちらの都合で動かせないように
+  headers = boardInsertColumnAfter_(sheet, headers, '追跡番号', '発送完了日');
 
   // 契約書は請求書の作成時にその場で添付するため、事前作成の記録は不要になった
   const contract = headers.indexOf('契約書作成日');
@@ -1373,7 +1380,8 @@ function boardSetupSheet_(ss, name, headers, widths) {
 }
 
 /** 長文が入る列。折り返さず1行に収めて、一覧を見やすく保つ。 */
-const BOARD_CLIPPED_COLS = ['detail', 'selection', 'formInquiry', 'lastInbound', 'lastOutbound', 'teamNote', 'memo'];
+const BOARD_CLIPPED_COLS = ['detail', 'selection', 'formInquiry', 'lastInbound', 'lastOutbound',
+  'priceNote', 'teamNote', 'memo'];
 const BOARD_ROW_HEIGHT = 50;
 
 /** 「未返信」列に並べるリンクの数。これを超えた分は「+3」のようにまとめる。 */
@@ -1388,9 +1396,9 @@ const BOARD_CASE_WIDTHS = {
   qty: 70, receivedQty: 85, shippedQty: 70,
   dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
   customerId: 70, detail: 160, selection: 90, formInquiry: 160, lastInbound: 200, lastOutbound: 200,
-  unitPrice: 70, priceAdjust: 75, flatAdjust: 75, adjustNote: 150, estimate: 100,
+  unitPrice: 70, priceAdjust: 75, flatAdjust: 75, adjustNote: 150, estimate: 100, priceNote: 300,
   invoiceSent: 95, invoiceId: 110,
-  carrier: 100, tracking: 130, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
+  carrier: 100, tracking: 130, shippedAt: 95, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
 };
 
 function boardApplyCaseFormatting_(sheet) {
@@ -1444,7 +1452,7 @@ function boardApplyCaseFormatting_(sheet) {
 
   sheet.setConditionalFormatRules(rules);
 
-  [BOARD_COL.dueFrom, BOARD_COL.dueTo, BOARD_COL.invoiceSent,
+  [BOARD_COL.dueFrom, BOARD_COL.dueTo, BOARD_COL.invoiceSent, BOARD_COL.shippedAt,
    BOARD_COL.guideDraftAt, BOARD_COL.lastContact].forEach(function (col) {
     // 日付列のみ書式を揃える
     sheet.getRange(2, col, maxRows, 1).setNumberFormat('yyyy/mm/dd');

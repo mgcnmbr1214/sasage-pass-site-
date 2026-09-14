@@ -179,6 +179,8 @@ function orderSubmitRequest(payload) {
   boardLog_('依頼フォーム', caseId + ' のご依頼を受け付けました（' + qty + '点／' +
     customer.values[BOARD_CUSTOMER_COL.name - 1] + '）');
 
+  priceRefreshUnitPrices_(ss);
+
   // 初回は契約書と登録手数料の請求書を用意する。**送るのは人が確かめてから**
   if (firstTime) orderPrepareContract_(ss, caseRow, caseId);
   return { ok: true, caseId: caseId, firstTime: firstTime };
@@ -214,10 +216,15 @@ function orderSubmitShipping(payload) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   sheet.getRange(open.caseRow, BOARD_COL.carrier).setValue(carrier.name);
   sheet.getRange(open.caseRow, BOARD_COL.tracking).setValue(tracking);
+  // **数量割引の段は、この日付の月で決まる。** お客様が決める日なので動かせない
+  if (!sheet.getRange(open.caseRow, BOARD_COL.shippedAt).getValue()) {
+    sheet.getRange(open.caseRow, BOARD_COL.shippedAt).setValue(new Date());
+  }
   sheet.getRange(open.caseRow, BOARD_COL.status).setValue(BOARD_STATUS_SHIPPED);
   boardSetTodoFormula_(sheet, open.caseRow);
   boardSetOwnerFormula_(sheet, open.caseRow);
 
+  priceRefreshUnitPrices_(ss);
   boardLog_('依頼フォーム', open.caseId + ' の発送情報を受け付けました（' +
     carrier.name + ' ' + tracking + '）');
   return { ok: true, caseId: open.caseId };

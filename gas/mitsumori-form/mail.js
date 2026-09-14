@@ -1035,6 +1035,12 @@ function mailSaveCaseFields(caseRow, data) {
   });
 
   boardSetTodoFormula_(sheet, row);
+  // 点数が変われば、その月の合計も数量割引の段も変わる
+  try {
+    priceRefreshUnitPrices_(ss);
+  } catch (err) {
+    boardLog_('料金', '単価の計算に失敗: ' + err.message);
+  }
   boardLog_('保存', '案件 ' + sheet.getRange(row, BOARD_COL.caseId).getValue() + ' を更新しました');
   return { message: '案件の内容を保存しました。' };
 }

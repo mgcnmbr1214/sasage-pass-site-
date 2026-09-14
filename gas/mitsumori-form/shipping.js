@@ -53,6 +53,9 @@ function shipCheckAll() {
 
     const tracking = String(result.tracking || '').trim();
     sheet.getRange(i + 2, BOARD_COL.tracking).setValue(tracking);
+    if (!sheet.getRange(i + 2, BOARD_COL.shippedAt).getValue()) {
+      sheet.getRange(i + 2, BOARD_COL.shippedAt).setValue(new Date());
+    }
     sheet.getRange(i + 2, BOARD_COL.status).setValue(BOARD_STATUS_SHIPPED);
     sheet.getRange(i + 2, BOARD_COL.teamNote)
       .setValue(shipBuildTeamNote_(row, customer, tracking, result));

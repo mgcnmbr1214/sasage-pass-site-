@@ -402,6 +402,12 @@ function priceBaseUnitPrice_(config, selection) {
  */
 function priceTierFor_(config, qty) {
   const monthly = (config.quantityOptions && config.quantityOptions.monthly) || [];
+
+  // **並びが狂っているときは、割引を一切かけない。**
+  // 「月501点以上〜」の下限が0のままだったことがある。そのままだと
+  // 20点のお客様に501点以上の割引がついてしまう。黙って安くするより、止める
+  if (!priceTiersOk_(monthly)) return null;
+
   let best = null;
   monthly.forEach(function (tier) {
     if (tier.enabled === false) return;
@@ -412,17 +418,33 @@ function priceTierFor_(config, qty) {
   return best;
 }
 
+/** 数量割引の段が、下限点数の小さい順にきちんと並んでいるか。 */
+function priceTiersOk_(monthly) {
+  let previous = -1;
+  for (let i = 0; i < monthly.length; i++) {
+    const min = Number(monthly[i].quantity || 0);
+    if (min <= previous) return false;
+    previous = min;
+  }
+  return true;
+}
+
 /** 割引をかけたあとの単価と、そこに至る説明文。 */
 function priceUnitPrice_(config, selection, monthlyQty) {
   const base = priceBaseUnitPrice_(config, selection);
+  const monthly = (config.quantityOptions && config.quantityOptions.monthly) || [];
+  const broken = !priceTiersOk_(monthly);
   const tier = priceTierFor_(config, monthlyQty);
   const result = applyMonthlyQuantityDiscount_(base.price, tier, config);
   return {
     base: base.price,
     unitPrice: Number(result.unitPrice || 0),
     tier: tier,
-    tierLabel: tier ? tier.label : '通常料金',
-    discountText: tier ? result.summary : 'なし'
+    broken: broken,
+    tierLabel: broken ? '⚠ 数量割引を止めています' : (tier ? tier.label : '通常料金'),
+    discountText: broken
+      ? '下限点数の並びが狂っているため、割引をかけていません（料金設計タブで直してください）'
+      : (tier ? result.summary : 'なし')
   };
 }
 
@@ -969,4 +991,139 @@ function priceTidyIds_(ss) {
     (renames.length > 6 ? ' ほか' : '') +
     '　選択の控え ' + rewritten + ' 件も書き換えました');
   return renames.length;
+}
+
+// ------------------------------------------------------------
+// 単価の計算（案件ボードへの書き込み）
+// ------------------------------------------------------------
+
+/**
+ * 数量割引の段を決める「月」の求め方。
+ *
+ * **お客様が発送した月で決める。** お預かり完了の連絡はこちらの都合で
+ * 前後するし、返送のタイミングもこちらが決められる。どちらで区切っても
+ * こちらの操作で割引が動いてしまう。発送日はお客様が決めるので動かせない。
+ *
+ * 発送完了日が無い古い案件は、依頼日で代用する。
+ */
+function priceShipMonthOf_(values) {
+  const at = values[BOARD_COL.shippedAt - 1] || values[BOARD_COL.orderedAt - 1];
+  if (!at) return '';
+  const date = at instanceof Date ? at : new Date(at);
+  if (isNaN(date.getTime())) return '';
+  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM');
+}
+
+/** その案件で数量割引の材料になる点数。お預かりして数えた数を優先する。 */
+function priceCountOf_(values) {
+  const received = boardExtractCount_(values[BOARD_COL.receivedQty - 1]);
+  if (received !== '') return Number(received);
+  const planned = boardExtractCount_(values[BOARD_COL.qty - 1]);
+  return planned === '' ? 0 : Number(planned);
+}
+
+/**
+ * 案件ボードの単価を、依頼フォームで選ばれた内容から計算し直す。
+ *
+ * 　選ばれた項目の単価を合計　→　同じ月に発送されたぶんの合計点数で段を決める
+ * 　→　その段の割引をかける
+ *
+ * **選択の控えが無い案件には触らない。** 手で入れた単価を消してしまうため。
+ * 見送りの案件も触らない。
+ */
+function priceRefreshUnitPrices_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const config = getConfig_();
+  const rows = sheet.getLastRow() - 1;
+  const values = sheet.getRange(2, 1, rows, BOARD_CASE_HEADERS.length).getValues();
+
+  // まず、お客様ごと・発送月ごとの合計点数を出す
+  const monthly = {};
+  values.forEach(function (row) {
+    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
+    const month = priceShipMonthOf_(row);
+    if (!customerId || !month) return;
+    if (String(row[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_CLOSED) return;
+    const key = customerId + '/' + month;
+    monthly[key] = (monthly[key] || 0) + priceCountOf_(row);
+  });
+
+  const prices = sheet.getRange(2, BOARD_COL.unitPrice, rows, 1);
+  const notes = sheet.getRange(2, BOARD_COL.priceNote, rows, 1);
+  const currentPrices = prices.getValues();
+  const currentNotes = notes.getValues();
+
+  let changed = 0;
+  const nextPrices = [];
+  const nextNotes = [];
+
+  values.forEach(function (row, i) {
+    nextPrices.push(currentPrices[i]);
+    nextNotes.push(currentNotes[i]);
+
+    const caseId = String(row[BOARD_COL.caseId - 1] || '').trim();
+    if (!caseId) return;
+    if (String(row[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_CLOSED) return;
+
+    const raw = String(row[BOARD_COL.selection - 1] || '').trim();
+    if (!raw) return;                       // 控えが無ければ、いまの単価をそのまま残す
+    let selection;
+    try { selection = JSON.parse(raw); } catch (err) { return; }
+    if (!selection || !selection.options) return;
+
+    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
+    const month = priceShipMonthOf_(row);
+    const total = month ? (monthly[customerId + '/' + month] || 0) : priceCountOf_(row);
+
+    const result = priceUnitPrice_(config, selection, total);
+    const note = priceExplain_(config, selection, result, month, total, row);
+
+    if (Number(currentPrices[i][0] || 0) !== result.unitPrice ||
+        String(currentNotes[i][0] || '') !== note) {
+      changed++;
+    }
+    nextPrices[i] = [result.unitPrice];
+    nextNotes[i] = [note];
+  });
+
+  if (changed > 0) {
+    prices.setValues(nextPrices);
+    notes.setValues(nextNotes);
+    boardLog_('料金', '単価を計算し直しました（' + changed + ' 件）');
+  }
+  return changed;
+}
+
+/**
+ * 単価がどう決まったのかを、そのまま読める文にする。
+ * **数字だけ置かれても、あとから「なぜこの金額か」を説明できない。**
+ */
+function priceExplain_(config, selection, result, month, total, row) {
+  const parts = [];
+  const menus = config.menus || [];
+  const options = selection.options || {};
+
+  menus.forEach(function (menu) {
+    const ids = options[menu.id];
+    if (!ids) return;
+    (menu.items || []).forEach(function (item) {
+      if (item.type === 'text' || item.enabled === false) return;
+      if (ids.indexOf(item.id) < 0) return;
+      if (!Number(item.unitPrice || 0)) return;
+      parts.push(item.name + Number(item.unitPrice || 0));
+    });
+  });
+
+  const lines = [];
+  lines.push((parts.length > 0 ? parts.join('＋') : '選択なし') + '＝' + result.base + '円');
+
+  const label = month ? month.replace('-', '年') + '月発送分' : '発送日が未記録';
+  const basis = boardExtractCount_(row[BOARD_COL.receivedQty - 1]) !== ''
+    ? 'お預かり点数' : 'ご申告の予定点数';
+  lines.push(label + ' 合計' + total + '点（' + basis + '）→ ' + result.tierLabel + '　' + result.discountText);
+  lines.push('割引後 ' + result.unitPrice + '円/点');
+
+  return lines.join(String.fromCharCode(10));
 }
