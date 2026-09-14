@@ -591,6 +591,7 @@ function boardSetup() {
   step('IDの整理', function () { priceTidyIds_(ss); });
   step('料金設計タブ', function () { priceRenderSheet_(ss); });
   step('割引・割増の見直し', function () { boardRepairCustomerAdjust_(ss); });
+  step('過去の案件の埋め戻し', function () { boardBackfillPastCases_(ss); });
   step('単価の計算', function () { priceRefreshUnitPrices_(ss); });
 
   // 移行は一度きり。飛ばすと次回まで直らないので、必ず実行する
@@ -3261,6 +3262,156 @@ function boardEnsureLayout_(ss) {
     if (!ok) boardLog_('移行', '列構成を合わせられませんでした。初期セットアップを実行してください');
     return ok;
   }) === true;
+}
+
+/**
+ * 列を足す前の案件に、あとから足した欄を埋め直す。**一度きり。空欄だけ。**
+ *
+ * 　依頼日　　　← 返送履歴に凍結してある同じ案件の依頼日
+ * 　発送完了日　← その案件の追跡番号が書かれた受信メールの日時
+ * 　お預かり点数 ← 「◯点お預かりいたしました」と送ったメールの数
+ *
+ * **推測で埋めない。** 根拠が見つからないものは空のまま残し、
+ * 何を埋められなかったのかを記録に出す。金額に関わるため、
+ * それらしい値を入れるより、空で分かるほうがよい。
+ */
+function boardBackfillPastCases_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const rows = sheet.getLastRow() - 1;
+  const values = sheet.getRange(2, 1, rows, BOARD_CASE_HEADERS.length).getValues();
+  const ordered = boardShipmentStartDates_(ss);
+  const mails = boardMailsByCustomer_(ss);
+
+  const filled = [];
+  const left = [];
+
+  values.forEach(function (row, i) {
+    const caseId = String(row[BOARD_COL.caseId - 1] || '').trim();
+    if (!caseId) return;
+    if (String(row[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_CLOSED) return;
+    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
+    const missing = [];
+
+    if (!row[BOARD_COL.orderedAt - 1] && ordered[caseId]) {
+      sheet.getRange(i + 2, BOARD_COL.orderedAt).setValue(ordered[caseId]);
+      filled.push(caseId + ' 依頼日');
+    } else if (!row[BOARD_COL.orderedAt - 1]) {
+      missing.push('依頼日');
+    }
+
+    if (!row[BOARD_COL.shippedAt - 1]) {
+      const at = boardShippedAtFromMails_(mails[customerId], row[BOARD_COL.tracking - 1]);
+      if (at) {
+        sheet.getRange(i + 2, BOARD_COL.shippedAt).setValue(at);
+        filled.push(caseId + ' 発送完了日');
+      } else {
+        missing.push('発送完了日');
+      }
+    }
+
+    if (!row[BOARD_COL.receivedQty - 1]) {
+      const qty = boardReceivedQtyFromMails_(mails[customerId], row[BOARD_COL.dueFrom - 1]);
+      if (qty) {
+        sheet.getRange(i + 2, BOARD_COL.receivedQty).setValue(qty);
+        filled.push(caseId + ' お預かり点数 ' + qty);
+      } else {
+        missing.push('お預かり点数');
+      }
+    }
+
+    if (missing.length > 0) left.push(caseId + '（' + missing.join('・') + '）');
+  });
+
+  if (filled.length > 0) boardLog_('移行', '過去の案件を埋めました: ' + filled.join('／'));
+  if (left.length > 0) {
+    boardLog_('移行', '根拠が見つからず空のままにした欄: ' + left.join('、') +
+      '　手で入れていただくか、そのままで構いません');
+  }
+  return filled.length;
+}
+
+/**
+ * 日付らしきものを数にする。**instanceof には頼らない。**
+ * シートから来る値と、こちらで作った値とで別物として扱われることがある。
+ */
+function boardTimeOf_(value) {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return isNaN(time) ? 0 : time;
+}
+
+/** 返送履歴に凍結してある、案件ごとの依頼日。 */
+function boardShipmentStartDates_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  const out = {};
+  if (!sheet || sheet.getLastRow() < 2) return out;
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_SHIPMENT_HEADERS.length).getValues()
+    .forEach(function (row) {
+      const caseId = String(row[BOARD_SHIPMENT_COL.caseId - 1] || '').trim();
+      const at = row[BOARD_SHIPMENT_COL.startDate - 1];
+      if (caseId && at && !out[caseId]) out[caseId] = at;
+    });
+  return out;
+}
+
+/** お客様ごとのメールを、古い順に並べて返す。 */
+function boardMailsByCustomer_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  const out = {};
+  if (!sheet || sheet.getLastRow() < 2) return out;
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues()
+    .forEach(function (row) {
+      const id = String(row[BOARD_MAIL_COL.customerId - 1] || '').trim();
+      if (!id) return;
+      if (!out[id]) out[id] = [];
+      out[id].push({
+        date: row[BOARD_MAIL_COL.date - 1],
+        subject: String(row[BOARD_MAIL_COL.subject - 1] || ''),
+        received: String(row[BOARD_MAIL_COL.summary - 1] || ''),
+        sent: String(row[BOARD_MAIL_COL.finalText - 1] || '')
+      });
+    });
+  Object.keys(out).forEach(function (id) {
+    out[id].sort(function (a, b) { return (a.date || 0) - (b.date || 0); });
+  });
+  return out;
+}
+
+/**
+ * 追跡番号が書かれた受信メールの日時を、発送完了日とみなす。
+ * 番号は区切りの入れ方がまちまちなので、数字だけにして比べる。
+ */
+function boardShippedAtFromMails_(mails, tracking) {
+  const wanted = String(tracking || '').replace(/[^0-9]/g, '');
+  if (!wanted || wanted.length < 8 || !mails) return null;
+  for (let i = 0; i < mails.length; i++) {
+    const hay = (mails[i].received + ' ' + mails[i].subject).replace(/[^0-9]/g, '');
+    if (hay.indexOf(wanted) >= 0 && mails[i].date) return mails[i].date;
+  }
+  return null;
+}
+
+/**
+ * 「◯点お預かりいたしました」と送ったメールから点数を拾う。
+ * 便を分けてお預かりしたときは「合計で◯点」と書いているので、そちらを優先する。
+ * 納期予定より後のメールは、次のご依頼のものなので見ない。
+ */
+function boardReceivedQtyFromMails_(mails, dueFrom) {
+  if (!mails) return 0;
+  const limit = boardTimeOf_(dueFrom);
+  let found = 0;
+  mails.forEach(function (mail) {
+    if (!mail.sent) return;
+    const at = boardTimeOf_(mail.date);
+    if (limit && at && at > limit) return;
+    const total = mail.sent.match(/合計で\s*([0-9]+)\s*点/);
+    const one = mail.sent.match(/([0-9]+)\s*点お預かり/);
+    if (total) found = Number(total[1]);
+    else if (one) found = Number(one[1]);
+  });
+  return found;
 }
 
 /**
