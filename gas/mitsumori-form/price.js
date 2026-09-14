@@ -799,8 +799,9 @@ function priceRenames_(config, table) {
     const current = rows[i];
     if (!current) return;
 
-    // 行を足したり消したりされていると、位置がずれる。名前が違えば触らない
-    if (current.name !== String(row[2] || '')) return;
+    // 行を足したり消したりされていると、位置がずれる。名前が違えば触らない。
+    // **シートから読んだ名前は前後の空白が落ちている。** 揃えてから比べる
+    if (current.name !== String(row[2] || '').trim()) return;
 
     const oldId = String(row[1] || '').trim();
     const newId = String(current.id || '').trim();
