@@ -60,6 +60,18 @@ const ORDER_NOTES = {
  * **顧客IDのパラメータ名は cid。** `c` はGoogle側が使っている名前で、
  * `?c=…` を付けると画面まで届かず「ファイルを開くことができません」になる。
  */
+/**
+ * 契約済みのお客様に、そろっていない項目があれば記録に残す。
+ * **お客様には直していただかない。** こちらからメールで伺う。
+ */
+function orderWarnMissingProfile_(customer) {
+  if (!orderIsRegistered_(customer)) return;
+  const missing = orderMissingProfile_(customer);
+  if (missing.length === 0) return;
+  boardLog_('依頼フォーム', customer.id + ' は契約済みですが、' +
+    missing.join('、') + ' が空のままです（お客様側では直せません）');
+}
+
 function orderRender_(params) {
   const template = HtmlService.createTemplateFromFile('Order');
   template.customerId = String(params.cid || '').trim();
@@ -103,6 +115,7 @@ function orderGetState(customerId, formKey) {
       selected: orderPreviousSelection_(open || latest),
       // 初回だけお客様情報を伺う。そろっていれば読むだけの表示に切り替わる
       profileNeeded: orderProfileNeeded_(customer),
+      registered: orderIsRegistered_(customer),
       profileFields: orderProfileForm_(customer),
       current: open ? orderCaseView_(ss, open) : null,
       shipTo: orderShipTo_(settings, signed)
@@ -157,6 +170,7 @@ function orderSubmitRequest(payload) {
   // 初回はお客様情報をここで登録する。以降は触らない
   const firstTime = orderProfileNeeded_(customer);
   if (firstTime) orderSaveProfile_(ss, customer, data.profile);
+  else orderWarnMissingProfile_(customer);
 
   sheet.getRange(caseRow, BOARD_COL.detail).setValue(detail);
   // **選ばれた項目のIDを残す。** 依頼内容の文だけでは料金を計算し直せない
@@ -241,7 +255,8 @@ function orderSubmitShipping(payload) {
  */
 const ORDER_PROFILE_FIELDS = [
   { key: 'storeName', label: 'ストア名（ご予定のものでも結構です）' },
-  { key: 'company', label: '会社名（個人事業主の方は個人名義）' },
+  // 個人事業主の方は空のことがある。**空でも登録済みとして扱う**
+  { key: 'company', label: '会社名（個人事業主の方は不要です）', optional: true },
   { key: 'representative', label: '代表者名義' },
   { key: 'billZip', label: 'ご請求先 郵便番号', zip: 'billAddress' },
   { key: 'billAddress', label: 'ご請求先 住所（都道府県から建物名まで）' },
@@ -251,11 +266,32 @@ const ORDER_PROFILE_FIELDS = [
   { key: 'returnTel', label: '返送先 電話番号' }
 ];
 
-/** お客様情報がまだそろっていないか。そろうまで初回の入力欄を出す。 */
+/**
+ * お客様情報の入力欄を出すかどうか。
+ *
+ * **契約が済んだお客様には出さない。** 請求先や返送先が勝手に書き換わると、
+ * 請求も返送も行き先を見失う。見るだけにして、変更はメールで承る。
+ *
+ * 契約前は、必要な項目がそろうまで出す。会社名は個人事業主の方だと空のことが
+ * あるので数えない。実際に、会社名が空だというだけで、契約済みのお客様に
+ * 入力欄が出てしまっていた。
+ */
 function orderProfileNeeded_(customer) {
-  return ORDER_PROFILE_FIELDS.some(function (f) {
+  if (orderIsRegistered_(customer)) return false;
+  return orderMissingProfile_(customer).length > 0;
+}
+
+/** 契約書に署名済みか。ここが入っていれば、登録は済んでいる。 */
+function orderIsRegistered_(customer) {
+  return !!String(customer.values[BOARD_CUSTOMER_COL.signedAt - 1] || '').trim();
+}
+
+/** そろっていない項目の名前を返す。会社名は数えない。 */
+function orderMissingProfile_(customer) {
+  return ORDER_PROFILE_FIELDS.filter(function (f) {
+    if (f.optional) return false;
     return !String(customer.values[BOARD_CUSTOMER_COL[f.key] - 1] || '').trim();
-  });
+  }).map(function (f) { return f.label; });
 }
 
 /** 画面に出す初回の入力欄。すでに分かっている項目は初期値として埋めておく。 */
