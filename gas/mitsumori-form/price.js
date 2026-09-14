@@ -25,18 +25,18 @@ const PRICE_ROW_STAMP = 12;
 
 const PRICE_HEAD_MENUS = '■ メニューの単価';
 const PRICE_HEAD_TIERS = '■ 数量割引';
-const PRICE_MENU_HEADERS = ['種別', 'ID', '名前', '単価', '有効', '説明'];
-const PRICE_TIER_HEADERS = ['段の名前', '下限点数', '割引の種類', '値', '有効', ''];
+const PRICE_MENU_HEADERS = ['種別', 'ID（直せます）', '名前', '単価（円/点）', '出す', '説明'];
+const PRICE_TIER_HEADERS = ['段の名前', '下限点数', '割引の種類', '値', '出す', 'ID'];
 
 const PRICE_HISTORY_HEADERS = ['日時', '変えた内容', '据え置いたお客様', '控え（JSON）'];
 
 /** 表の使い方。**シートを開いた人が、これだけ読めば分かるように。** */
 const PRICE_GUIDE = [
   '【料金設計】ササゲパスの料金は、すべてこの表が大もとです。',
-  '直せるのは、白い列（ID・単価・有効・下限点数・値）だけです。グレーの列（種別・名前）は直しても反映されません。',
+  '濃い字の列（ID・単価・出す・下限点数・値）が直せるところです。うすい字の列（種別・名前・説明）は直しても反映されません。',
   'IDはどの行も自由に直せます。半角の英数字とアンダースコアで、分かりやすい名前を付けてください（例: photo_bg）。',
   '',
-  '　手順1　白い列を直す　　手順2　メニュー「ササゲパス」→「料金の更新画面をひらく」',
+  '　手順1　白い列を直す　　手順2　下の青いボタン「料金を更新する」を押す',
   '　手順3　出てきた画面で、何がどう変わるかを確かめる　　手順4　画面の「この内容で更新する」を押す',
   '',
   '※ 表を直しただけでは、まだ何も変わりません。画面のボタンを押してはじめて書き換わります。',
@@ -75,11 +75,7 @@ function priceRenderSheet_(ss) {
   sheet.getRange(1, 1).setFontWeight('bold').setFontSize(12);
   sheet.getRange(1, 1, PRICE_GUIDE.length, 1).setFontColor('#3D4A66');
 
-  // 直したあとにどこを押すのか。**シートの中で完結して読めるように**
-  sheet.getRange(PRICE_ROW_BUTTONS, 1)
-    .setValue('▶ 直したら　画面上のメニュー「ササゲパス」→「料金の更新画面をひらく」')
-    .setFontWeight('bold').setFontColor('#A32D2D').setFontSize(12);
-  sheet.getRange(PRICE_ROW_BUTTONS, 1, 1, width).setBackground('#FEF6E7');
+  priceDrawButtons_(sheet);
 
   const history = ss.getSheetByName(PRICE_HISTORY_SHEET);
   const count = history && history.getLastRow() > 1 ? history.getLastRow() - 1 : 0;
@@ -106,23 +102,36 @@ function priceRenderSheet_(ss) {
   return sheet;
 }
 
-/** 見出し＋表を1つ書いて、次に使える行番号を返す。編集していい列だけ白く残す。 */
+/**
+ * 見出し＋表を1つ書いて、次に使える行番号を返す。
+ *
+ * **直せる列は白く、直しても反映されない列はグレーにする。**
+ * どこを触っていいのか、色だけで分かるようにしておく。
+ */
 function priceWriteTable_(sheet, row, title, headers, rows, editable) {
   sheet.getRange(row, 1).setValue(title).setFontWeight('bold').setFontColor('#2C3E63');
   const head = row + 1;
   sheet.getRange(head, 1, 1, headers.length).setValues([headers])
     .setFontWeight('bold').setBackground('#F1EFE8');
-  if (rows.length > 0) {
-    sheet.getRange(head + 1, 1, rows.length, headers.length).setValues(rows);
-    // **直しても反映されない列は、グレーにして見分けられるようにする**
-    for (let c = 1; c <= headers.length; c++) {
-      if (editable.indexOf(c) >= 0) continue;
-      sheet.getRange(head + 1, c, rows.length, 1).setFontColor('#8A97B8');
-    }
-    editable.forEach(function (c) {
-      sheet.getRange(head + 1, c, rows.length, 1).setBackground('#FFFFFF').setFontWeight('bold');
-    });
-  }
+  if (rows.length === 0) return head;
+
+  const body = sheet.getRange(head + 1, 1, rows.length, headers.length);
+  body.setValues(rows).setBackground('#FFFFFF').setFontWeight(null).setFontColor('#8A97B8');
+
+  editable.forEach(function (c) {
+    sheet.getRange(head + 1, c, rows.length, 1).setFontColor('#26324A').setFontWeight('bold');
+  });
+  // 有効・無効は、TRUE / FALSE の文字よりチェックのほうが分かりやすい
+  sheet.getRange(head + 1, 5, rows.length, 1).insertCheckboxes().setHorizontalAlignment('center');
+  sheet.getRange(head + 1, 4, rows.length, 1).setHorizontalAlignment('right');
+
+  // メニューの見出し行は、下の項目と見分けがつくように色を敷く
+  rows.forEach(function (r, i) {
+    if (String(r[0]) !== 'メニュー') return;
+    sheet.getRange(head + 1 + i, 1, 1, headers.length)
+      .setBackground('#EDF1FB').setFontWeight('bold').setFontColor('#2C3E63');
+  });
+
   return head + rows.length;
 }
 
@@ -131,28 +140,32 @@ function priceMenuRows_(config) {
   const rows = [];
   (config.menus || []).forEach(function (menu) {
     let n = 0;
-    rows.push(['メニュー', menu.id, menu.name, '', menu.enabled !== false, priceOneLine_(menu.description)]);
+    let memo = 0;
+    rows.push(['メニュー', menu.id, menu.name, '—', menu.enabled !== false,
+      'この下の項目をお客様が選びます（メニュー自体に料金はありません）']);
     (menu.items || []).forEach(function (item) {
       if (item.type === 'text') {
-        rows.push(['記述項目', item.id, '└ ' + item.name, '', item.enabled !== false, 'お客様に自由に書いていただく欄（料金なし）']);
+        memo++;
+        rows.push(['記入欄', item.id, '　└ ' + item.name, '—', item.enabled !== false,
+          'お客様に自由に書いていただく欄（料金なし）']);
         return;
       }
       n++;
-      rows.push(['オプション', item.id, '└ ' + item.name,
+      rows.push(['選べる項目', item.id, '　└ ' + item.name,
         Number(item.unitPrice || 0), item.enabled !== false,
         priceOneLine_(item.description)]);
 
       const mode = item.subChoicePricingMode;
       if (mode === 'count') {
-        rows.push(['選択1つあたり', item.id + '#count', '　└ 選んだ数 × この単価',
+        rows.push(['選んだ数ぶん', item.id + '#count', '　　└ 選んだ数 × この単価',
           Number(item.subChoiceCountUnitPrice || 0), true, '下の選択肢は、個別の単価ではなく「選んだ数」で計算します']);
       }
       (item.subChoices || []).forEach(function (choice, k) {
-        rows.push([mode === 'choice' ? 'サイト選択' : 'サイト選択（料金なし）',
-          choice.id, '　└ ' + choice.name,
-          mode === 'choice' ? Number(choice.unitPrice || 0) : '',
+        rows.push([mode === 'choice' ? 'サイト選択' : 'サイト選択',
+          choice.id, '　　└ ' + choice.name,
+          mode === 'choice' ? Number(choice.unitPrice || 0) : '—',
           choice.enabled !== false,
-          mode === 'choice' ? '' : '選んでも単価は変わりません']);
+          mode === 'choice' ? '' : '選んでも単価は変わりません（上の項目の単価だけがかかります）']);
       });
     });
   });
@@ -189,6 +202,28 @@ function priceTierWarning_(tierRows) {
   if (bad.length === 0) return '';
   return '⚠ 数量割引の下限点数が小さい順に並んでいません: ' + bad.join('、') +
     '　このままだと請求の割引が正しく決まりません。下限点数を直して「料金を更新する」を押してください。';
+}
+
+/**
+ * 表の上に、押せるボタンを2つ置く。
+ *
+ * スプレッドシートに図形のボタンをスクリプトから置くことはできないが、
+ * **画像なら置けて、押したときに動く関数も指定できる**（assignScript）。
+ * 押しても、その場では何も書き換わらない。画面が出るだけ。
+ */
+function priceDrawButtons_(sheet) {
+  sheet.getImages().forEach(function (image) { image.remove(); });
+  sheet.setRowHeight(PRICE_ROW_BUTTONS, 52);
+
+  const put = function (base64, column, fn) {
+    const blob = Utilities.newBlob(Utilities.base64Decode(base64), 'image/png', fn + '.png');
+    const image = sheet.insertImage(blob, column, PRICE_ROW_BUTTONS, 6, 8);
+    image.assignScript(fn);
+    return image;
+  };
+
+  put(PRICE_BUTTON_UPDATE_PNG, 1, 'priceOpenUpdate');
+  put(PRICE_BUTTON_RELOAD_PNG, 3, 'priceReloadSheet');
 }
 
 function priceNow_() {

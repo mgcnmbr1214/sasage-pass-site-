@@ -472,8 +472,6 @@ function onOpen() {
     .addItem('対応を選ぶ', 'mailOpenReviewPanel')
     .addItem('新着を今すぐ確認する', 'mailCheckNow')
     .addItem('今月の請求書を作成', 'squareCreateMonthlyInvoices')
-    .addItem('料金の更新画面をひらく', 'priceOpenUpdate')
-    .addItem('料金設計タブを書き直す', 'priceReloadSheet')
     .addSeparator()
     .addSubMenu(ui.createMenu('別途対応メニュー')
       .addItem('受付開始日・納期・点数だけを入力する', 'boardOpenPanel')
