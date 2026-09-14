@@ -92,7 +92,7 @@ const BOARD_CASE_HEADERS = [
   '予定点数', 'お預かり点数', '返送点数',
   '納期予定（自）', '納期予定（至）', '次にやること',
   '未返信', '未請求の返送',
-  '顧客ID', '依頼内容', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール',
+  '顧客ID', '依頼内容', '選択の控え', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール',
   '単価', '単価調整', '固定調整', '調整の理由', '請求見込み',
   '請求書送付日', 'Square請求書ID',
   '運送業者', '追跡番号', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
@@ -103,10 +103,10 @@ const BOARD_COL = {
   qty: 7, receivedQty: 8, shippedQty: 9,
   dueFrom: 10, dueTo: 11, todo: 12,
   unreplied: 13, unbilled: 14,
-  customerId: 15, detail: 16, formInquiry: 17, lastInbound: 18, lastOutbound: 19,
-  unitPrice: 20, priceAdjust: 21, flatAdjust: 22, adjustNote: 23, estimate: 24,
-  invoiceSent: 25, invoiceId: 26,
-  carrier: 27, tracking: 28, teamNote: 29, guideDraftAt: 30, lastContact: 31, memo: 32, sourceRow: 33
+  customerId: 15, detail: 16, selection: 17, formInquiry: 18, lastInbound: 19, lastOutbound: 20,
+  unitPrice: 21, priceAdjust: 22, flatAdjust: 23, adjustNote: 24, estimate: 25,
+  invoiceSent: 26, invoiceId: 27,
+  carrier: 28, tracking: 29, teamNote: 30, guideDraftAt: 31, lastContact: 32, memo: 33, sourceRow: 34
 };
 
 /**
@@ -115,7 +115,7 @@ const BOARD_COL = {
  * **行は使い回さない。** 依頼ごとに1行を残すので、
  * 前回の日付や追跡番号が次の依頼に紛れ込むことがなくなった。
  */
-const BOARD_CASE_CARRIED = ['customer', 'customerId', 'detail', 'formInquiry', 'unitPrice', 'sourceRow'];
+const BOARD_CASE_CARRIED = ['customer', 'customerId', 'detail', 'selection', 'formInquiry', 'unitPrice', 'sourceRow'];
 
 /**
  * 折りたたむ列。**いまは畳まない。**
@@ -442,6 +442,10 @@ const BOARD_SOURCE_FIELDS = {
 function boardOnEditInstalled_(e) {
   if (!e || !e.range) return;
   const sheet = e.range.getSheet();
+
+  // 料金設計タブのチェックボックスは「ボタン」。トリガーは増やさず、ここから振り分ける
+  if (sheet.getName() === PRICE_SHEET) { priceOnEdit(e); return; }
+
   if (sheet.getName() !== BOARD_SHEET_MAILS) return;
   if (e.range.getRow() < 2) return;
 
@@ -582,6 +586,8 @@ function boardSetup() {
   step('案件の並べ替え', function () { boardArrangeCases_(ss, true); });
   step('依頼フォームの鍵とURL', function () { boardIssueFormKeys_(ss); boardRefreshFormUrls_(ss); });
   step('返送した点数の記入', function () { boardBackfillShippedCount_(ss); });
+  step('選択の控えの復元', function () { priceRestoreSelections_(ss); });
+  step('料金設計タブ', function () { priceRenderSheet_(ss); });
 
   // 移行は一度きり。飛ばすと次回まで直らないので、必ず実行する
   try {
@@ -725,6 +731,10 @@ function boardMigrateCases_(ss) {
   headers = boardInsertColumnAfter_(sheet, headers, '単価調整', '固定調整');
   headers = boardInsertColumnAfter_(sheet, headers, '固定調整', '調整の理由');
   headers = boardInsertColumnAfter_(sheet, headers, '調整の理由', '請求見込み');
+
+  // 依頼内容は人が読む文。**料金を計算し直すには、選ばれた項目のIDが要る。**
+  // メニュー名を変えただけで単価が引けなくなる、ということが起きないように
+  headers = boardInsertColumnAfter_(sheet, headers, '依頼内容', '選択の控え');
 
   // 契約書は請求書の作成時にその場で添付するため、事前作成の記録は不要になった
   const contract = headers.indexOf('契約書作成日');
@@ -1365,7 +1375,7 @@ function boardSetupSheet_(ss, name, headers, widths) {
 }
 
 /** 長文が入る列。折り返さず1行に収めて、一覧を見やすく保つ。 */
-const BOARD_CLIPPED_COLS = ['detail', 'formInquiry', 'lastInbound', 'lastOutbound', 'teamNote', 'memo'];
+const BOARD_CLIPPED_COLS = ['detail', 'selection', 'formInquiry', 'lastInbound', 'lastOutbound', 'teamNote', 'memo'];
 const BOARD_ROW_HEIGHT = 50;
 
 /** 「未返信」列に並べるリンクの数。これを超えた分は「+3」のようにまとめる。 */
@@ -1379,7 +1389,7 @@ const BOARD_CASE_WIDTHS = {
   caseId: 90, status: 130, registration: 105, owner: 70, customer: 150, orderedAt: 95,
   qty: 70, receivedQty: 85, shippedQty: 70,
   dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
-  customerId: 70, detail: 160, formInquiry: 160, lastInbound: 200, lastOutbound: 200,
+  customerId: 70, detail: 160, selection: 90, formInquiry: 160, lastInbound: 200, lastOutbound: 200,
   unitPrice: 70, priceAdjust: 75, flatAdjust: 75, adjustNote: 150, estimate: 100,
   invoiceSent: 95, invoiceId: 110,
   carrier: 100, tracking: 130, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
@@ -1783,6 +1793,7 @@ function boardHideSourceSheets_(ss) {
 function boardOrderSheets_(ss) {
   const order = [BOARD_SHEET_CASES, BOARD_SHEET_CUSTOMERS, BOARD_SHEET_MAILS,
     BOARD_SHEET_SHIPMENTS, BOARD_SHEET_INVOICES,
+    PRICE_SHEET, PRICE_HISTORY_SHEET,
     BOARD_SHEET_TEMPLATES, BOARD_SHEET_KNOWLEDGE, BOARD_SHEET_EXAMPLES,
     BOARD_SHEET_SETTINGS, BOARD_SHEET_LOGS];
   order.forEach(function (name, index) {

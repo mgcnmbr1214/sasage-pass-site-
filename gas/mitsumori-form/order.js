@@ -159,6 +159,12 @@ function orderSubmitRequest(payload) {
   if (firstTime) orderSaveProfile_(ss, customer, data.profile);
 
   sheet.getRange(caseRow, BOARD_COL.detail).setValue(detail);
+  // **選ばれた項目のIDを残す。** 依頼内容の文だけでは料金を計算し直せない
+  sheet.getRange(caseRow, BOARD_COL.selection).setValue(JSON.stringify({
+    options: data.options || {},
+    subChoices: data.subChoices || {},
+    at: new Date().toISOString()
+  }));
   sheet.getRange(caseRow, BOARD_COL.qty).setValue(Number(qty));
   sheet.getRange(caseRow, BOARD_COL.orderedAt).setValue(new Date());
   // 備考が空のときは消さない。こちらで書いた申し送りが、再送信で消えてしまう

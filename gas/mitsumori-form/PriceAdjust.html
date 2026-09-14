@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<style>
+  body { font-family: "Helvetica Neue", Arial, "Hiragino Sans", "Meiryo", sans-serif;
+         margin: 0; padding: 18px 20px 84px; color: #26324A; font-size: 13.5px; background: #FBFCFE; }
+  h2 { font-size: 15px; margin: 0 0 4px; }
+  .lead { color: #5A6A8A; font-size: 12.5px; line-height: 1.7; margin: 0 0 14px; }
+  .card { background: #fff; border: 1px solid #DDE4F8; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
+  .card h3 { font-size: 13px; margin: 0 0 8px; color: #2C3E63; }
+  .chg { font-size: 12.5px; line-height: 1.9; }
+  .chg b { color: #A32D2D; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: bold; color: #5A6A8A; font-size: 11.5px;
+       border-bottom: 1px solid #E4EAF7; padding: 6px 6px; }
+  td { padding: 8px 6px; border-bottom: 1px solid #F0F4FC; vertical-align: middle; }
+  td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .who { font-weight: bold; }
+  .sub { color: #8A97B8; font-size: 11.5px; }
+  .down { color: #2C7A46; }
+  .up { color: #A32D2D; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: #fff;
+         border-top: 1px solid #DDE4F8; padding: 12px 20px; display: flex; gap: 10px; align-items: center; }
+  button { font-size: 13px; padding: 9px 16px; border-radius: 8px; border: 1px solid #C7D2EA;
+           background: #fff; color: #26324A; cursor: pointer; }
+  button.main { background: #2C5BE3; border-color: #2C5BE3; color: #fff; font-weight: bold; }
+  button:disabled { opacity: .5; cursor: default; }
+  .msg { font-size: 12.5px; color: #5A6A8A; margin-left: auto; }
+  .note { background: #FEF6E7; border: 1px solid #F5DFB0; color: #7A5310;
+          border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.7; }
+</style>
+</head>
+<body>
+
+<h2>単価を据え置きますか</h2>
+<p class="lead">
+  料金を更新しました。下のお客様は、いまのご依頼内容のままだと単価が変わります。<br>
+  チェックを入れた方には<b>顧客タブの「単価調整」</b>を入れ、これまでと同じ単価に保ちます。
+</p>
+
+<div class="card">
+  <h3>変えた内容</h3>
+  <div class="chg">
+    <? changes.forEach(function (c) { ?>
+      ・<?= c.name ?>　<?= c.before ?> → <b><?= c.after ?></b><br>
+    <? }); ?>
+  </div>
+</div>
+
+<div class="card">
+  <h3>単価が変わるお客様</h3>
+  <table>
+    <tr>
+      <th style="width:28px"></th>
+      <th>お客様</th>
+      <th class="num">これまでの単価</th>
+      <th class="num">更新後</th>
+      <th class="num">単価調整</th>
+    </tr>
+    <? affected.forEach(function (a, i) { ?>
+    <tr>
+      <td><input type="checkbox" id="c<?= i ?>" checked></td>
+      <td>
+        <div class="who"><?= a.customerId ?>　<?= a.name ?> 様</div>
+        <div class="sub"><?= a.caseId ?>　<?= a.status ?></div>
+      </td>
+      <td class="num">¥<?= a.was ?></td>
+      <td class="num <?= a.now > a.was ? 'up' : 'down' ?>">¥<?= a.now ?></td>
+      <td class="num"><?= a.current ?> → <b><?= a.next ?></b></td>
+    </tr>
+    <? }); ?>
+  </table>
+</div>
+
+<div class="note">
+  単価調整は<b>足し算</b>で入ります。理由の欄にも1行追記されるので、いつ何を据え置いたのか後から追えます。<br>
+  据え置かない方は、次のご請求から新しい料金になります。あとから顧客タブで直すこともできます。
+</div>
+
+<div class="bar">
+  <button class="main" id="ok">チェックした方を据え置く</button>
+  <button id="skip">据え置かずに閉じる</button>
+  <span class="msg" id="msg"></span>
+</div>
+
+<script>
+  var AFFECTED = <?= JSON.stringify(affected) ?>;
+  var LABEL = <?= JSON.stringify(changes.map(function (c) { return c.name; }).join('、') + ' の単価変更') ?>;
+
+  function el(id) { return document.getElementById(id); }
+
+  el('skip').addEventListener('click', function () { google.script.host.close(); });
+
+  el('ok').addEventListener('click', function () {
+    var picked = AFFECTED.filter(function (a, i) { return el('c' + i).checked; });
+    if (picked.length === 0) { google.script.host.close(); return; }
+    el('ok').disabled = true;
+    el('skip').disabled = true;
+    el('msg').textContent = '書き込んでいます...';
+    google.script.run
+      .withSuccessHandler(function (r) {
+        el('msg').textContent = r.message;
+        setTimeout(function () { google.script.host.close(); }, 1200);
+      })
+      .withFailureHandler(function (e) {
+        el('msg').textContent = e.message;
+        el('ok').disabled = false;
+        el('skip').disabled = false;
+      })
+      .priceApplyAdjustments(picked, LABEL);
+  });
+</script>
+</body>
+</html>
