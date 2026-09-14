@@ -3311,7 +3311,10 @@ function boardBackfillPastCases_(ss) {
       }
     }
 
-    if (!row[BOARD_COL.receivedQty - 1]) {
+    // **2件目以降のご依頼には当てない。** どの便のお預かりか決められず、
+    // 前のご依頼の点数を持ってきてしまう。実際にA005-2へA005の10点が入った
+    const onlyCase = boardCountCasesOf_(values, customerId) === 1;
+    if (!row[BOARD_COL.receivedQty - 1] && onlyCase) {
       const qty = boardReceivedQtyFromMails_(mails[customerId], row[BOARD_COL.dueFrom - 1]);
       if (qty) {
         sheet.getRange(i + 2, BOARD_COL.receivedQty).setValue(qty);
@@ -3319,10 +3322,17 @@ function boardBackfillPastCases_(ss) {
       } else {
         missing.push('お預かり点数');
       }
+    } else if (!row[BOARD_COL.receivedQty - 1]) {
+      missing.push('お預かり点数（2件目以降のため当てられません）');
     }
 
     if (missing.length > 0) left.push(caseId + '（' + missing.join('・') + '）');
   });
+
+  const wrong = boardClearBorrowedQty_(ss, sheet, values);
+  if (wrong.length > 0) {
+    boardLog_('移行', '前のご依頼から取り違えていたお預かり点数を消しました: ' + wrong.join('／'));
+  }
 
   if (filled.length > 0) boardLog_('移行', '過去の案件を埋めました: ' + filled.join('／'));
   if (left.length > 0) {
@@ -3340,6 +3350,50 @@ function boardTimeOf_(value) {
   if (!value) return 0;
   const time = new Date(value).getTime();
   return isNaN(time) ? 0 : time;
+}
+
+/** 同じお客様の案件が、いくつあるか（見送りは数えない）。 */
+function boardCountCasesOf_(values, customerId) {
+  let count = 0;
+  values.forEach(function (row) {
+    if (!String(row[BOARD_COL.caseId - 1] || '').trim()) return;
+    if (String(row[BOARD_COL.customerId - 1] || '').trim() !== customerId) return;
+    if (String(row[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_CLOSED) return;
+    count++;
+  });
+  return count;
+}
+
+/**
+ * 前のご依頼の点数が紛れ込んだ「お預かり点数」を消す。
+ *
+ * 埋め戻しがメールから拾うとき、どの便のお預かりか決められず、
+ * 2件目のご依頼に1件目の点数を入れてしまった（A005-2 に A005 の10点）。
+ * **同じお客様の別の案件の返送点数と一致し、自分の返送点数とは違う**ものだけ消す。
+ */
+function boardClearBorrowedQty_(ss, sheet, values) {
+  const cleared = [];
+  values.forEach(function (row, i) {
+    const caseId = String(row[BOARD_COL.caseId - 1] || '').trim();
+    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
+    const mine = boardExtractCount_(row[BOARD_COL.receivedQty - 1]);
+    if (!caseId || !customerId || mine === '') return;
+
+    const own = boardExtractCount_(row[BOARD_COL.shippedQty - 1]);
+    if (own === '' || Number(own) === Number(mine)) return;   // 自分の返送点数と同じなら正しい
+
+    const borrowed = values.some(function (other) {
+      if (other === row) return false;
+      if (String(other[BOARD_COL.customerId - 1] || '').trim() !== customerId) return false;
+      const theirs = boardExtractCount_(other[BOARD_COL.shippedQty - 1]);
+      return theirs !== '' && Number(theirs) === Number(mine);
+    });
+    if (!borrowed) return;
+
+    sheet.getRange(i + 2, BOARD_COL.receivedQty).setValue('');
+    cleared.push(caseId + ' お預かり点数 ' + mine);
+  });
+  return cleared;
 }
 
 /** 返送履歴に凍結してある、案件ごとの依頼日。 */
@@ -4479,7 +4533,8 @@ function boardSetEstimateFormula_(sheet, row) {
   const flat = num(lookup(BOARD_CUSTOMER_COL.flatAdjust)) + '+' + num(at('flatAdjust'));
 
   sheet.getRange(row, BOARD_COL.estimate).setFormula(
-    '=IF(OR(' + at('caseId') + '="",' + qty + '=0),"",ROUND((' + unit + ')*' + qty + '+' + flat + '))'
+    '=IF(OR(' + at('caseId') + '="",' + at('status') + '="' + BOARD_STATUS_CLOSED + '",' + qty + '=0),"",' +
+    'ROUND((' + unit + ')*' + qty + '+' + flat + '))'
   );
 }
 
