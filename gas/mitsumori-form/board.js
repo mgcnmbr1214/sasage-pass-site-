@@ -500,6 +500,9 @@ function boardSetup() {
   boardWithLayoutLock_(function () {
     boardMigrateCases_(ss);
     boardMigrateCustomers_(ss);
+    // **見出しを書き直す前に列をそろえる。** 順番を逆にすると中身がずれる
+    boardRepairShipmentShift_(ss);
+    boardMigrateShipments_(ss);
   });
   // 移行で列が動いている可能性があるため、必ず読み直してから先へ進む
   boardSyncColumns_(ss.getSheetByName(BOARD_SHEET_CASES));
@@ -1360,7 +1363,17 @@ function boardSetupSheet_(ss, name, headers, widths) {
   const sameSet = headers.every(function (h) { return current.indexOf(h) >= 0; });
 
   if (!sameSet) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    // **中身の入っている列に、別の見出しを被せない。**
+    // 返送履歴に列を足したとき、ここが古い18列の上に新しい20個の名前を書き、
+    // 以降の処理が1つずれた列を読み書きして追跡番号を消してしまった。
+    // 列を足すのは移行の役目。ここは名前を付けるだけに留める
+    const overlap = Math.min(current.length, headers.length);
+    const prefixSame = current.slice(0, overlap).join('\t') === headers.slice(0, overlap).join('\t');
+    if (sheet.getLastRow() > 1 && current.length > 0 && !prefixSame) {
+      boardLog_('移行', name + ' の見出しが想定と違うため、上書きを見送りました（列の移行が先に必要です）');
+    } else {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    }
   }
   sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), headers.length))
     .setFontWeight('bold')
@@ -4754,6 +4767,60 @@ function boardMigrateShipmentDrafts_(ss) {
     boardLog_('移行', '下書きのまま残っていた返送 ' + changed + ' 件を送信済にしました');
   }
   return changed;
+}
+
+/**
+ * 見出しだけ先に書き換わって、中身が1つずつずれた返送履歴を戻す。
+ *
+ * 固定調整・単価の内訳の列を足したとき、列を挿し込む前に見出しだけが
+ * 上書きされ、以降の処理が別の列を読み書きした。
+ * **返送追跡番号は金額の数式に潰された。** 本文に残っているので拾い直す。
+ *
+ * 見分け方は「状態」の欄が `inv:` で始まっていること。
+ * 本来ここには 送信済・請求書作成済・支払い済 しか入らない。
+ */
+function boardRepairShipmentShift_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const width = Math.max(sheet.getLastColumn(), BOARD_SHIPMENT_HEADERS.length);
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues();
+
+  const broken = rows.filter(function (row) {
+    return String(row[BOARD_SHIPMENT_COL.status - 1] || '').indexOf('inv:') === 0;
+  });
+  if (broken.length === 0) return 0;
+
+  let restored = 0;
+  const next = rows.map(function (row) {
+    if (String(row[BOARD_SHIPMENT_COL.status - 1] || '').indexOf('inv:') !== 0) return row;
+
+    const out = row.slice();
+    // 9列目から18列目までが、本来より2つ手前に寄っている
+    for (let i = 20; i >= 11; i--) out[i - 1] = row[i - 3];
+    out[BOARD_SHIPMENT_COL.flatAdjust - 1] = '';
+    out[BOARD_SHIPMENT_COL.priceNote - 1] = '';
+
+    const tracking = boardTrackingFromBody_(out[BOARD_SHIPMENT_COL.body - 1]);
+    out[BOARD_SHIPMENT_COL.tracking - 1] = tracking;
+    if (tracking) restored++;
+    return out;
+  });
+
+  sheet.getRange(2, 1, next.length, width).setValues(next);
+  for (let row = 2; row <= sheet.getLastRow(); row++) {
+    if (!String(sheet.getRange(row, BOARD_SHIPMENT_COL.qty).getValue() || '').trim()) continue;
+    boardSetShipmentAmountFormula_(sheet, row);
+  }
+  boardLog_('移行', '返送履歴のずれを ' + broken.length + ' 件戻しました（追跡番号は本文から ' +
+    restored + ' 件復元）');
+  return broken.length;
+}
+
+/** 送ったメールの本文から、返送の追跡番号を拾う。 */
+function boardTrackingFromBody_(body) {
+  const hit = String(body || '').match(/追跡番号[^:：]*[:：]\s*([0-9][0-9 \-]{7,})/);
+  return hit ? hit[1].replace(/[^0-9]/g, '') : '';
 }
 
 /**
