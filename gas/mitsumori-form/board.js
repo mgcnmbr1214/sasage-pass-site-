@@ -122,6 +122,24 @@ const BOARD_CASE_CARRIED = ['customer', 'customerId', 'detail', 'selection', 'fo
  */
 const BOARD_DETAIL_COLS = [];
 
+/**
+ * 埋められなかった案件を、**顔ぶれが変わったときだけ**記録に残す。
+ *
+ * 10分ごとに同じ13件が並ぶと、実行ログが読めなくなる。
+ * 実際、シートが壊れた原因を追うときにこれが邪魔になった。
+ */
+function boardTraceSkipped_(skipped) {
+  try {
+    const list = skipped.slice().sort().join('、');
+    const props = PropertiesService.getScriptProperties();
+    if (props.getProperty(BOARD_PROP_SKIPPED_TRACE) === list) return;
+    props.setProperty(BOARD_PROP_SKIPPED_TRACE, list);
+    if (list) boardLog_('取込', '問い合わせ内容を埋められなかった案件: ' + list);
+  } catch (err) {
+    // 記録に失敗しても本体は止めない
+  }
+}
+
 /** 案件ボードに載せる問い合わせ内容の最大文字数。全文はメール履歴で見る。 */
 const BOARD_INQUIRY_MAX = 400;
 
@@ -648,6 +666,9 @@ function boardSetup() {
 
 /** 初期セットアップに使ってよい時間。Google側の上限（6分）より手前で切り上げる。 */
 const BOARD_PROP_WEB_APP_URL = 'BOARD_WEB_APP_URL';
+
+/** 前回ログに出した「埋められなかった案件」の顔ぶれ。同じなら書かない。 */
+const BOARD_PROP_SKIPPED_TRACE = 'BOARD_SKIPPED_TRACE';
 
 /**
  * 依頼フォームをお客様にお見せするときのURLの土台。
@@ -3874,7 +3895,10 @@ function boardFillInquiryFromForm_(ss) {
 
     const sourceRow = Number(row[BOARD_COL.sourceRow - 1] || 0);
     if (sourceRow < 2 || sourceRow > source.getLastRow()) {
-      skipped.push(row[BOARD_COL.caseId - 1] + '（元回答行が不明）');
+      // すでに中身があるなら、埋める必要がない。困っていないものを並べない
+      if (!String(row[BOARD_COL.formInquiry - 1] || '').trim()) {
+        skipped.push(row[BOARD_COL.caseId - 1] + '（元回答行が不明）');
+      }
       return;
     }
 
@@ -3889,7 +3913,7 @@ function boardFillInquiryFromForm_(ss) {
     filled++;
   });
 
-  if (skipped.length > 0) boardLog_('取込', '問い合わせ内容を埋められなかった案件: ' + skipped.join('、'));
+  boardTraceSkipped_(skipped);
   return filled;
 }
 

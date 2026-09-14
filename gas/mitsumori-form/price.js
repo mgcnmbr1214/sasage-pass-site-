@@ -925,7 +925,8 @@ function priceRewriteSelections_(ss, renames) {
 
 /** 自動で作られたIDか。読みやすい名前を勧めるかどうかの判断に使う。 */
 function priceIsMachineId_(id) {
-  return /_(option|text|choice)_[a-z0-9]{4,}$/.test(String(id || ''));
+  // 管理画面で複製した項目は `_option_copy_17ah5gd` のような形になる
+  return /_(option|text|choice)_(copy_)?[a-z0-9]{4,}$/.test(String(id || ''));
 }
 
 // ------------------------------------------------------------
