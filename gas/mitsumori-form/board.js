@@ -348,17 +348,20 @@ function boardFindResponseType_(id) {
  */
 const BOARD_SHEET_SHIPMENTS = '返送履歴';
 const BOARD_SHIPMENT_HEADERS = [
-  '送信日時', '案件ID', '顧客ID', 'お客様', '点数', '単価', '金額（税抜）', '返送追跡番号',
+  '送信日時', '案件ID', '顧客ID', 'お客様', '点数', '単価', '固定調整', '金額（税抜）',
+  '単価の内訳', '返送追跡番号',
   '状態', '請求月', 'Square請求書ID', '依頼内容', '依頼日', '納期予定', '件名', '本文',
   'GmailスレッドID', 'GmailメッセージID'
 ];
 const BOARD_SHIPMENT_COL = {
-  date: 1, caseId: 2, customerId: 3, customer: 4, qty: 5, unitPrice: 6, amount: 7, tracking: 8,
-  status: 9, billingMonth: 10, invoiceId: 11, detail: 12, startDate: 13, due: 14,
-  subject: 15, body: 16, threadId: 17, messageId: 18
+  date: 1, caseId: 2, customerId: 3, customer: 4, qty: 5, unitPrice: 6, flatAdjust: 7, amount: 8,
+  priceNote: 9, tracking: 10,
+  status: 11, billingMonth: 12, invoiceId: 13, detail: 14, startDate: 15, due: 16,
+  subject: 17, body: 18, threadId: 19, messageId: 20
 };
 const BOARD_SHIPMENT_WIDTHS = {
-  date: 130, caseId: 80, customerId: 70, customer: 150, qty: 70, unitPrice: 80, amount: 100,
+  date: 130, caseId: 80, customerId: 70, customer: 150, qty: 70, unitPrice: 80,
+  flatAdjust: 80, amount: 100, priceNote: 260,
   tracking: 140, status: 110, billingMonth: 90, invoiceId: 120, detail: 200, startDate: 95,
   due: 130, subject: 220, body: 320, threadId: 120, messageId: 120
 };
@@ -592,6 +595,7 @@ function boardSetup() {
   // 移行は一度きり。飛ばすと次回まで直らないので、必ず実行する
   try {
     boardMigrateShipmentDrafts_(ss);
+    boardMigrateShipments_(ss);
     boardMigrateShipmentAmounts_(ss);
     boardMigrateResponseTypes_(ss);
   } catch (err) {
@@ -1964,6 +1968,9 @@ function boardSetupTemplates_(ss) {
   boardMigrateShipBackDetail_(sheet);
   boardMigrateQuoteTemplate_(sheet);
   boardMigrateReceivedCount_(sheet);
+  boardMigrateNextOrderBlock_(sheet);
+  boardMigrateStartDateLines_(sheet);
+  boardMigrateShipPrompt_(sheet);
 
   const last = sheet.getLastColumn();
   if (last > 1) {
@@ -2645,6 +2652,119 @@ function boardMigrateReceivedCount_(sheet) {
     if (body.indexOf('{{予定点数}}') < 0) return;
     cell.setValue(body.split('{{予定点数}}').join('{{点数}}'));
     boardLog_('移行', 'テンプレ T7 の点数を、実際にお預かりした点数に付け替えました');
+    return;
+  }
+}
+
+/** 返送開始（T9）の「次回のご依頼について」。依頼フォームでお受けする形に合わせる。 */
+function boardNextOrderBlock_() {
+  return [
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ 次回のご依頼について',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '次回からは、お客様専用のご依頼フォームからお送りください。',
+    '',
+    '{{依頼フォームURL}}',
+    '',
+    '・前回と同じ内容をあらかじめお選びした状態で開きます。',
+    '　変更がなければ、点数をご入力いただくだけで承ります。',
+    '・ご依頼予定数は、実際の点数が多少前後しても問題ございません。',
+    '　作業内で複数回の数量点検を行っておりますのでご安心ください。',
+    '・ご発送後は、運送業者と追跡番号を同じフォームにご入力ください。',
+    '　そこまでで、ご依頼の完了となります。',
+    '・お預かりの状況によって納期は変わりますので、弊社に到着・点検を経た時点で、',
+    '　あらためて納期の目安をご案内いたします。',
+    '',
+    '　その他プランやご予定についても、お気軽にご相談ください。',
+    ''
+  ].join(String.fromCharCode(10));
+}
+
+/**
+ * T9の「次回のご依頼について」を、依頼フォームの案内に差し替える。
+ *
+ * **メールで点数と発送予定日をお知らせいただく、という前の運用のままだった。**
+ * 見出しの枠だけを入れ替えるので、前後に書き足された文章は残る。
+ */
+function boardMigrateNextOrderBlock_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return;
+
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
+  for (let c = 1; c < ids.length; c++) {
+    if (String(ids[c] || '').trim() !== 'T9') continue;
+    const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
+    const body = String(cell.getValue() || '');
+    if (!body || body.indexOf('{{依頼フォームURL}}') >= 0) return;
+
+    const next = boardReplaceBlock_(body, '■ 次回のご依頼について', boardNextOrderBlock_());
+    if (next === body) return;
+    cell.setValue(next);
+    boardLog_('移行', 'テンプレ T9 の「次回のご依頼について」を依頼フォームの案内に差し替えました');
+    return;
+  }
+}
+
+/**
+ * 受付開始日の行を消す。**列ごと廃止したのに、文面には残っていた。**
+ * T4は自動送信されるので、空欄のまま「受付開始日：」と送られてしまう。
+ * 差し込みではなく素の文字なので、未入力の行を落とす仕組みでは消えない。
+ */
+function boardMigrateStartDateLines_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return;
+
+  const NL = String.fromCharCode(10);
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
+  let changed = 0;
+
+  for (let c = 1; c < ids.length; c++) {
+    const id = String(ids[c] || '').trim();
+    if (!id) continue;
+    const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
+    const body = String(cell.getValue() || '');
+    if (!body || body.indexOf('受付開始日') < 0) continue;
+
+    const kept = body.split(NL).filter(function (line) { return line.indexOf('受付開始日') < 0; });
+    cell.setValue(kept.join(NL));
+    changed++;
+    boardLog_('移行', 'テンプレ ' + id + ' から受付開始日の行を削除しました');
+  }
+  return changed;
+}
+
+/**
+ * 発送の催促（T6）を、依頼フォームで追跡番号をいただく形に合わせる。
+ * 送り状の写真をメールで送っていただく案内のままだった。
+ */
+function boardMigrateShipPrompt_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return;
+
+  const NL = String.fromCharCode(10);
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
+  for (let c = 1; c < ids.length; c++) {
+    if (String(ids[c] || '').trim() !== 'T6') continue;
+    const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
+    const body = String(cell.getValue() || '');
+    if (!body || body.indexOf('{{依頼フォームURL}}') >= 0) return;
+
+    const block = [
+      'すでにご発送済みの場合は、ご依頼フォームより運送業者と追跡番号をご入力ください。',
+      '',
+      '{{依頼フォームURL}}',
+      '',
+      'まだの場合もお急ぎいただく必要はございませんので、',
+      'ご都合のよいタイミングでご発送ください。'
+    ].join(NL);
+
+    const lines = body.split(NL);
+    const from = lines.findIndex(function (l) { return l.indexOf('すでにご発送済み') >= 0; });
+    const to = lines.findIndex(function (l) { return l.indexOf('ご都合のよいタイミング') >= 0; });
+    if (from < 0 || to < 0 || to < from) return;
+
+    cell.setValue(lines.slice(0, from).concat(block.split(NL), lines.slice(to + 1)).join(NL));
+    boardLog_('移行', 'テンプレ T6 を依頼フォームでの追跡番号のご入力に合わせました');
     return;
   }
 }
@@ -4569,6 +4689,51 @@ function boardBuildTemplateText_(ss, caseRow, templateId, extra) {
  *
  * 同じメールで二度呼ばれても増えないよう、メッセージIDで重複を避ける。
  */
+/**
+ * その返送でいくら請求するのかを組み立てる。
+ *
+ * 　単価　＝ 案件の単価 ＋ お客様の単価調整 ＋ この依頼の単価調整
+ * 　固定調整 ＝ お客様の固定調整 ＋ この依頼の固定調整
+ *
+ * 案件の単価が空なら顧客タブの単価を使う。理由も一緒に持ち、請求書の明細に出す。
+ */
+function boardShipmentPricing_(ss, v, customer) {
+  const base = Number(v[BOARD_COL.unitPrice - 1] || (customer ? customer.unitPrice : 0) || 0);
+  const found = boardFindCustomerRow_(ss, String(v[BOARD_COL.customerId - 1] || '').trim());
+  const row = found ? found.values : [];
+
+  const customerUnit = Number(row[BOARD_CUSTOMER_COL.priceAdjust - 1] || 0);
+  const customerFlat = Number(row[BOARD_CUSTOMER_COL.flatAdjust - 1] || 0);
+  const caseUnit = Number(v[BOARD_COL.priceAdjust - 1] || 0);
+  const caseFlat = Number(v[BOARD_COL.flatAdjust - 1] || 0);
+
+  const reasons = [];
+  if (customerUnit || customerFlat) {
+    reasons.push(String(row[BOARD_CUSTOMER_COL.adjustNote - 1] || 'お客様ごとの調整').split(String.fromCharCode(10)).join(' / '));
+  }
+  if (caseUnit || caseFlat) {
+    reasons.push(String(v[BOARD_COL.adjustNote - 1] || 'この依頼の調整'));
+  }
+
+  const lines = [];
+  const note = String(v[BOARD_COL.priceNote - 1] || '').trim();
+  if (note) lines.push(note);
+  if (customerUnit || caseUnit) {
+    lines.push('単価調整 ' + ((customerUnit + caseUnit) > 0 ? '+' : '') + (customerUnit + caseUnit) + '円/点 → ' + (base + customerUnit + caseUnit) + '円/点');
+  }
+  if (customerFlat || caseFlat) {
+    lines.push('固定調整 ' + ((customerFlat + caseFlat) > 0 ? '+' : '') + (customerFlat + caseFlat) + '円');
+  }
+  if (reasons.length > 0) lines.push('理由: ' + reasons.join(' / '));
+
+  return {
+    unitPrice: Math.max(0, base + customerUnit + caseUnit),
+    flatAdjust: customerFlat + caseFlat,
+    reason: reasons.join(' / '),
+    note: lines.join(String.fromCharCode(10))
+  };
+}
+
 function boardRecordShipment_(ss, caseRow, fields, mail) {
   const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
   if (!sheet) return 0;
@@ -4579,7 +4744,10 @@ function boardRecordShipment_(ss, caseRow, fields, mail) {
   const customer = boardFindCustomer_(ss, customerId);
 
   const qty = boardExtractCount_((fields || {}).shipQty);
-  const unitPrice = Number(v[BOARD_COL.unitPrice - 1] || (customer ? customer.unitPrice : 0) || 0);
+  // **請求の根拠はここで凍結する。** 案件行は次のご依頼で書き換わるので、
+  // あとから「この請求は何だったのか」を案件ボードでは追えなくなる
+  const billing = boardShipmentPricing_(ss, v, customer);
+  const unitPrice = billing.unitPrice;
   const messageId = String((mail || {}).messageId || '').trim();
 
   if (messageId && sheet.getLastRow() > 1) {
@@ -4596,6 +4764,8 @@ function boardRecordShipment_(ss, caseRow, fields, mail) {
   values[BOARD_SHIPMENT_COL.customer - 1] = v[BOARD_COL.customer - 1];
   values[BOARD_SHIPMENT_COL.qty - 1] = qty === '' ? '' : Number(qty);
   values[BOARD_SHIPMENT_COL.unitPrice - 1] = unitPrice || '';
+  values[BOARD_SHIPMENT_COL.flatAdjust - 1] = billing.flatAdjust || '';
+  values[BOARD_SHIPMENT_COL.priceNote - 1] = billing.note;
   // 金額は数式にする（appendRow のあとで入れる）
   values[BOARD_SHIPMENT_COL.tracking - 1] = String((fields || {}).shipTracking || '').trim();
   // 送ったあとに呼ばれる。送信済みかどうかを確かめ直す必要はない
@@ -4624,8 +4794,9 @@ function boardRecordShipment_(ss, caseRow, fields, mail) {
 function boardSetShipmentAmountFormula_(sheet, row) {
   const qty = '$' + boardColLetter_(BOARD_SHIPMENT_COL.qty) + row;
   const price = '$' + boardColLetter_(BOARD_SHIPMENT_COL.unitPrice) + row;
+  const flat = '$' + boardColLetter_(BOARD_SHIPMENT_COL.flatAdjust) + row;
   sheet.getRange(row, BOARD_SHIPMENT_COL.amount)
-    .setFormula('=IF(OR(' + qty + '="",' + price + '=""),"",' + qty + '*' + price + ')');
+    .setFormula('=IF(OR(' + qty + '="",' + price + '=""),"",' + qty + '*' + price + '+N(' + flat + '))');
 }
 
 /**
@@ -4651,6 +4822,29 @@ function boardMigrateShipmentDrafts_(ss) {
     boardLog_('移行', '下書きのまま残っていた返送 ' + changed + ' 件を送信済にしました');
   }
   return changed;
+}
+
+/**
+ * 返送履歴に、請求の根拠になる列を足す。
+ * **位置ではなく名前で挿し込む。** 位置で上書きすると、右側の中身がすべてずれる。
+ */
+function boardMigrateShipments_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!sheet || sheet.getLastColumn() < 2) return;
+
+  let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+  if (headers.join('\t') === BOARD_SHIPMENT_HEADERS.join('\t')) return;
+
+  headers = boardInsertColumnAfter_(sheet, headers, '単価', '固定調整');
+  headers = boardInsertColumnAfter_(sheet, headers, '金額（税抜）', '単価の内訳');
+
+  // 既にある行の金額は、固定調整を足す形に入れ直す
+  for (let row = 2; row <= sheet.getLastRow(); row++) {
+    if (!String(sheet.getRange(row, BOARD_SHIPMENT_COL.qty).getValue() || '').trim()) continue;
+    boardSetShipmentAmountFormula_(sheet, row);
+  }
+  boardLog_('移行', '返送履歴に 固定調整・単価の内訳 の列を足しました');
 }
 
 function boardMigrateShipmentAmounts_(ss) {

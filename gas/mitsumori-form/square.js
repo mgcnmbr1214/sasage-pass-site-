@@ -1213,7 +1213,9 @@ function squareCollectBillable_(ss) {
         caseId: String(row[BOARD_SHIPMENT_COL.caseId - 1] || '').trim(),
         date: row[BOARD_SHIPMENT_COL.date - 1],
         qty: qty,
-        unitPrice: unitPrice
+        unitPrice: unitPrice,
+        flatAdjust: Number(row[BOARD_SHIPMENT_COL.flatAdjust - 1] || 0),
+        note: String(row[BOARD_SHIPMENT_COL.priceNote - 1] || '').trim()
       });
     });
   return groups;
@@ -1240,7 +1242,7 @@ function squareCreateInvoiceFor_(ss, location, month, customerId, group) {
       primary_recipient: { customer_id: squareId },
       delivery_method: 'EMAIL',
       title: month.label,
-      description: tpl ? tpl.body : '',
+      description: squareUsageDescription_(tpl ? tpl.body : '', group.items),
       payment_requests: [{
         request_type: 'BALANCE',
         due_date: due,
@@ -1254,7 +1256,9 @@ function squareCreateInvoiceFor_(ss, location, month, customerId, group) {
   }).invoice;
 
   const qty = group.items.reduce(function (sum, item) { return sum + item.qty; }, 0);
-  const amount = group.items.reduce(function (sum, item) { return sum + item.qty * item.unitPrice; }, 0);
+  const amount = group.items.reduce(function (sum, item) {
+    return sum + item.qty * item.unitPrice + Number(item.flatAdjust || 0);
+  }, 0);
 
   // 返送履歴に、どの請求にまとまったかを書き戻す
   const ships = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
@@ -1277,21 +1281,68 @@ function squareCreateInvoiceFor_(ss, location, month, customerId, group) {
   return { customer: group.customer, qty: qty, amount: amount };
 }
 
-/** 明細は返送1回ぶんで1行。単価は税抜で、消費税は明細ごとに加算する。 */
+/**
+ * 請求書の説明に、単価がどう決まったのかを添える。
+ * **お客様が見て納得できるように。** 数字だけでは割引の根拠が分からない。
+ */
+function squareUsageDescription_(body, items) {
+  const NL = String.fromCharCode(10);
+  const lines = [];
+  items.forEach(function (item) {
+    if (!item.note) return;
+    lines.push('【' + item.caseId + '　' + boardFormatDate_(item.date) + ' 返送分】');
+    String(item.note).split(NL).forEach(function (line) {
+      if (line.trim()) lines.push('　' + line.trim());
+    });
+  });
+  if (lines.length === 0) return body;
+  return String(body || '').replace(/\s+$/, '') + NL + NL +
+    '■ ご請求の内訳' + NL + lines.join(NL);
+}
+
+/**
+ * 明細は返送1回ぶんで1行。単価は税抜で、消費税は明細ごとに加算する。
+ *
+ * 固定調整は、値引きなら注文全体の割引として、割増なら1行の明細として入れる。
+ * **Squareの明細にマイナスの単価は置けない。**
+ */
 function squareCreateUsageOrder_(locationId, squareCustomerId, month, items) {
+  const flat = items.reduce(function (sum, item) { return sum + Number(item.flatAdjust || 0); }, 0);
+  const reasons = items.filter(function (item) { return Number(item.flatAdjust || 0); })
+    .map(function (item) { return item.caseId; });
+
+  const lineItems = items.map(function (item) {
+    return {
+      name: item.caseId + '　' + boardFormatDate_(item.date) + ' 返送分',
+      quantity: String(item.qty),
+      base_price_money: { amount: item.unitPrice, currency: SQUARE_CURRENCY },
+      applied_taxes: [{ tax_uid: 'usage-tax' }]
+    };
+  });
+  if (flat > 0) {
+    lineItems.push({
+      name: '調整（' + reasons.join('、') + '）',
+      quantity: '1',
+      base_price_money: { amount: flat, currency: SQUARE_CURRENCY },
+      applied_taxes: [{ tax_uid: 'usage-tax' }]
+    });
+  }
+
+  const discounts = flat < 0 ? [{
+    uid: 'usage-adjust',
+    name: 'お値引き（' + reasons.join('、') + '）',
+    type: 'FIXED_AMOUNT',
+    amount_money: { amount: Math.abs(flat), currency: SQUARE_CURRENCY },
+    scope: 'ORDER'
+  }] : [];
+
   const data = squareFetch_('POST', '/orders', {
     idempotency_key: Utilities.getUuid(),
     order: {
       location_id: locationId,
       customer_id: squareCustomerId,
-      line_items: items.map(function (item) {
-        return {
-          name: item.caseId + '　' + boardFormatDate_(item.date) + ' 返送分',
-          quantity: String(item.qty),
-          base_price_money: { amount: item.unitPrice, currency: SQUARE_CURRENCY },
-          applied_taxes: [{ tax_uid: 'usage-tax' }]
-        };
-      }),
+      discounts: discounts,
+      line_items: lineItems,
       taxes: [{
         uid: 'usage-tax',
         name: SQUARE_TAX_NAME,
