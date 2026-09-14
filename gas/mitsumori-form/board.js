@@ -94,7 +94,6 @@ const BOARD_CASE_HEADERS = [
   '未返信', '未請求の返送',
   '顧客ID', '依頼内容', '選択の控え', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール',
   '単価', '単価調整', '固定調整', '調整の理由', '請求見込み', '単価の内訳',
-  '請求書送付日', 'Square請求書ID',
   '運送業者', '追跡番号', '発送完了日', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
@@ -105,9 +104,8 @@ const BOARD_COL = {
   unreplied: 13, unbilled: 14,
   customerId: 15, detail: 16, selection: 17, formInquiry: 18, lastInbound: 19, lastOutbound: 20,
   unitPrice: 21, priceAdjust: 22, flatAdjust: 23, adjustNote: 24, estimate: 25, priceNote: 26,
-  invoiceSent: 27, invoiceId: 28,
-  carrier: 29, tracking: 30, shippedAt: 31, teamNote: 32,
-  guideDraftAt: 33, lastContact: 34, memo: 35, sourceRow: 36
+  carrier: 27, tracking: 28, shippedAt: 29, teamNote: 30,
+  guideDraftAt: 31, lastContact: 32, memo: 33, sourceRow: 34
 };
 
 /**
@@ -132,6 +130,7 @@ const BOARD_CUSTOMER_HEADERS = [
   'ストア名', '代表者名義', '請求先 郵便番号', '請求先 住所',
   '返送先 郵便番号', '返送先 住所', '返送先 宛名', '返送先 電話番号',
   '依頼内容', '月間予定数', '初回ご依頼予定数', '初回ご依頼予定日', '単価', '初回問い合わせ日', '最終更新日', 'メモ', 'Square顧客ID',
+  '登録請求書ID', '登録請求書の送付日',
   '契約書署名日', 'カード登録', '登録の確認日',
   '単価調整', '固定調整', '調整の理由', '依頼フォームの鍵', '依頼フォームURL'
 ];
@@ -142,8 +141,10 @@ const BOARD_CUSTOMER_COL = {
   returnZip: 10, returnAddress: 11, returnName: 12, returnTel: 13,
   detail: 14, monthly: 15, firstQty: 16, firstDate: 17, unitPrice: 18, firstAt: 19, updatedAt: 20,
   memo: 21, squareId: 22,
-  signedAt: 23, card: 24, checkedAt: 25,
-  priceAdjust: 26, flatAdjust: 27, adjustNote: 28, formKey: 29, formUrl: 30
+  // 登録手数料の請求書はお客様に一度きり。案件ごとに持つものではない
+  regInvoiceId: 23, regInvoiceSent: 24,
+  signedAt: 25, card: 26, checkedAt: 27,
+  priceAdjust: 28, flatAdjust: 29, adjustNote: 30, formKey: 31, formUrl: 32
 };
 
 /**
@@ -741,6 +742,9 @@ function boardMigrateCases_(ss) {
   // 数量割引の段は、お客様が発送した月で決まる。こちらの都合で動かせないように
   headers = boardInsertColumnAfter_(sheet, headers, '追跡番号', '発送完了日');
 
+  // 登録手数料の請求書は、お客様に一度きり。案件ごとに持つものではない
+  headers = boardMoveRegistrationInvoice_(ss, sheet, headers);
+
   // 契約書は請求書の作成時にその場で添付するため、事前作成の記録は不要になった
   const contract = headers.indexOf('契約書作成日');
   if (contract >= 0) {
@@ -764,6 +768,91 @@ function boardMigrateCases_(ss) {
   boardMigrateCustomers_(ss);
   boardMoveFirstPlanToCustomers_(ss);
   boardSyncColumns_(sheet);
+}
+
+/**
+ * 登録手数料の請求書の控えを、顧客タブへ移す。
+ *
+ * 登録手数料はお客様に一度きりで、案件ごとに変わるものではない。
+ * **写し終えたことを確かめてから消す。** 移せない案件が1件でもあれば列を残す。
+ */
+function boardMoveRegistrationInvoice_(ss, sheet, headers) {
+  const idCol = headers.indexOf('Square請求書ID') + 1;
+  const sentCol = headers.indexOf('請求書送付日') + 1;
+  if (!idCol && !sentCol) return headers;
+
+  boardMigrateCustomers_(ss);          // 受け皿を先に作る
+  const customers = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  const caseIdCol = headers.indexOf('顧客ID') + 1;
+  if (!customers || !caseIdCol) {
+    boardLog_('移行', '登録請求書の控えを移せませんでした（顧客タブか顧客IDが見つかりません）');
+    return headers;
+  }
+
+  let moved = 0;
+  const failed = [];
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues()
+      .forEach(function (row) {
+        const id = idCol ? String(row[idCol - 1] || '').trim() : '';
+        const sent = sentCol ? row[sentCol - 1] : '';
+        if (!id && !sent) return;
+
+        const customerId = String(row[caseIdCol - 1] || '').trim();
+        const found = boardFindCustomerRow_(ss, customerId);
+        if (!found) { failed.push(customerId || '（顧客IDなし）'); return; }
+
+        const idCell = customers.getRange(found.row, BOARD_CUSTOMER_COL.regInvoiceId);
+        const sentCell = customers.getRange(found.row, BOARD_CUSTOMER_COL.regInvoiceSent);
+        if (id && !String(idCell.getValue() || '').trim()) idCell.setValue(id);
+        if (sent && !sentCell.getValue()) sentCell.setValue(sent);
+        moved++;
+      });
+  }
+
+  if (failed.length > 0) {
+    boardLog_('移行', '登録請求書の控えを移せない案件があるため、列を残しました（' +
+      failed.join('、') + '）');
+    return headers;
+  }
+
+  // 右から消す。左から消すと、2本目の位置がずれる
+  [idCol, sentCol].filter(function (c) { return c; }).sort(function (a, b) { return b - a; })
+    .forEach(function (col) { sheet.deleteColumn(col); });
+  boardLog_('移行', '登録請求書の控えを顧客タブへ移しました（' + moved + '件）。案件ボードの2列を削除しました');
+
+  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+}
+
+/**
+ * 登録請求書の控えを、お客様ごとに読み書きする。
+ * **案件行から引くときは、必ず顧客IDを経由する。**
+ */
+function boardRegistrationInvoice_(ss, customerId) {
+  const found = boardFindCustomerRow_(ss, String(customerId || '').trim());
+  if (!found) return { row: 0, id: '', sentAt: '' };
+  return {
+    row: found.row,
+    id: String(found.values[BOARD_CUSTOMER_COL.regInvoiceId - 1] || '').trim(),
+    sentAt: found.values[BOARD_CUSTOMER_COL.regInvoiceSent - 1] || ''
+  };
+}
+
+function boardSetRegistrationInvoice_(ss, customerId, invoiceId) {
+  const found = boardFindCustomerRow_(ss, String(customerId || '').trim());
+  if (!found) return false;
+  ss.getSheetByName(BOARD_SHEET_CUSTOMERS)
+    .getRange(found.row, BOARD_CUSTOMER_COL.regInvoiceId).setValue(invoiceId);
+  return true;
+}
+
+function boardStampRegistrationSent_(ss, customerId) {
+  const found = boardFindCustomerRow_(ss, String(customerId || '').trim());
+  if (!found) return false;
+  ss.getSheetByName(BOARD_SHEET_CUSTOMERS)
+    .getRange(found.row, BOARD_CUSTOMER_COL.regInvoiceSent).setValue(new Date());
+  return true;
 }
 
 /**
@@ -1407,7 +1496,6 @@ const BOARD_CASE_WIDTHS = {
   dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
   customerId: 70, detail: 160, selection: 90, formInquiry: 160, lastInbound: 200, lastOutbound: 200,
   unitPrice: 70, priceAdjust: 75, flatAdjust: 75, adjustNote: 150, estimate: 100, priceNote: 300,
-  invoiceSent: 95, invoiceId: 110,
   carrier: 100, tracking: 130, shippedAt: 95, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
 };
 
@@ -1462,7 +1550,7 @@ function boardApplyCaseFormatting_(sheet) {
 
   sheet.setConditionalFormatRules(rules);
 
-  [BOARD_COL.dueFrom, BOARD_COL.dueTo, BOARD_COL.invoiceSent, BOARD_COL.shippedAt,
+  [BOARD_COL.dueFrom, BOARD_COL.dueTo, BOARD_COL.shippedAt,
    BOARD_COL.guideDraftAt, BOARD_COL.lastContact].forEach(function (col) {
     // 日付列のみ書式を揃える
     sheet.getRange(2, col, maxRows, 1).setNumberFormat('yyyy/mm/dd');
@@ -4339,12 +4427,16 @@ function boardSetTodoFormula_(sheet, row) {
     return 'IF(' + since + '="",""," ("&TEXT(MAX(0,TODAY()-' + since + '),"0")&"日経過)")';
   };
   const ready = 'OR(' + reg + '="' + BOARD_REG_OK + '",' + reg + '="' + BOARD_REG_SIGNED + '")';
+  // 登録請求書の送付日は顧客タブへ移した。顧客IDで引く
+  const sentAt = 'IFERROR(VLOOKUP(' + cell(BOARD_COL.customerId) + ",'" + BOARD_SHEET_CUSTOMERS +
+    "'!$A:$" + boardColLetter_(BOARD_CUSTOMER_HEADERS.length) + ',' +
+    BOARD_CUSTOMER_COL.regInvoiceSent + ',FALSE),"")';
   const formula = '=IF(' + cell(BOARD_COL.caseId) + '="","",IFS(' +
     cell(BOARD_COL.unreplied) + '<>"","メールに返信する",' +
     b + '="' + BOARD_STATUS_NEW + '",IF(' + ready + ',"依頼確定メールを送る","不足情報のご返信待ち"),' +
-    b + '="' + BOARD_STATUS_SIGNING + '",IF(' + cell(BOARD_COL.invoiceSent) + '="","請求書を送る",' +
+    b + '="' + BOARD_STATUS_SIGNING + '",IF(' + sentAt + '="","請求書を送る",' +
       'IF(' + reg + '="' + BOARD_REG_SIGNED + '","お客様のご発送待ち",' +
-      '"支払い情報の登録・署名待ち"&' + elapsedFrom(cell(BOARD_COL.invoiceSent)) + ')),' +
+      '"支払い情報の登録・署名待ち"&' + elapsedFrom(sentAt) + ')),' +
     b + '="' + BOARD_STATUS_WAITING_SHIP + '","お客様のご発送待ち"&' + elapsedFrom(ordered) + ',' +
     b + '="' + BOARD_STATUS_SHIPPED + '",IF(' + from + '="","受取準備（納期の返信）",' +
       '"作業チームへ共有・荷受待ち"),' +

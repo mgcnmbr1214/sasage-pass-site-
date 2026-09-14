@@ -999,7 +999,8 @@ function mailBuildCaseContext_(row, expectedCustomerId, wantedCaseRow) {
     invoiceUrl: text(invoiceId ? squareDashboardUrl_(invoiceId) : ''),
     invoiceSteps: text(settings['請求書送信の手順']),
     squareError: text(squareError),
-    sentAt: text(boardFormatDate_(v[BOARD_COL.invoiceSent - 1]))
+    // 登録請求書の控えは顧客タブにある
+    sentAt: text(boardFormatDate_(boardRegistrationInvoice_(ss, customerId).sentAt))
   };
 }
 

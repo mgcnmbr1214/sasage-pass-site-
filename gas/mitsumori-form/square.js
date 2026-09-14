@@ -253,7 +253,9 @@ function squareGetFlowState() {
   const values = sheet.getRange(row, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
   const customer = boardFindCustomer_(ss, values[BOARD_COL.customerId - 1]);
   const settings = boardGetSettings_(ss);
-  const invoiceId = String(values[BOARD_COL.invoiceId - 1] || '').trim();
+  // 登録請求書の控えは顧客タブにある。案件ごとではない
+  const registration = boardRegistrationInvoice_(ss, values[BOARD_COL.customerId - 1]);
+  const invoiceId = registration.id;
   const invoice = invoiceId ? squareGetInvoice_(invoiceId) : null;
 
   return {
@@ -267,7 +269,7 @@ function squareGetFlowState() {
     invoiceStatus: invoice ? invoice.status : '',
     invoiceUrl: invoiceId ? squareDashboardUrl_(invoiceId) : '',
     invoiceSteps: String(settings['請求書送信の手順'] || ''),
-    sentAt: boardFormatDate_(values[BOARD_COL.invoiceSent - 1])
+    sentAt: boardFormatDate_(registration.sentAt)
   };
 }
 
@@ -465,7 +467,7 @@ function squareCheckCompletions() {
  * その場合は顧客をたどってSquare側から探し、見つかれば案件へ書き戻す。
  */
 function squareResolveInvoiceId_(ss, caseRow, row, customer) {
-  const stored = String(row[BOARD_COL.invoiceId - 1] || '').trim();
+  const stored = boardRegistrationInvoice_(ss, row[BOARD_COL.customerId - 1]).id;
   if (stored) return stored;
 
   const squareCustomerId = customer.squareId || squareFindCustomerId_(customer.email);
@@ -478,7 +480,7 @@ function squareResolveInvoiceId_(ss, caseRow, row, customer) {
   const invoice = squareFindInvoiceForCustomer_(squareCustomerId);
   if (!invoice) return '';
 
-  ss.getSheetByName(BOARD_SHEET_CASES).getRange(caseRow, BOARD_COL.invoiceId).setValue(invoice.id);
+  boardSetRegistrationInvoice_(ss, row[BOARD_COL.customerId - 1], invoice.id);
   boardLog_('Square', row[BOARD_COL.caseId - 1] + ' の請求書 ' + invoice.id + ' を紐づけました');
   return invoice.id;
 }
@@ -683,7 +685,8 @@ function squareConfirmSent(caseRow) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const row = Number(caseRow);
-  const invoiceId = String(sheet.getRange(row, BOARD_COL.invoiceId).getValue() || '').trim();
+  const customerId = sheet.getRange(row, BOARD_COL.customerId).getValue();
+  const invoiceId = boardRegistrationInvoice_(ss, customerId).id;
   if (!invoiceId) throw new Error('先に請求書を作成してください。');
 
   const invoice = squareGetInvoice_(invoiceId);
@@ -692,7 +695,7 @@ function squareConfirmSent(caseRow) {
     throw new Error('この請求書はまだ下書きのままです。\nSquareの画面で送信を完了してから、もう一度押してください。');
   }
 
-  sheet.getRange(row, BOARD_COL.invoiceSent).setValue(new Date());
+  boardStampRegistrationSent_(ss, customerId);
   sheet.getRange(row, BOARD_COL.status).setValue(BOARD_STATUS_SIGNING);
   boardSetTodoFormula_(sheet, row);
   boardLog_('Square', invoiceId + ' の送信を確認しました（状態: ' + invoice.status + '）');
@@ -710,7 +713,7 @@ function squareCreateDraftForCase(caseRow) {
   const row = Number(caseRow);
   const values = sheet.getRange(row, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
 
-  const existing = String(values[BOARD_COL.invoiceId - 1] || '').trim();
+  const existing = boardRegistrationInvoice_(ss, values[BOARD_COL.customerId - 1]).id;
   if (existing) {
     const current = squareGetInvoice_(existing);
     if (current && current.status !== 'CANCELED') {
@@ -763,7 +766,7 @@ function squareCreateDraftForCase(caseRow) {
     }
   }).invoice;
 
-  sheet.getRange(row, BOARD_COL.invoiceId).setValue(invoice.id);
+  boardSetRegistrationInvoice_(ss, values[BOARD_COL.customerId - 1], invoice.id);
   boardLog_('Square', values[BOARD_COL.caseId - 1] + ' の請求書を下書き作成しました（' + invoice.id + '）');
 
   return {
@@ -780,7 +783,8 @@ function squarePublishForCase(caseRow) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const row = Number(caseRow);
-  const invoiceId = String(sheet.getRange(row, BOARD_COL.invoiceId).getValue() || '').trim();
+  const customerId = sheet.getRange(row, BOARD_COL.customerId).getValue();
+  const invoiceId = boardRegistrationInvoice_(ss, customerId).id;
   if (!invoiceId) throw new Error('先に請求書を作成してください。');
 
   const current = squareGetInvoice_(invoiceId);
@@ -798,7 +802,7 @@ function squarePublishForCase(caseRow) {
     idempotency_key: Utilities.getUuid()
   }).invoice;
 
-  sheet.getRange(row, BOARD_COL.invoiceSent).setValue(new Date());
+  boardStampRegistrationSent_(ss, customerId);
   sheet.getRange(row, BOARD_COL.status).setValue(BOARD_STATUS_SIGNING);
   boardSetTodoFormula_(sheet, row);
   boardLog_('Square', invoiceId + ' の請求書を送信しました');
@@ -824,13 +828,14 @@ function squareGetInvoiceStatusForCase(caseRow) {
 }
 
 /**
- * 案件に記録された請求書がSquare側にまだあるか確かめる。
+ * お客様に記録された登録請求書が、Square側にまだあるか確かめる。
  * 消された請求書のIDが残っていると新しく作れなくなるため、
  * 見つからなければ記録を外して作り直せるようにする。
  */
 function squareVerifyInvoiceId_(ss, caseRow) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-  const invoiceId = String(sheet.getRange(caseRow, BOARD_COL.invoiceId).getValue() || '').trim();
+  const customerId = sheet.getRange(caseRow, BOARD_COL.customerId).getValue();
+  const invoiceId = boardRegistrationInvoice_(ss, customerId).id;
   if (!invoiceId) return '';
   if (!squareGetToken_()) return invoiceId;
 
@@ -839,7 +844,7 @@ function squareVerifyInvoiceId_(ss, caseRow) {
   // 取れなかっただけなら記録は残す。消すと請求書とのつながりが切れる
   if (!got.invoice && !got.missing) return invoiceId;
 
-  sheet.getRange(caseRow, BOARD_COL.invoiceId).setValue('');
+  boardSetRegistrationInvoice_(ss, customerId, '');
   boardLog_('Square', sheet.getRange(caseRow, BOARD_COL.caseId).getValue() +
     '：Squareに請求書が無いため記録を外しました（' + invoiceId + '）');
   return '';
