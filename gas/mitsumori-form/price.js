@@ -19,11 +19,11 @@
 const PRICE_SHEET = '料金設計';
 const PRICE_HISTORY_SHEET = '料金履歴';
 
-/** 「ボタン」を置く行。チェックを入れると動き、終わると自動で外れる。 */
-const PRICE_ROW_BUTTONS = 8;
+/** 「ボタン」を置く行。使い方の説明より下に置く。 */
+const PRICE_ROW_BUTTONS = 11;
 const PRICE_COL_UPDATE = 1;
 const PRICE_COL_RELOAD = 4;
-const PRICE_ROW_STAMP = 9;
+const PRICE_ROW_STAMP = 12;
 
 const PRICE_HEAD_MENUS = '■ メニューの単価';
 const PRICE_HEAD_TIERS = '■ 数量割引';
@@ -35,12 +35,14 @@ const PRICE_HISTORY_HEADERS = ['日時', '変えた内容', '据え置いたお�
 /** 表の使い方。**シートを開いた人が、これだけ読めば分かるように。** */
 const PRICE_GUIDE = [
   '【料金設計】ササゲパスの料金は、すべてこの表が大もとです。',
-  '直せるのは「単価」「有効」「下限点数」「値」だけです。グレーの列（種別・ID・名前）は直しても反映されません。',
-  '直したら、下の「料金を更新する」に ✓ を入れてください。処理が終わると ✓ は自動で外れます。',
-  '✓ を入れると → ①見積もりフォームの表示価格　②依頼フォームの内容　③請求書の単価　が、すべてこの表の値になります。',
-  '　　　　　　　→ 変えたメニューをご依頼中のお客様がいれば、単価を据え置くかどうかを確認する画面が出ます。',
-  '　　　　　　　→ 更新前の内容は「料金履歴」タブに残るので、元に戻せます。',
-  '※ 初期セットアップを実行すると、この表はいまの料金で書き直されます（更新していない編集は消えます）。'
+  '直せるのは、白い列（ID・単価・有効・下限点数・値）だけです。グレーの列（種別・名前）は直しても反映されません。',
+  '',
+  '　手順1　白い列を直す　　手順2　下の「料金の更新画面をひらく」に ✓ を入れる',
+  '　手順3　出てきた画面で、何がどう変わるかを確かめる　　手順4　画面の「この内容で更新する」を押す',
+  '',
+  '※ ✓ を入れただけでは、まだ何も変わりません。画面のボタンを押してはじめて書き換わります。',
+  '※ 更新すると、見積もりフォームの表示価格・依頼フォーム・請求書の単価が、いっせいにこの表の値になります。',
+  '※ 更新前の内容は「料金履歴」タブに丸ごと残ります。初期セットアップを実行すると、この表はいまの料金で書き直されます。'
 ];
 
 // ------------------------------------------------------------
@@ -78,11 +80,14 @@ function priceRenderSheet_(ss) {
   sheet.getRange(PRICE_ROW_BUTTONS, PRICE_COL_UPDATE)
     .insertCheckboxes().setValue(false);
   sheet.getRange(PRICE_ROW_BUTTONS, PRICE_COL_UPDATE + 1)
-    .setValue('← 料金を更新する').setFontWeight('bold').setFontColor('#A32D2D');
+    .setValue('← 料金の更新画面をひらく（まだ何も変わりません）').setFontWeight('bold').setFontColor('#A32D2D');
   sheet.getRange(PRICE_ROW_BUTTONS, PRICE_COL_RELOAD)
     .insertCheckboxes().setValue(false);
   sheet.getRange(PRICE_ROW_BUTTONS, PRICE_COL_RELOAD + 1)
     .setValue('← 表を読み込み直す（編集を捨てて、いまの料金に戻す）').setFontColor('#5A6A8A');
+  sheet.getRange(PRICE_ROW_BUTTONS - 1, 1)
+    .setValue('▼ ここが「ボタン」です。チェックを入れると画面が出て、チェックは自動で外れます。')
+    .setFontColor('#A32D2D').setFontWeight('bold');
   sheet.getRange(PRICE_ROW_BUTTONS, 1, 1, width).setBackground('#F1EFE8');
 
   const history = ss.getSheetByName(PRICE_HISTORY_SHEET);
@@ -92,7 +97,7 @@ function priceRenderSheet_(ss) {
   ).setFontColor('#8A97B8');
 
   let row = PRICE_ROW_BUTTONS + 3;
-  row = priceWriteTable_(sheet, row, PRICE_HEAD_MENUS, PRICE_MENU_HEADERS, menuRows, [4, 5]);
+  row = priceWriteTable_(sheet, row, PRICE_HEAD_MENUS, PRICE_MENU_HEADERS, menuRows, [2, 4, 5]);
   row += 2;
   priceWriteTable_(sheet, row,
     PRICE_HEAD_TIERS + '（当月に発送されたぶんの、お預かり点数の合計で段が決まります）',
@@ -134,26 +139,30 @@ function priceWriteTable_(sheet, row, title, headers, rows, editable) {
 function priceMenuRows_(config) {
   const rows = [];
   (config.menus || []).forEach(function (menu) {
+    let n = 0;
     rows.push(['メニュー', menu.id, menu.name, '', menu.enabled !== false, priceOneLine_(menu.description)]);
     (menu.items || []).forEach(function (item) {
       if (item.type === 'text') {
         rows.push(['記述項目', item.id, '└ ' + item.name, '', item.enabled !== false, 'お客様に自由に書いていただく欄（料金なし）']);
         return;
       }
+      n++;
       rows.push(['オプション', item.id, '└ ' + item.name,
-        Number(item.unitPrice || 0), item.enabled !== false, priceOneLine_(item.description)]);
+        Number(item.unitPrice || 0), item.enabled !== false,
+        priceIdHint_(item.id, menu.id + '_' + n) + priceOneLine_(item.description)]);
 
       const mode = item.subChoicePricingMode;
       if (mode === 'count') {
         rows.push(['選択1つあたり', item.id + '#count', '　└ 選んだ数 × この単価',
           Number(item.subChoiceCountUnitPrice || 0), true, '下の選択肢は、個別の単価ではなく「選んだ数」で計算します']);
       }
-      (item.subChoices || []).forEach(function (choice) {
+      (item.subChoices || []).forEach(function (choice, k) {
         rows.push([mode === 'choice' ? 'サイト選択' : 'サイト選択（料金なし）',
           choice.id, '　└ ' + choice.name,
           mode === 'choice' ? Number(choice.unitPrice || 0) : '',
           choice.enabled !== false,
-          mode === 'choice' ? '' : '選んでも単価は変わりません']);
+          priceIdHint_(choice.id, menu.id + '_' + n + '_' + (k + 1)) +
+            (mode === 'choice' ? '' : '選んでも単価は変わりません')]);
       });
     });
   });
@@ -192,6 +201,17 @@ function priceTierWarning_(tierRows) {
     '　このままだと請求の割引が正しく決まりません。下限点数を直して「料金を更新する」を押してください。';
 }
 
+/**
+ * 自動で作られたIDに、読みやすい名前の案を添える。
+ *
+ * `photo_option_bazsio7` のようなIDでは、表を見ても何のことか分からない。
+ * ID欄は直せるようにしてあるので、案を出しておく。**勝手には付け替えない。**
+ */
+function priceIdHint_(id, suggestion) {
+  if (!priceIsMachineId_(id)) return '';
+  return '【ID欄を直せます。例: ' + suggestion + '】　';
+}
+
 function priceNow_() {
   return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm');
 }
@@ -220,17 +240,21 @@ function priceReadSheet_(sheet) {
   if (!menuAt || !tierAt) throw new Error('料金設計タブの見出しが見つかりません。初期セットアップを実行してください。');
 
   const items = {};
+  const rows = [];
   for (let r = menuAt + 2; r <= last; r++) {
     const kind = String(values[r - 1][0] || '').trim();
     if (!kind) break;
     const id = String(values[r - 1][1] || '').trim();
     if (!id) continue;
-    items[id] = {
+    const row = {
       kind: kind,
+      id: id,
       name: String(values[r - 1][2] || '').trim(),
       price: values[r - 1][3],
       enabled: values[r - 1][4] !== false
     };
+    items[id] = row;
+    rows.push(row);
   }
 
   const tiers = [];
@@ -246,7 +270,7 @@ function priceReadSheet_(sheet) {
       id: String(values[r - 1][5] || '').trim()
     });
   }
-  return { items: items, tiers: tiers };
+  return { items: items, rows: rows, tiers: tiers };
 }
 
 /**
@@ -491,28 +515,29 @@ function priceRestoreSelections_(ss) {
 // ------------------------------------------------------------
 
 /**
- * シートのチェックボックスを「ボタン」として使う。
+ * 料金設計タブのチェックボックスを「ボタン」として使う。
  *
- * スプレッドシートに図形のボタンをスクリプトから置くことはできない。
- * チェックを入れる → ここが動く → チェックが自動で外れる、という形にしている。
+ * **押しても、その場では何も書き換えない。** 画面をひらくだけ。
+ * 以前はチェックした瞬間に書き換えていたため、動いたのかどうかも分からなかった。
+ * 何が起きても分かるよう、押されたことは必ずログに残す。
  */
 function priceOnEdit(e) {
   if (!e || !e.range) return;
-  const sheet = e.range.getSheet();
-  if (sheet.getName() !== PRICE_SHEET) return;
+  if (e.range.getSheet().getName() !== PRICE_SHEET) return;
   if (e.range.getRow() !== PRICE_ROW_BUTTONS) return;
-  if (e.value !== 'TRUE') return;
 
   const col = e.range.getColumn();
+  if (col !== PRICE_COL_UPDATE && col !== PRICE_COL_RELOAD) return;
+  if (String(e.value) !== 'TRUE') return;
+
+  boardLog_('料金', (col === PRICE_COL_UPDATE ? '更新画面' : '読み込み直し') + 'のボタンが押されました');
   try {
-    if (col === PRICE_COL_UPDATE) priceUpdate_();
-    else if (col === PRICE_COL_RELOAD) priceReload_();
-    else return;
+    e.range.setValue(false);          // 先に戻す。画面を閉じたあとチェックが残らないように
+    if (col === PRICE_COL_UPDATE) priceOpenUpdate();
+    else priceReload_();
   } catch (err) {
     boardLog_('料金', 'エラー: ' + err.message);
-    SpreadsheetApp.getUi().alert('料金の更新に失敗しました。' + String.fromCharCode(10, 10) + err.message);
-  } finally {
-    e.range.setValue(false);
+    SpreadsheetApp.getUi().alert('うまくいきませんでした。' + String.fromCharCode(10, 10) + err.message);
   }
 }
 
@@ -521,60 +546,6 @@ function priceReload_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   priceRenderSheet_(ss);
   SpreadsheetApp.getUi().alert('いまの料金で表を書き直しました。');
-}
-
-/**
- * 表の値を料金の大もとへ書き戻す。
- *
- * ここを押した瞬間から、見積もりフォーム・依頼フォーム・請求書の単価が変わる。
- * **変える前の中身は必ず料金履歴に残す。** 戻せないと怖くて押せない。
- */
-function priceUpdate_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  boardUseCurrentColumns_();
-
-  const sheet = ss.getSheetByName(PRICE_SHEET);
-  const before = getConfig_();
-  const table = priceReadSheet_(sheet);
-
-  const config = JSON.parse(JSON.stringify(before));
-  const changes = priceApplyToConfig_(config, table);
-
-  if (changes.length === 0) {
-    SpreadsheetApp.getUi().alert('表といまの料金に違いがありませんでした。何も変えていません。');
-    return;
-  }
-
-  // 据え置きの差額は、書き換える前に出しておく
-  const affected = priceAffectedCustomers_(ss, before, config);
-
-  priceSaveHistory_(ss, changes, before);
-  writeConfig_(normalizeConfig_(config));
-  priceRenderSheet_(ss);
-  boardLog_('料金', '料金を更新しました（' + changes.length + ' 件）: ' +
-    changes.map(function (c) { return c.name + ' ' + c.before + '→' + c.after; }).join('／'));
-
-  const warning = priceTierWarning_(priceTierRows_(config));
-  const summary = changes.map(function (c) { return '・' + c.name + '　' + c.before + ' → ' + c.after; })
-    .join(String.fromCharCode(10)) +
-    (warning ? String.fromCharCode(10, 10) + warning : '');
-
-  if (affected.length === 0) {
-    SpreadsheetApp.getUi().alert(
-      '料金を更新しました（' + changes.length + ' 件）。' + String.fromCharCode(10, 10) +
-      summary + String.fromCharCode(10, 10) +
-      '単価が変わるお客様はいませんでした。'
-    );
-    return;
-  }
-
-  // 据え置くかどうかは人が決める。**勝手には入れない**
-  const html = HtmlService.createTemplateFromFile('PriceAdjust');
-  html.changes = changes;
-  html.affected = affected;
-  SpreadsheetApp.getUi().showModalDialog(
-    html.evaluate().setWidth(700).setHeight(580), '単価を据え置きますか'
-  );
 }
 
 // ------------------------------------------------------------
@@ -637,48 +608,6 @@ function priceCaseRank_(caseId) {
   return parts ? parts.number * 1000 + parts.branch : 0;
 }
 
-/**
- * 画面で選ばれたお客様に、据え置きぶんの単価調整を入れる。
- *
- * **足し算で入れる。** 値上げを重ねれば、そのぶん積み上がるのが正しい。
- * 理由も1行ずつ足していく。上書きすると、前回何をしたのか分からなくなる。
- */
-function priceApplyAdjustments(picked, label) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  boardUseCurrentColumns_();
-  const list = Array.isArray(picked) ? picked : [];
-  if (list.length === 0) return { message: '据え置きは入れませんでした。' };
-
-  const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
-  const applied = [];
-  list.forEach(function (item) {
-    const customerId = String(item.customerId || '').trim();
-    const delta = Number(item.delta || 0);
-    if (!customerId || !delta) return;
-
-    const found = boardFindCustomerRow_(ss, customerId);
-    if (!found) return;
-
-    const cell = sheet.getRange(found.row, BOARD_CUSTOMER_COL.priceAdjust);
-    const next = Number(cell.getValue() || 0) + delta;
-    cell.setValue(next);
-
-    const noteCell = sheet.getRange(found.row, BOARD_CUSTOMER_COL.adjustNote);
-    const line = String(label || '料金改定') + '（' + priceNow_() + '）　' +
-      (delta > 0 ? '+' : '') + delta + '円/点';
-    const was = String(noteCell.getValue() || '').trim();
-    noteCell.setValue(was ? was + String.fromCharCode(10) + line : line);
-
-    applied.push(customerId + ' ' + (delta > 0 ? '+' : '') + delta + '円 → 単価調整 ' + next);
-  });
-
-  if (applied.length > 0) {
-    boardLog_('料金', '単価を据え置きました: ' + applied.join('／'));
-    priceStampHistory_(ss, applied.join(String.fromCharCode(10)));
-  }
-  return { message: applied.length + ' 名のお客様に据え置きを入れました。' };
-}
-
 // ------------------------------------------------------------
 // 料金履歴
 // ------------------------------------------------------------
@@ -709,4 +638,270 @@ function priceStampHistory_(ss, text) {
   const sheet = ss.getSheetByName(PRICE_HISTORY_SHEET);
   if (!sheet || sheet.getLastRow() < 2) return;
   sheet.getRange(sheet.getLastRow(), 3).setValue(text);
+}
+
+// ------------------------------------------------------------
+// 料金の更新
+// ------------------------------------------------------------
+
+/**
+ * 料金の更新画面をひらく。**ここでは何も書き換えない。**
+ *
+ * 以前はチェックボックスを入れた瞬間に書き換えていた。
+ * 何が起きたのか分からず、動いたのかどうかも分からない、という状態になった。
+ * いまは「画面を出す」だけにして、書き換えは画面のボタンから行う。
+ */
+function priceOpenUpdate() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  boardUseCurrentColumns_();
+
+  const sheet = ss.getSheetByName(PRICE_SHEET);
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert('「料金設計」タブがありません。メニューの 設定 → 初期セットアップ を実行してください。');
+    return;
+  }
+
+  const preview = priceBuildPreview_(ss);
+  const html = HtmlService.createTemplateFromFile('PriceUpdate');
+  html.data = JSON.stringify(preview);
+  SpreadsheetApp.getUi().showModalDialog(
+    html.evaluate().setWidth(720).setHeight(620), '料金の更新'
+  );
+}
+
+/** 画面に出すぶんを、ぜんぶ先に作る。**書き換えはしない。** */
+function priceBuildPreview_(ss) {
+  const sheet = ss.getSheetByName(PRICE_SHEET);
+  const before = getConfig_();
+  const table = priceReadSheet_(sheet);
+
+  const renames = priceRenames_(before, table);
+  const after = JSON.parse(JSON.stringify(before));
+  priceApplyRenames_(after, renames);
+  const changes = priceApplyToConfig_(after, priceAliasCountKeys_(table, renames));
+
+  return {
+    changes: changes,
+    renames: renames,
+    affected: (changes.length > 0 || renames.length > 0) ? priceAffectedCustomers_(ss, before, after) : [],
+    warning: priceTierWarning_(priceTierRows_(after))
+  };
+}
+
+/**
+ * 画面で決まった内容を、実際に書き換える。
+ *
+ * 1. 更新前の料金を料金履歴へ残す
+ * 2. IDの付け替えを Config と案件ボードの選択の控えに反映する
+ * 3. 単価と数量割引を Config へ書き戻す
+ * 4. 「今までの単価のまま」を選ばれたお客様に単価調整を入れる
+ * 5. 料金設計タブを新しい内容で書き直す
+ */
+function priceCommitUpdate(picked) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  boardUseCurrentColumns_();
+
+  const sheet = ss.getSheetByName(PRICE_SHEET);
+  const before = getConfig_();
+  const table = priceReadSheet_(sheet);
+
+  const renames = priceRenames_(before, table);
+  const after = JSON.parse(JSON.stringify(before));
+  priceApplyRenames_(after, renames);
+  const changes = priceApplyToConfig_(after, priceAliasCountKeys_(table, renames));
+
+  if (changes.length === 0 && renames.length === 0) {
+    return { summary: '表の内容は、いまの料金と同じでした。何も変えていません。', detail: '' };
+  }
+
+  priceSaveHistory_(ss, changes.concat(renames.map(function (r) {
+    return { name: r.name + '（ID）', before: r.from, after: r.to };
+  })), before);
+
+  const renamed = renames.length > 0 ? priceRewriteSelections_(ss, renames) : 0;
+  writeConfig_(normalizeConfig_(after));
+
+  const kept = priceKeepPrices_(ss, picked, changes);
+  priceRenderSheet_(ss);
+
+  const lines = [];
+  changes.forEach(function (c) { lines.push('・' + c.name + '　' + c.before + ' → ' + c.after); });
+  renames.forEach(function (r) { lines.push('・' + r.name + ' の ID　' + r.from + ' → ' + r.to); });
+  if (renamed > 0) lines.push('・案件ボードの選択の控え ' + renamed + ' 件を、新しいIDに書き換えました');
+  kept.forEach(function (k) { lines.push('・' + k); });
+
+  boardLog_('料金', '料金を更新しました: ' +
+    changes.map(function (c) { return c.name + ' ' + c.before + '→' + c.after; }).join('／'));
+
+  const summary = '料金を ' + (changes.length + renames.length) + ' 件書き換えました。' +
+    (kept.length > 0 ? String.fromCharCode(10) + kept.length + ' 名のお客様は今までの単価のまま据え置きました。' : '') +
+    (picked && picked.length === 0 && kept.length === 0
+      ? String.fromCharCode(10) + '据え置きは行いませんでした。' : '');
+
+  return { summary: summary, detail: lines.join(String.fromCharCode(10)) };
+}
+
+/** 「今までの単価のまま」を選ばれたお客様に、差額を単価調整として足す。 */
+function priceKeepPrices_(ss, picked, changes) {
+  const list = Array.isArray(picked) ? picked : [];
+  if (list.length === 0) return [];
+
+  const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  const label = changes.length === 1
+    ? changes[0].name + ' の単価変更'
+    : '料金改定（' + changes.length + ' 件）';
+
+  const done = [];
+  list.forEach(function (item) {
+    const customerId = String(item.customerId || '').trim();
+    const delta = Number(item.delta || 0);
+    if (!customerId || !delta) return;
+
+    const found = boardFindCustomerRow_(ss, customerId);
+    if (!found) return;
+
+    // **足し算で入れる。** 値上げを重ねれば、そのぶん積み上がるのが正しい
+    const cell = sheet.getRange(found.row, BOARD_CUSTOMER_COL.priceAdjust);
+    const next = Number(cell.getValue() || 0) + delta;
+    cell.setValue(next);
+
+    const noteCell = sheet.getRange(found.row, BOARD_CUSTOMER_COL.adjustNote);
+    const line = label + '（' + priceNow_() + '）　' + (delta > 0 ? '+' : '') + delta + '円/点';
+    const was = String(noteCell.getValue() || '').trim();
+    noteCell.setValue(was ? was + String.fromCharCode(10) + line : line);
+
+    done.push(customerId + '　' + String(item.name || '') + ' 様を据え置き（単価調整 ' +
+      (next > 0 ? '+' : '') + next + '円/点）');
+  });
+
+  if (done.length > 0) {
+    boardLog_('料金', '単価を据え置きました: ' + done.join('／'));
+    priceStampHistory_(ss, done.join(String.fromCharCode(10)));
+  }
+  return done;
+}
+
+// ------------------------------------------------------------
+// IDの付け替え
+// ------------------------------------------------------------
+
+/**
+ * 表で書き換えられたIDを拾う。
+ *
+ * IDは自動で作られたものが多く（`photo_option_bazsio7` など）、
+ * 何のことか分からない。**読みやすい名前に直せるようにする。**
+ * 表の行の並びは Config と同じ順なので、位置で突き合わせる。
+ */
+function priceRenames_(config, table) {
+  const expected = priceMenuRows_(config);
+  const rows = table.rows || [];
+
+  // **同じIDが2つあると、どちらの単価か決められない**
+  const count = {};
+  rows.forEach(function (row) { count[row.id] = (count[row.id] || 0) + 1; });
+  const doubled = Object.keys(count).filter(function (id) { return count[id] > 1; });
+  if (doubled.length > 0) {
+    throw new Error('同じIDが2つ以上あります: ' + doubled.join('、') +
+      String.fromCharCode(10) + '重ならない名前に直してください。');
+  }
+
+  const out = [];
+  expected.forEach(function (row, i) {
+    const current = rows[i];
+    if (!current) return;
+
+    // 行を足したり消したりされていると、位置がずれる。名前が違えば触らない
+    if (current.name !== String(row[2] || '')) return;
+
+    const oldId = String(row[1] || '').trim();
+    const newId = String(current.id || '').trim();
+    if (!newId || newId === oldId) return;
+    if (oldId.indexOf('#') >= 0) return;          // 「選択1つあたり」の行は付け替えの対象にしない
+    if (!/^[A-Za-z0-9_\-]+$/.test(newId)) {
+      throw new Error('ID「' + newId + '」は使えません。' + String.fromCharCode(10) +
+        '半角の英数字・アンダースコア・ハイフンだけにしてください（例: photo_flat）。');
+    }
+    out.push({ from: oldId, to: newId, name: String(row[2] || '').replace(/^[└　 ]+/, '') });
+  });
+  return out;
+}
+
+/**
+ * 「選択1つあたり」の行は `<項目ID>#count` という名前で引いている。
+ * 項目のIDを付け替えたら、こちらも新しいIDで引けるようにしておく。
+ */
+function priceAliasCountKeys_(table, renames) {
+  renames.forEach(function (r) {
+    const found = table.items[r.from + '#count'];
+    if (found && !table.items[r.to + '#count']) table.items[r.to + '#count'] = found;
+  });
+  return table;
+}
+
+/** 付け替えたIDを Config に反映する。 */
+function priceApplyRenames_(config, renames) {
+  const map = {};
+  renames.forEach(function (r) { map[r.from] = r.to; });
+  (config.menus || []).forEach(function (menu) {
+    if (map[menu.id]) menu.id = map[menu.id];
+    (menu.items || []).forEach(function (item) {
+      if (map[item.id]) item.id = map[item.id];
+      (item.subChoices || []).forEach(function (choice) {
+        if (map[choice.id]) choice.id = map[choice.id];
+      });
+    });
+  });
+}
+
+/**
+ * 案件ボードの「選択の控え」を、新しいIDに書き換える。
+ * **ここを忘れると、過去の依頼から単価が引けなくなる。**
+ */
+function priceRewriteSelections_(ss, renames) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const map = {};
+  renames.forEach(function (r) { map[r.from] = r.to; });
+  const swap = function (id) { return map[id] || id; };
+
+  const range = sheet.getRange(2, BOARD_COL.selection, sheet.getLastRow() - 1, 1);
+  const values = range.getValues();
+  let changed = 0;
+
+  const next = values.map(function (row) {
+    const raw = String(row[0] || '').trim();
+    if (!raw) return row;
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch (err) { return row; }
+    if (!parsed || !parsed.options) return row;
+
+    const options = {};
+    Object.keys(parsed.options).forEach(function (menuId) {
+      options[swap(menuId)] = (parsed.options[menuId] || []).map(swap);
+    });
+    const subChoices = {};
+    Object.keys(parsed.subChoices || {}).forEach(function (menuId) {
+      const inner = {};
+      Object.keys(parsed.subChoices[menuId] || {}).forEach(function (itemId) {
+        inner[swap(itemId)] = (parsed.subChoices[menuId][itemId] || []).map(swap);
+      });
+      subChoices[swap(menuId)] = inner;
+    });
+
+    parsed.options = options;
+    parsed.subChoices = subChoices;
+    const text = JSON.stringify(parsed);
+    if (text === raw) return row;
+    changed++;
+    return [text];
+  });
+
+  if (changed > 0) range.setValues(next);
+  return changed;
+}
+
+/** 自動で作られたIDか。読みやすい名前を勧めるかどうかの判断に使う。 */
+function priceIsMachineId_(id) {
+  return /_(option|text|choice)_[a-z0-9]{4,}$/.test(String(id || ''));
 }

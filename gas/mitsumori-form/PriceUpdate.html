@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<style>
+  body { font-family: "Helvetica Neue", Arial, "Hiragino Sans", "Meiryo", sans-serif;
+         margin: 0; padding: 18px 20px 92px; color: #26324A; font-size: 13.5px; background: #FBFCFE; }
+  h2 { font-size: 16px; margin: 0 0 6px; }
+  .lead { color: #5A6A8A; font-size: 12.5px; line-height: 1.75; margin: 0 0 16px; }
+  .card { background: #fff; border: 1px solid #DDE4F8; border-radius: 10px; padding: 13px 15px; margin-bottom: 14px; }
+  .card h3 { font-size: 13px; margin: 0 0 10px; color: #2C3E63; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: bold; color: #5A6A8A; font-size: 11.5px;
+       border-bottom: 1px solid #E4EAF7; padding: 6px; }
+  td { padding: 7px 6px; border-bottom: 1px solid #F0F4FC; vertical-align: top; }
+  td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .was { color: #8A97B8; }
+  .now { font-weight: bold; color: #A32D2D; }
+  .who { font-weight: bold; }
+  .sub { color: #8A97B8; font-size: 11.5px; }
+  .pick { border: 1px solid #E4EAF7; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+  .pick label { display: block; padding: 5px 0; cursor: pointer; line-height: 1.6; }
+  .pick label span.tag { font-size: 11.5px; color: #5A6A8A; }
+  .warn { background: #FEF6E7; border: 1px solid #F5DFB0; color: #7A5310;
+          border-radius: 8px; padding: 11px 13px; font-size: 12.5px; line-height: 1.75; margin-bottom: 14px; }
+  .ok { background: #EAF4EE; border: 1px solid #BFE0CB; color: #1F5C36;
+        border-radius: 8px; padding: 11px 13px; font-size: 12.5px; line-height: 1.75; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: #fff;
+         border-top: 1px solid #DDE4F8; padding: 13px 20px; display: flex; gap: 10px; align-items: center; }
+  button { font-size: 13px; padding: 10px 18px; border-radius: 8px; border: 1px solid #C7D2EA;
+           background: #fff; color: #26324A; cursor: pointer; }
+  button.main { background: #2C5BE3; border-color: #2C5BE3; color: #fff; font-weight: bold; }
+  button:disabled { opacity: .5; cursor: default; }
+  .msg { font-size: 12.5px; color: #5A6A8A; margin-left: auto; }
+  code { background: #F1F4FB; border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div id="main"></div>
+
+<div class="bar" id="bar">
+  <button class="main" id="go">この内容で更新する</button>
+  <button id="cancel">やめる（何も変えません）</button>
+  <span class="msg" id="msg"></span>
+</div>
+
+<script>
+  var DATA = <?= data ?>;
+
+  function el(id) { return document.getElementById(id); }
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function yen(n) { return '¥' + Number(n || 0).toLocaleString('ja-JP'); }
+
+  function render() {
+    if (DATA.changes.length === 0 && DATA.renames.length === 0) {
+      el('main').innerHTML =
+        '<h2>料金の更新</h2>' +
+        '<div class="ok">表の内容は、いまの料金とまったく同じでした。<br>' +
+        '変更したい値を「料金設計」タブで直してから、もう一度ひらいてください。</div>';
+      el('go').style.display = 'none';
+      el('cancel').textContent = '閉じる';
+      return;
+    }
+
+    var html = '<h2>料金の更新</h2>' +
+      '<p class="lead">下の内容で料金を書き換えます。<b>この画面で「更新する」を押すまで、何も変わりません。</b><br>' +
+      '更新すると、見積もりフォームの表示価格・依頼フォーム・請求書の単価が、いっせいにこの値になります。</p>';
+
+    if (DATA.warning) html += '<div class="warn">' + esc(DATA.warning) + '</div>';
+
+    if (DATA.changes.length > 0) {
+      html += '<div class="card"><h3>変える内容（' + DATA.changes.length + ' 件）</h3><table>' +
+        '<tr><th>項目</th><th class="num">いま</th><th class="num">更新後</th></tr>' +
+        DATA.changes.map(function (c) {
+          return '<tr><td>' + esc(c.name) + '</td>' +
+            '<td class="num was">' + esc(c.before) + '</td>' +
+            '<td class="num now">' + esc(c.after) + '</td></tr>';
+        }).join('') + '</table></div>';
+    }
+
+    if (DATA.renames.length > 0) {
+      html += '<div class="card"><h3>IDの付け替え（' + DATA.renames.length + ' 件）</h3><table>' +
+        '<tr><th>項目</th><th>いま</th><th>更新後</th></tr>' +
+        DATA.renames.map(function (r) {
+          return '<tr><td>' + esc(r.name) + '</td>' +
+            '<td><code class="was">' + esc(r.from) + '</code></td>' +
+            '<td><code>' + esc(r.to) + '</code></td></tr>';
+        }).join('') + '</table>' +
+        '<p class="sub" style="margin:10px 0 0">案件ボードの「選択の控え」も、同時に新しいIDへ書き換えます。</p></div>';
+    }
+
+    if (DATA.affected.length > 0) {
+      html += '<div class="card"><h3>単価が変わるお客様（' + DATA.affected.length + ' 名）</h3>' +
+        '<p class="sub" style="margin:0 0 12px">お客様ごとに、どちらにするか選んでください。' +
+        '「今までの単価のまま」を選ぶと、顧客タブの単価調整に差額を入れて据え置きます。</p>' +
+        DATA.affected.map(function (a, i) {
+          var sign = a.delta > 0 ? '+' : '';
+          return '<div class="pick">' +
+            '<div class="who">' + esc(a.customerId) + '　' + esc(a.name) + ' 様</div>' +
+            '<div class="sub" style="margin-bottom:6px">' + esc(a.caseId) + '　' + esc(a.status) + '</div>' +
+            '<label><input type="radio" name="p' + i + '" value="keep" checked> ' +
+              '<b>今までの単価のまま</b>（' + yen(a.was) + '/点）' +
+              '<span class="tag">　→ 単価調整に ' + sign + a.delta + '円/点 を追加（いま ' + a.current + ' → ' + a.next + '）</span></label>' +
+            '<label><input type="radio" name="p' + i + '" value="new"> ' +
+              '<b>新しい料金にする</b>（' + yen(a.was) + '/点 → ' + yen(a.now) + '/点）' +
+              '<span class="tag">　→ 次のご請求から新しい単価になります</span></label>' +
+            '</div>';
+        }).join('') + '</div>';
+    } else {
+      html += '<div class="ok">この変更で単価が変わるお客様はいません。</div>';
+    }
+
+    el('main').innerHTML = html;
+  }
+
+  function done(result) {
+    var html = '<h2>更新しました</h2><div class="ok">' + esc(result.summary).split('\n').join('<br>') + '</div>';
+    if (result.detail) {
+      html += '<div class="card" style="margin-top:14px"><h3>やったこと</h3><div class="sub" style="line-height:1.9">' +
+        esc(result.detail).split('\n').join('<br>') + '</div></div>';
+    }
+    html += '<p class="lead" style="margin-top:14px">更新前の内容は「料金履歴」タブに残っています。元に戻したいときはご連絡ください。</p>';
+    el('main').innerHTML = html;
+    el('go').style.display = 'none';
+    el('cancel').textContent = '閉じる';
+    el('cancel').disabled = false;
+    el('msg').textContent = '';
+    window.scrollTo(0, 0);
+  }
+
+  el('cancel').addEventListener('click', function () { google.script.host.close(); });
+
+  el('go').addEventListener('click', function () {
+    var picked = DATA.affected.filter(function (a, i) {
+      var chosen = document.querySelector('input[name=p' + i + ']:checked');
+      return chosen && chosen.value === 'keep';
+    });
+    el('go').disabled = true;
+    el('cancel').disabled = true;
+    el('msg').textContent = '書き換えています...';
+    google.script.run
+      .withSuccessHandler(done)
+      .withFailureHandler(function (e) {
+        el('msg').textContent = e.message;
+        el('go').disabled = false;
+        el('cancel').disabled = false;
+      })
+      .priceCommitUpdate(picked);
+  });
+
+  render();
+</script>
+</body>
+</html>
