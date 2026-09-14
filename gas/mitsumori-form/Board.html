@@ -48,8 +48,7 @@
   <label>予定点数（任意）</label>
   <input type="number" id="qty" min="0" placeholder="空欄ならメールに記載しません">
 
-  <button class="btn-main" id="btnDraft" disabled>案内メールを送信する</button>
-  <div class="hint" id="hint">納期予定を入力すると押せるようになります。</div>
+  <div class="hint" id="hint">初回のご案内は、顧客タブの「依頼フォームURL」をお送りください。カードのご登録と契約書へのご署名が済むと、手続き完了のご案内が自動で届きます。</div>
 
   <button class="btn-sub" id="btnSave">入力内容を保存する</button>
   <button class="btn-sub" id="btnMail">このお客様のメールを開く</button>
@@ -84,13 +83,8 @@
     };
   }
 
-  function refreshButton() {
-    var ok = document.getElementById('dueFrom').value;
-    document.getElementById('btnDraft').disabled = !ok;
-    document.getElementById('hint').textContent = ok
-      ? '押すとお客様へ案内メールを送信します。取り消せません。'
-      : '納期予定の開始日を入力すると押せるようになります。';
-  }
+  // 案内メール（T2）は廃止した。初回のご案内は依頼フォームとT4が受け持つ
+  function refreshButton() {}
 
   function render(data) {
     current = data;
@@ -118,17 +112,6 @@
     google.script.run.withSuccessHandler(function (d) { render(d); show('ok', '保存しました。'); })
       .withFailureHandler(function (e) { show('err', e.message); })
       .boardSaveCase(collect());
-  });
-
-  document.getElementById('btnDraft').addEventListener('click', function () {
-    document.getElementById('btnDraft').disabled = true;
-    google.script.run.withSuccessHandler(function (r) {
-      show('ok', r.message + '\n宛先: ' + r.to);
-      google.script.run.withSuccessHandler(render).boardGetActiveCase();
-    }).withFailureHandler(function (e) {
-      show('err', e.message);
-      refreshButton();
-    }).boardCreateGuideDraft(collect());
   });
 
   document.getElementById('btnMail').addEventListener('click', function () {

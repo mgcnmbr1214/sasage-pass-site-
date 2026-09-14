@@ -220,14 +220,6 @@ const BOARD_RESPONSE_TYPES = [
     template: 'T1', status: '', fields: [], invoice: false, requires: []
   },
   {
-    id: 'T2', name: '依頼確定・初回（受付開始日・納期に加え、支払い方法の登録と発送をご案内します）',
-    template: 'T2', status: BOARD_STATUS_SIGNING,
-    fields: ['dueFrom', 'dueTo', 'qty'], invoice: true,
-    requires: ['dueFrom'],
-    stamp: 'guideDraftAt',
-    forRegistration: 'first'
-  },
-  {
     // 追跡番号をいただいたあとに送る。**2回目以降はこれが依頼確定の代わり**。
     // 発送先も支払い方法も、依頼フォームとSquareが受け持つ
     id: 'T3', name: 'ご依頼を承りました（納期のご案内）',
@@ -2031,13 +2023,17 @@ function boardRemoveUnusedTemplates_(sheet) {
   const last = sheet.getLastColumn();
   if (last < 2) return 0;
 
+  // T2（依頼確定・初回）は、依頼フォーム → Squareの登録請求書 → 手続き完了（T4）に
+  // 置き換わった。T2B も同じく依頼フォームに置き換わっている
+  const gone = { T2: '依頼フォームとT4に置き換え', T2B: '依頼フォームに置き換え' };
   const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
   let removed = 0;
   for (let c = ids.length - 1; c >= 1; c--) {
-    if (String(ids[c] || '').trim() !== 'T2B') continue;
+    const id = String(ids[c] || '').trim();
+    if (!gone[id]) continue;
     sheet.deleteColumn(c + 1);
     removed++;
-    boardLog_('移行', 'テンプレ T2B を削除しました（依頼フォームに置き換え）');
+    boardLog_('移行', 'テンプレ ' + id + ' を削除しました（' + gone[id] + '）');
   }
   return removed;
 }
@@ -2260,7 +2256,7 @@ function boardMigrateTemplateNotes_(sheet) {
 
   for (let c = 1; c < ids.length; c++) {
     const id = String(ids[c] || '').trim();
-    if (id !== 'T2' && id !== 'T4') continue;
+    if (id !== 'T4') continue;
 
     const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
     const body = String(cell.getValue() || '');
@@ -2348,7 +2344,6 @@ function boardSeedTemplates_(sheet) {
 
   const seeds = [
     ['T1', '見積もり回答', '【ササゲパス】お見積もりのご案内', boardDefaultQuoteBody_(), 'フォーム回答への初回返信'],
-    ['T2', '依頼確定', '【ササゲパス】ご依頼を承りました（発送先・スケジュールのご案内）', boardDefaultGuideBody_(), '受付開始日と納期予定（自）が未入力なら送信できない。予定点数が空なら該当行が自動で消える'],
     ['T3', 'ご依頼を承りました（納期のご案内）', '【ササゲパス】ご依頼を承りました（納期のご案内）', boardDefaultDueNoticeBody_(), '追跡番号をいただいたあとに送る。納期予定（自）が未入力なら送信できない'],
     ['T4', '手続き完了のご連絡', '【ササゲパス】お手続きを確認いたしました', boardDefaultDoneBody_(), '署名・カード登録の確認後に送る'],
     ['T5', 'リマインド（手続き未完了）', '【ササゲパス】お手続きのご確認', boardDefaultRemindPaymentBody_(), '請求書を送ってから一定日数が経っても署名・支払いが確認できないとき'],
@@ -2432,69 +2427,6 @@ function boardDefaultGuideRepeatBody_() {
     '今回のご利用ぶんは月末締めでまとめ、',
     'ご登録いただいているカードより自動でお支払いいただきます。',
     'お客様にてお手続きいただく必要はございません。',
-    '',
-    '━━━━━━━━━━━━━━━━━━━━',
-    '■ 発送先',
-    '━━━━━━━━━━━━━━━━━━━━',
-    'ヤマト運輸の「営業所止め」でご発送ください。',
-    '',
-    '　営業所コード　：{{営業所コード}}',
-    '　営 業 所 名　：{{営業所名}}',
-    '　〒{{発送先郵便番号}}　大阪府松原市',
-    '　{{発送先宛名}}',
-    '　電 話 番 号　：{{発送先TEL}}',
-    '　品　　　名　：{{品名}}',
-    '',
-    '・ヤマト運輸のWeb集荷をご利用の場合は、上記の営業所コードをご入力ください。',
-    '・手書きの送り状の場合は上記のとおりご記入のうえ、',
-    '　伝票右下の「営業所受け取りサービス」へのチェックを必ずお願いいたします。',
-    '',
-    '━━━━━━━━━━━━━━━━━━━━',
-    '■ 発送にあたってのお願い',
-    '━━━━━━━━━━━━━━━━━━━━',
-    '・梱包方法に指定はございません。ご都合のよい方法で結構です。',
-    '・ご発送後、このメールにそのままご返信いただく形で、',
-    '　送り状のお問い合わせ番号（追跡番号）またはお控えの写真をお送りください。',
-    '・商品の状態に応じて、弊社判断で必要なメンテナンスを行います。',
-    '　手を加えてほしくない商品がある場合は、',
-    '　「メンテナンス不要」とわかる形でご発送ください。',
-    '',
-    'ご不明な点がございましたら、本メールへのご返信にてお気軽にご連絡ください。',
-    '引き続きどうぞよろしくお願い申し上げます。'
-  ].join('\n');
-}
-
-function boardDefaultGuideBody_() {
-  return [
-    '{{会社名}}',
-    '{{担当者名}} 様',
-    '',
-    'お世話になっております。ササゲパス運営事務局です。',
-    'このたびはご依頼をいただき、誠にありがとうございます。',
-    '下記のとおりご案内いたしますので、ご確認をお願いいたします。',
-    '',
-    '━━━━━━━━━━━━━━━━━━━━',
-    '■ ご依頼内容',
-    '━━━━━━━━━━━━━━━━━━━━',
-    '　ご依頼内容　：{{依頼内容}}',
-    '　ご依頼点数　：{{予定点数}}点',
-    '　単　　　価　：{{単価}}／点',
-    '　受付開始日　：{{受付開始日}}',
-    '　納期の目安　：{{納期予定}}',
-    '　※上記受付開始日に到着した際のおおよその目安です。',
-    '　※初回のみ、ストア情報登録のため、通常より大幅に納期をいただいております。',
-    '',
-    '━━━━━━━━━━━━━━━━━━━━',
-    '■ ご発送前のお手続き（お支払い方法のご登録）',
-    '━━━━━━━━━━━━━━━━━━━━',
-    '本メールとは別に、Square より',
-    '「サービスご利用における決済情報のご登録とご署名に関するお願い」',
-    'という件名で、220円（税込）のご請求書をお送りしております。',
-    '',
-    'こちらは毎月のご請求を自動化するための、',
-    'カード情報のご登録と契約書へのご署名のお手続きです。',
-    '恐れ入りますが、ご発送の前にお手続きをお願いいたします。',
-    '手順は請求書メール内に記載しております。',
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     '■ 発送先',
@@ -4887,50 +4819,6 @@ function boardFindLatestCaseRow_(ss, customerId) {
     found = i + 2;
   });
   return found;
-}
-
-function boardCreateGuideDraft(data) {
-  boardUseCurrentColumns_();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-  const row = Number(data.row);
-
-  boardSaveCase(data);
-
-  const v = sheet.getRange(row, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
-  if (!v[BOARD_COL.dueFrom - 1]) {
-    throw new Error('納期予定（自）を入力してください。');
-  }
-
-  const customerId = v[BOARD_COL.customerId - 1];
-  const customer = boardFindCustomer_(ss, customerId);
-  if (!customer) {
-    throw new Error('顧客 ' + customerId + ' が「顧客」タブに見つかりません。');
-  }
-  if (!boardIsEmail_(customer.email)) {
-    throw new Error('顧客 ' + customerId + ' のメールアドレスが正しくありません。\n現在の値：「' +
-      (customer.email || '空欄') + '」\n「顧客」タブのD列を修正してください。');
-  }
-
-  const built = boardBuildTemplateText_(ss, row, 'T2');
-  const subject = built.subject;
-  const body = built.body;
-  const settings = boardGetSettings_(ss);
-  const options = { name: 'ササゲパス' };
-  const alias = settings['送信元エイリアス'];
-  if (alias && GmailApp.getAliases().indexOf(alias) >= 0) options.from = alias;
-
-  GmailApp.sendEmail(customer.email, subject, body, options);
-
-  sheet.getRange(row, BOARD_COL.guideDraftAt).setValue(new Date());
-  if (!sheet.getRange(row, BOARD_COL.invoiceSent).getValue()) {
-    sheet.getRange(row, BOARD_COL.invoiceSent).setValue(new Date());
-  }
-  sheet.getRange(row, BOARD_COL.status).setValue(BOARD_STATUS_SIGNING);
-  boardSetTodoFormula_(sheet, row);
-  boardLog_('送信', v[BOARD_COL.caseId - 1] + ' の案内メールを送信しました');
-
-  return { message: '案内メールを送信しました。', to: customer.email };
 }
 
 // ------------------------------------------------------------
