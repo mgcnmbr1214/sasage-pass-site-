@@ -647,6 +647,15 @@ function boardSetup() {
 /** 初期セットアップに使ってよい時間。Google側の上限（6分）より手前で切り上げる。 */
 const BOARD_PROP_WEB_APP_URL = 'BOARD_WEB_APP_URL';
 
+/**
+ * 依頼フォームをお客様にお見せするときのURLの土台。
+ *
+ * 空なら、Apps Script のURLをそのままお送りする。
+ * `https://sasagepass.com/order/` を入れると、そちらでお見せする形に切り替わる。
+ * **すでにお送りしたURLも、そのまま使える。** 中身は同じものを見に行くため。
+ */
+const BOARD_PROP_FORM_BASE_URL = 'BOARD_FORM_BASE_URL';
+
 const BOARD_SETUP_BUDGET_MS = 3.5 * 60 * 1000;
 
 /**
@@ -3950,10 +3959,19 @@ function boardWebAppUrl_() {
 function boardOrderFormUrl_(customer) {
   const key = customer ? String(customer.formKey || '').trim() : '';
   if (!customer || !key) return '';
+
+  const tail = 'cid=' + encodeURIComponent(customer.id) + '&k=' + encodeURIComponent(key);
+  const own = String(
+    PropertiesService.getScriptProperties().getProperty(BOARD_PROP_FORM_BASE_URL) || ''
+  ).trim();
+  // 自社サイトに置いたページは、page=order を自分で付けるので要らない
+  if (own) {
+    const root = own.replace(/[?#].*$/, '');
+    return (root.charAt(root.length - 1) === '/' ? root : root + '/') + '?' + tail;
+  }
+
   const base = boardWebAppUrl_();
-  if (!base) return '';
-  return base +
-    '?page=order&cid=' + encodeURIComponent(customer.id) + '&k=' + encodeURIComponent(key);
+  return base ? base + '?page=order&' + tail : '';
 }
 
 function boardFindCustomerPlan_(ss, customerId) {

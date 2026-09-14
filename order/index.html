@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ご依頼フォーム | ササゲパス</title>
+  <meta name="robots" content="noindex, nofollow">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --navy: #3B6EF8;
+      --gray-mid: #DDE4F8;
+      --text: #1E293B;
+      --text-mid: #5A6A8A;
+      --header-h: 56px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+    body {
+      font-family: 'Noto Sans JP', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f7f3ed;
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .mt-header {
+      flex: 0 0 auto;
+      height: var(--header-h);
+      background: #fff;
+      border-bottom: 1px solid var(--gray-mid);
+      display: flex;
+      align-items: center;
+    }
+    .mt-header-inner {
+      width: 100%;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .mt-logo img { height: 30px; width: auto; display: block; }
+    .mt-back {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-mid);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .mt-back:hover { color: var(--navy); }
+
+    /* フォーム本体は残り全面を占め、内部でスクロールします（見積もりフォームと同じ方式） */
+    .mt-frame-wrap { flex: 1 1 auto; min-height: 0; }
+    #orderFrame { display: block; width: 100%; height: 100%; border: 0; }
+
+    .mt-error {
+      max-width: 640px;
+      margin: 48px auto;
+      padding: 20px 22px;
+      background: #fff;
+      border: 1px solid var(--gray-mid);
+      border-radius: 12px;
+      line-height: 1.9;
+      font-size: 14px;
+    }
+    .mt-error b { color: #A32D2D; }
+
+    @media (max-width: 767px) {
+      :root { --header-h: 48px; }
+      .mt-header-inner { padding: 0 14px; }
+      .mt-logo img { height: 24px; }
+      .mt-back { font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="mt-header">
+    <div class="mt-header-inner">
+      <a href="/" class="mt-logo">
+        <img src="https://sasagepass.square.site/uploads/b/f1910340-c84c-11f0-97f6-71a006ccaaab/%E3%82%B5%E3%82%B5%E3%82%B2%E3%83%91%E3%82%B9%20%E3%83%AD%E3%82%B4%20%282%29.png" alt="ササゲパス">
+      </a>
+      <a href="/" class="mt-back">← サービス内容に戻る</a>
+    </div>
+  </header>
+
+  <div class="mt-frame-wrap" id="wrap"></div>
+
+  <script>
+    (function () {
+      // 依頼フォームはお客様ごとに違う。URLの cid と k をそのまま中へ渡す
+      var APP = 'https://script.google.com/macros/s/AKfycbwUoYXP1qgqAXsjvYX6YH_BU-nKWgV8AQkop7FG5-_kB-Rp18zZuJqnqbMAF7TlyoLl/exec';
+
+      var params = new URLSearchParams(window.location.search);
+      var cid = (params.get('cid') || '').trim();
+      var key = (params.get('k') || '').trim();
+
+      var wrap = document.getElementById('wrap');
+
+      // **鍵が無いURLでは開かない。** 誰のご依頼か決められないため
+      if (!/^C\d+$/.test(cid) || !/^[a-z0-9]{6,32}$/.test(key)) {
+        wrap.innerHTML =
+          '<div class="mt-error">' +
+          '<b>このURLでは開けません。</b><br>' +
+          'お送りしたメールに記載のご依頼フォームのURLを、そのままお使いください。<br>' +
+          'URLが分からなくなった場合は、お手数ですがメールにてご連絡ください。' +
+          '</div>';
+        return;
+      }
+
+      var frame = document.createElement('iframe');
+      frame.id = 'orderFrame';
+      frame.title = 'ササゲパス ご依頼フォーム';
+      frame.loading = 'eager';
+      frame.referrerPolicy = 'no-referrer-when-downgrade';
+      frame.src = APP + '?page=order&cid=' + encodeURIComponent(cid) + '&k=' + encodeURIComponent(key);
+      wrap.appendChild(frame);
+    })();
+  </script>
+
+</body>
+</html>
