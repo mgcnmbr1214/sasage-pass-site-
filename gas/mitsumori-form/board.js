@@ -715,7 +715,6 @@ function boardMigrateCases_(ss) {
     boardLog_('移行', '案件ボードの 対応不要 列を削除しました（メール履歴へ移動）');
   }
   headers = boardInsertColumnAfter_(sheet, headers, 'お客様', '依頼日');
-  headers = boardInsertColumnAfter_(sheet, headers, 'Square請求書ID', '運送業者');
 
   // 受付開始日は使わなくなった。納期の目安はメールでお伝えする
   const startCol = headers.indexOf('受付開始日');
@@ -730,7 +729,6 @@ function boardMigrateCases_(ss) {
   headers = boardInsertColumnAfter_(sheet, headers, '依頼内容', 'フォームの問い合わせ内容');
   headers = boardInsertColumnAfter_(sheet, headers, 'フォームの問い合わせ内容', '最新の受信メール');
   headers = boardInsertColumnAfter_(sheet, headers, '最新の受信メール', '最新の送信メール');
-  headers = boardInsertColumnAfter_(sheet, headers, '請求書送付日', 'Square請求書ID');
   headers = boardInsertColumnAfter_(sheet, headers, '追跡番号', '作業チーム共有');
 
   // 点数は3段階。お客様のご申告 → お預かりして数えた数 → 実際に返送した数。
@@ -3247,11 +3245,30 @@ function boardEnsureLayout_(ss) {
     boardMigrateCustomers_(ss);
     if (boardSyncColumns_(sheet)) return true;
 
+    // **中身のある案件ボードに、既定の並びの見出しを被せない。**
+    // お客様が並べ替えた列の上に既定の順で名前を書くと、名前と中身が総取り替えになり、
+    // 以降の処理がすべて別の列を読み書きする。実際にそれで案件ボードが壊れた。
+    if (sheet.getLastRow() > 1) {
+      boardLog_('移行',
+        '案件ボードの見出しをそろえられませんでした。中身があるため、既定の並びでの上書きは行いません。' +
+        '不足している見出し: ' + boardMissingCaseHeaders_(sheet).join('、'));
+      return false;
+    }
+
     sheet.getRange(1, 1, 1, BOARD_CASE_HEADERS.length).setValues([BOARD_CASE_HEADERS]);
     const ok = boardSyncColumns_(sheet);
     if (!ok) boardLog_('移行', '列構成を合わせられませんでした。初期セットアップを実行してください');
     return ok;
   }) === true;
+}
+
+/** そろっていない見出しの名前。何が足りないのか分からないと直せない。 */
+function boardMissingCaseHeaders_(sheet) {
+  const headers = sheet.getLastColumn() > 0
+    ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+      .map(function (h) { return String(h || '').trim(); })
+    : [];
+  return BOARD_CASE_HEADERS.filter(function (name) { return headers.indexOf(name) < 0; });
 }
 
 /** 列を付け替えている最中か。入れ子で鍵を二重に取らないための目印。 */
