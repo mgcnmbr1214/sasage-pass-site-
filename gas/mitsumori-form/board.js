@@ -3494,6 +3494,14 @@ const BOARD_COL_KEY_BY_HEADER = (function () {
   return map;
 })();
 
+const BOARD_CUSTOMER_KEY_BY_HEADER = (function () {
+  const map = {};
+  Object.keys(BOARD_CUSTOMER_COL).forEach(function (key) {
+    map[BOARD_CUSTOMER_HEADERS[BOARD_CUSTOMER_COL[key] - 1]] = key;
+  });
+  return map;
+})();
+
 /**
  * シートの見出しを読み、列番号の対応を実際の並びに合わせる。
  *
@@ -5428,6 +5436,28 @@ function boardLog_(kind, message) {
  * 実行のたび一度だけ見出しを読み、BOARD_COL を実際の並びに合わせる。
  */
 let BOARD_COLUMNS_SYNCED = false;
+/**
+ * 顧客タブの列番号を、実際の見出しの並びに合わせる。
+ *
+ * 案件ボードと同じ考え方。**見出しがすべて揃っていれば並び順は自由。**
+ * 揃っていなければ何もしない（既定の番号のまま）。
+ */
+function boardSyncCustomerColumns_(sheet) {
+  if (!sheet || sheet.getLastColumn() < 1) return false;
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+
+  const found = {};
+  BOARD_CUSTOMER_HEADERS.forEach(function (name) {
+    const index = headers.indexOf(name);
+    if (index >= 0) found[BOARD_CUSTOMER_KEY_BY_HEADER[name]] = index + 1;
+  });
+
+  if (Object.keys(found).length !== BOARD_CUSTOMER_HEADERS.length) return false;
+  Object.keys(found).forEach(function (key) { BOARD_CUSTOMER_COL[key] = found[key]; });
+  return true;
+}
+
 function boardUseCurrentColumns_() {
   if (BOARD_COLUMNS_SYNCED) return;
   BOARD_COLUMNS_SYNCED = true;
@@ -5437,6 +5467,9 @@ function boardUseCurrentColumns_() {
     // 見出しが揃っていなければ、その場で列を足してから引き直す。
     // 古い並びのまま既定の列番号で書き込むと、別の列を壊す
     if (sheet && !boardSyncColumns_(sheet)) boardEnsureLayout_(ss);
+    // 顧客タブも実際の並びで引き直す。**依頼フォームの鍵をここから読むため、
+    // 列がずれると「鍵が合いません」とだけ出て、原因が分からなくなる**
+    boardSyncCustomerColumns_(ss.getSheetByName(BOARD_SHEET_CUSTOMERS));
     boardEnsureMailColumns_(ss);
   } catch (err) {
     boardLog_('移行', '列の並びを読めませんでした: ' + err.message);
