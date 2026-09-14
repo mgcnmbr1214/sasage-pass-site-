@@ -160,7 +160,8 @@ const BOARD_ADJUST_COLS = ['priceAdjust', 'flatAdjust', 'adjustNote'];
  */
 const BOARD_CUSTOMER_INTAKE = [
   { label: 'ストア名', col: 'storeName' },
-  { label: '会社名', col: 'company' },
+  // 個人事業主の方は空のことがある。不足としては数えない
+  { label: '会社名', col: 'company', optional: true },
   { label: '代表者名義', col: 'representative' },
   { label: '請求先郵便番号', col: 'billZip' },
   { label: '請求先住所', col: 'billAddress' },
@@ -255,7 +256,7 @@ const BOARD_RESPONSE_TYPES = [
   {
     id: 'T9', name: '返送開始のお知らせ（返送の連絡。この送信が月々のご請求の対象になります）',
     template: 'T9', status: BOARD_STATUS_DONE,
-    fields: ['shipQty', 'shipTracking'], invoice: false,
+    fields: ['shipQty', 'shipCarrier', 'shipTracking'], invoice: false,
     requires: ['shipQty', 'shipTracking'],
     shipment: true
   }
@@ -280,6 +281,8 @@ const BOARD_CASE_FIELDS = {
   // 返送の追跡番号は返送履歴だけに残す。
   // 案件ボードの「追跡番号」はお客様から弊社への発送のものなので、上書きしない
   shipQty: { label: '返送した点数', type: 'number', col: 'shippedQty' },
+  // 追跡のURLは業者ごとに違う。**番号だけでは確認先を出せない**
+  shipCarrier: { label: '返送の運送業者', type: 'select', optionsFrom: 'carriers', col: '' },
   shipTracking: { label: '返送の追跡番号', type: 'text', col: '' }
 };
 
@@ -2065,6 +2068,7 @@ function boardSetupTemplates_(ss) {
   boardMigrateNextOrderBlock_(sheet);
   boardMigrateStartDateLines_(sheet);
   boardMigrateShipPrompt_(sheet);
+  boardMigrateTrackingUrl_(sheet);
 
   const last = sheet.getLastColumn();
   if (last > 1) {
@@ -2686,6 +2690,36 @@ function boardMigrateReceivedCount_(sheet) {
     if (body.indexOf('{{予定点数}}') < 0) return;
     cell.setValue(body.split('{{予定点数}}').join('{{点数}}'));
     boardLog_('移行', 'テンプレ T7 の点数を、実際にお預かりした点数に付け替えました');
+    return;
+  }
+}
+
+/**
+ * 返送開始（T9）に、追跡状況の確認先を足す。
+ *
+ * 番号だけでは、お客様がどこで調べればよいのか分からない。
+ * 業者が「その他」で確認先が無いときは、その行ごと消える。
+ */
+function boardMigrateTrackingUrl_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return;
+
+  const NL = String.fromCharCode(10);
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
+  for (let c = 1; c < ids.length; c++) {
+    if (String(ids[c] || '').trim() !== 'T9') continue;
+    const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
+    const body = String(cell.getValue() || '');
+    if (!body || body.indexOf('{{返送追跡URL}}') >= 0) return;
+
+    const lines = body.split(NL);
+    const at = lines.findIndex(function (l) { return l.indexOf('{{返送追跡番号}}') >= 0; });
+    if (at < 0) return;
+
+    lines[at] = '　追跡番号：{{返送追跡番号}}（{{返送運送業者}}）';
+    lines.splice(at + 1, 0, '　追跡状況の確認：{{返送追跡URL}}');
+    cell.setValue(lines.join(NL));
+    boardLog_('移行', 'テンプレ T9 に追跡状況の確認先を足しました');
     return;
   }
 }
@@ -3863,9 +3897,15 @@ function boardEvaluateReadiness_(ss, customerId) {
   const missing = [];
   if (!customer) return { ready: false, missing: ['顧客情報'] };
 
+  // **契約が済んだお客様に、初回の聞き取りの不足を出さない。**
+  // 返送のご連絡をするときに「会社名が無い」と言われても、することがない
+  if (String(customer.values[BOARD_CUSTOMER_COL.signedAt - 1] || '').trim()) {
+    return { ready: true, missing: [] };
+  }
+
   BOARD_CUSTOMER_INTAKE.forEach(function (item) {
     const col = BOARD_CUSTOMER_COL[item.col];
-    if (!col) return;
+    if (!col || item.optional) return;
     if (!String(customer.values[col - 1] || '').trim()) missing.push(item.label);
   });
 

@@ -887,7 +887,13 @@ function mailGetResponseTypes() {
     return {
       id: t.id, name: t.name, status: t.status,
       fields: (t.fields || []).map(function (key) {
-        return { key: key, label: BOARD_CASE_FIELDS[key].label, type: BOARD_CASE_FIELDS[key].type };
+        const field = BOARD_CASE_FIELDS[key];
+        return {
+          key: key, label: field.label, type: field.type,
+          // 運送業者の一覧は依頼フォームと同じものを使う。呼ばれた時に組み立てる
+          options: field.optionsFrom === 'carriers'
+            ? ORDER_CARRIERS.map(function (c) { return c.name; }) : []
+        };
       }),
       invoice: !!t.invoice,
       forRegistration: t.forRegistration || '',
@@ -1079,9 +1085,14 @@ function mailSaveCustomerField_(ss, customerId, field, value) {
 /** 返送の入力欄を、テンプレートの差し込み名に置き換える。 */
 function mailShipmentVars_(fields) {
   const data = fields || {};
+  const carrier = String(data.shipCarrier || '').trim();
+  const tracking = String(data.shipTracking == null ? '' : data.shipTracking).trim();
   return {
     '返送点数': data.shipQty == null ? '' : data.shipQty,
-    '返送追跡番号': data.shipTracking == null ? '' : data.shipTracking
+    '返送追跡番号': tracking,
+    '返送運送業者': carrier,
+    // 「その他」など確認先が無い業者のときは空。テンプレ側で行ごと消える
+    '返送追跡URL': orderTrackingUrl_(carrier, tracking)
   };
 }
 

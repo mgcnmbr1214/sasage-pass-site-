@@ -60,6 +60,10 @@
   .extras { background: #FFF6F1; border: 1px solid #FFD9C7; border-radius: 8px; padding: 11px 13px; margin-top: 10px; }
   .extras-title { font-size: 12px; font-weight: 700; color: #C24A18; margin-bottom: 6px; }
   .ex-label { display: block; font-size: 11.5px; font-weight: 700; color: #5A6A8A; margin: 9px 0 4px; }
+  .extras select {
+    width: 100%; padding: 9px 10px; font-size: 13px; margin-bottom: 10px;
+    border: 1px solid #C7D2EA; border-radius: 8px; background: #fff; color: #26324A;
+  }
   .extras input { width: 100%; box-sizing: border-box; border: 1px solid #FFD9C7; border-radius: 8px; padding: 7px 10px; font-size: 13px; font-family: inherit; background: #fff; }
   .inv { border-top: 1px solid #FFD9C7; margin-top: 12px; padding-top: 10px; }
   .inv-state { font-size: 12.5px; color: #5A6A8A; margin-bottom: 2px; }
@@ -418,9 +422,17 @@
     var html = casesBlock() +
       '<div class="extras"><div class="extras-title">この対応に必要な入力（案件 ' + esc(ctx.caseId) + '）</div>';
     type.fields.forEach(function (f) {
+      var now = remembered(type, f.key);
       html += '<label class="ex-label">' + esc(f.label) +
-        (type.requireKeys.indexOf(f.key) >= 0 ? ' <span style="color:#e5484d">*</span>' : '') + '</label>' +
-        '<input type="' + f.type + '" id="fx_' + f.key + '" value="' + esc(remembered(type, f.key)) + '">';
+        (type.requireKeys.indexOf(f.key) >= 0 ? ' <span style="color:#e5484d">*</span>' : '') + '</label>';
+      if (f.type === 'select') {
+        // 運送業者のように、決まったものから選ぶ欄
+        html += '<select id="fx_' + f.key + '">' + (f.options || []).map(function (o) {
+          return '<option value="' + esc(o) + '"' + (o === now ? ' selected' : '') + '>' + esc(o) + '</option>';
+        }).join('') + '</select>';
+        return;
+      }
+      html += '<input type="' + f.type + '" id="fx_' + f.key + '" value="' + esc(now) + '">';
     });
     if (type.fields.length > 0) {
       var answered = [];
