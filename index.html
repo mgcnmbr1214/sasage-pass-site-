@@ -670,7 +670,7 @@
               <td><i class="fa-solid fa-xmark cross"></i></td>
               <td><i class="fa-solid fa-xmark cross"></i></td>
               <td><i class="fa-solid fa-xmark cross"></i></td>
-              <td class="plan-price" data-edit-id="price-a-price" data-edit-label="料金表 プランA：料金" data-edit-type="text">¥400</td>
+              <td class="plan-price" data-plan="a" data-edit-id="price-a-price" data-edit-label="料金表 プランA：料金" data-edit-type="text">¥400</td>
             </tr>
             <tr>
               <td class="plan-name" data-edit-id="price-b-name" data-edit-label="料金表 プランB：名称" data-edit-type="text">プランB</td>
@@ -678,7 +678,7 @@
               <td><i class="fa-solid fa-circle-check check"></i></td>
               <td><i class="fa-solid fa-xmark cross"></i></td>
               <td><i class="fa-solid fa-xmark cross"></i></td>
-              <td class="plan-price" data-edit-id="price-b-price" data-edit-label="料金表 プランB：料金" data-edit-type="text">¥600</td>
+              <td class="plan-price" data-plan="b" data-edit-id="price-b-price" data-edit-label="料金表 プランB：料金" data-edit-type="text">¥600</td>
             </tr>
             <tr>
               <td class="plan-name"><span data-edit-id="price-c-name" data-edit-label="料金表 プランC：名称" data-edit-type="text">プランC</span></td>
@@ -686,7 +686,7 @@
               <td><i class="fa-solid fa-circle-check check"></i></td>
               <td><i class="fa-solid fa-circle-check check"></i></td>
               <td><i class="fa-solid fa-xmark cross"></i></td>
-              <td class="plan-price" data-edit-id="price-c-price" data-edit-label="料金表 プランC：料金" data-edit-type="text">¥900</td>
+              <td class="plan-price" data-plan="c" data-edit-id="price-c-price" data-edit-label="料金表 プランC：料金" data-edit-type="text">¥900</td>
             </tr>
             <tr>
               <td class="plan-name" data-edit-id="price-d-name" data-edit-label="料金表 プランD：名称" data-edit-type="text">プランD</td>
@@ -694,12 +694,24 @@
               <td><i class="fa-solid fa-circle-check check"></i></td>
               <td><i class="fa-solid fa-circle-check check"></i></td>
               <td><i class="fa-solid fa-circle-check check"></i></td>
-              <td class="plan-price" data-edit-id="price-d-price" data-edit-label="料金表 プランD：料金" data-edit-type="text">¥1,000〜</td>
+              <td class="plan-price" data-plan="d" data-edit-id="price-d-price" data-edit-label="料金表 プランD：料金" data-edit-type="text">¥1,000〜</td>
             </tr>
           </tbody>
         </table>
       </div>
       <p class="price-note"><i class="fa-solid fa-circle-info"></i> <span data-edit-id="price-note" data-edit-label="料金表：下部注記" data-edit-type="text">※クリーニングは無料サービス。数量や各オプションの有無で、店舗様毎に調整させていただきます。</span></p>
+
+      <!-- 数量割引。中身は料金設計タブから読み込みます（読めなければ下の内容のまま） -->
+      <div class="price-tiers" id="price-tiers">
+        <h3 class="price-tiers-title">数量割引</h3>
+        <ul class="tier-list" id="tier-list">
+          <li><span class="tier-name">月1〜49点</span><span class="tier-off">通常料金</span></li>
+          <li><span class="tier-name">月50〜100点</span><span class="tier-off">1点あたり ¥50 引き</span></li>
+          <li><span class="tier-name">月100〜500点</span><span class="tier-off">1点あたり ¥100 引き</span></li>
+          <li><span class="tier-name">月501点以上</span><span class="tier-off">1点あたり ¥200 引き</span></li>
+        </ul>
+        <p class="price-note">※ その月にご発送いただいたお荷物の、お預かり点数の合計で決まります。</p>
+      </div>
       <div class="price-cta">
         <a href="/mitsumori/" class="btn btn-primary" target="_blank" rel="noopener">１分で料金チェック <i class="fa-solid fa-arrow-right"></i></a>
       </div>
@@ -1035,6 +1047,74 @@
           setLoading(false);
         });
       }
+    })();
+  </script>
+
+  <script>
+    /**
+     * 料金表を、スプレッドシートの「料金設計」タブから読み直します。
+     *
+     * ここに書いてある金額は控えです。読み込めたときだけ書き換えるので、
+     * 通信できなくても料金表が消えることはありません。
+     * プランの組み合わせだけはこちらで決めています（料金設計にあるのは項目ごとの単価）。
+     */
+    (function () {
+      var PRICE_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwUoYXP1qgqAXsjvYX6YH_BU-nKWgV8AQkop7FG5-_kB-Rp18zZuJqnqbMAF7TlyoLl/exec?page=price';
+
+      // プラン＝料金設計のどの項目を足したものか。IDは料金設計タブのID列と同じです
+      var PLANS = {
+        a: ['photo_basic'],
+        b: ['photo_basic', 'measure_basic'],
+        c: ['photo_basic', 'measure_basic', 'listing_single'],
+        d: ['photo_basic', 'measure_basic', 'listing_single', 'listing_multi']
+      };
+      var OPEN_ENDED = { d: true };   // 「〜」を付けるプラン
+
+      function yen(n) { return '¥' + Number(n).toLocaleString('ja-JP'); }
+
+      function fillPlans(items) {
+        var price = {};
+        items.forEach(function (item) { price[item.id] = Number(item.price || 0); });
+
+        Object.keys(PLANS).forEach(function (key) {
+          var cell = document.querySelector('[data-plan="' + key + '"]');
+          if (!cell) return;
+          var sum = 0;
+          var ok = PLANS[key].every(function (id) {
+            if (price[id] === undefined) return false;   // 項目が消えていれば触らない
+            sum += price[id];
+            return true;
+          });
+          if (!ok) return;
+          cell.textContent = yen(sum) + (OPEN_ENDED[key] ? '〜' : '');
+        });
+      }
+
+      function fillTiers(tiers) {
+        var list = document.getElementById('tier-list');
+        if (!list || !tiers || !tiers.length) return;
+        list.innerHTML = tiers.map(function (t) {
+          var li = document.createElement('li');
+          var name = document.createElement('span');
+          var off = document.createElement('span');
+          name.className = 'tier-name';
+          off.className = 'tier-off';
+          name.textContent = t.label;
+          off.textContent = t.text;
+          li.appendChild(name);
+          li.appendChild(off);
+          return li.outerHTML;
+        }).join('');
+      }
+
+      fetch(PRICE_ENDPOINT, { method: 'GET' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!data) return;
+          if (data.items) fillPlans(data.items);
+          if (data.tiers) fillTiers(data.tiers);
+        })
+        .catch(function () { /* 読めなければ、書いてある控えのまま出します */ });
     })();
   </script>
 

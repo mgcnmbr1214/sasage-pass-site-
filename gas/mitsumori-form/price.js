@@ -226,6 +226,46 @@ function priceDrawButtons_(sheet) {
   put(PRICE_BUTTON_RELOAD_PNG, 3, 'priceReloadSheet');
 }
 
+/**
+ * サイトの料金表が読みに来る、料金だけのJSON。
+ *
+ * **サイトに料金を手で写さないため。** トップページの料金表は 長らく
+ * HTMLに直接書かれていて、料金設計を更新しても変わらなかった。
+ * ここを通せば、更新した瞬間にサイトの表示もそろう。
+ */
+function priceJson_() {
+  const config = getConfig_();
+
+  const items = [];
+  (config.menus || []).forEach(function (menu) {
+    if (menu.enabled === false) return;
+    (menu.items || []).forEach(function (item) {
+      if (item.enabled === false || item.type === 'text') return;
+      items.push({
+        id: String(item.id || ''),
+        name: String(item.name || ''),
+        group: String(menu.name || ''),
+        price: Number(item.unitPrice || 0)
+      });
+    });
+  });
+
+  const tiers = ((config.quantityOptions && config.quantityOptions.monthly) || [])
+    .filter(function (t) { return t.enabled !== false; })
+    .map(function (t) {
+      return {
+        label: String(t.label || ''),
+        from: Number(t.quantity || 0),
+        text: orderTierText_(t, config)
+      };
+    })
+    .sort(function (a, b) { return a.from - b.from; });
+
+  return ContentService
+    .createTextOutput(JSON.stringify({ items: items, tiers: tiers, updatedAt: priceNow_() }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
 function priceNow_() {
   return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm');
 }

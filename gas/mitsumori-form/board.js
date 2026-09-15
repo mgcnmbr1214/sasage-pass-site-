@@ -31,6 +31,11 @@ const BOARD_STATUS_WORKING = '作業中';
 const BOARD_STATUS_DONE = '返送済';
 const BOARD_STATUS_CLOSED = '見送り';
 
+/** 片づけた行の置き場。**消さずにここへ移す。** 理由は boardArchiveClosedCases に。 */
+const BOARD_SHEET_ARCHIVE_CASES = '片づけた案件';
+const BOARD_SHEET_ARCHIVE_CUSTOMERS = '片づけたお客様';
+const BOARD_ARCHIVE_STAMP = '片づけた日';
+
 const BOARD_STATUSES = [
   BOARD_STATUS_NEW, BOARD_STATUS_SIGNING, BOARD_STATUS_WAITING_SHIP,
   BOARD_STATUS_SHIPPED, BOARD_STATUS_WORKING, BOARD_STATUS_DONE, BOARD_STATUS_CLOSED
@@ -508,6 +513,7 @@ function onOpen() {
       .addItem('過去の請求書の設定を読み取る', 'squareInspectTemplate')
       .addSeparator()
       .addItem('フォーム回答だけを取り込む', 'boardImportResponses')
+      .addItem('見送りの案件を片づける', 'boardArchiveClosedCases')
       .addItem('顧客・案件を作り直す', 'boardRebuild'))
     .addToUi();
 }
@@ -1258,6 +1264,204 @@ function boardClearOldMailCells_(sheet, customerId, keepRow) {
     });
   });
   return cleared;
+}
+
+/**
+ * 見送りの案件を、案件ボードから「片づけた案件」へ移す。
+ *
+ * **消さずに移す。** 行を消すと、3つのことが起きる。
+ * 　① 取り込み済みの判断は「元回答行」だけを見ているので、次の取り込みで復活する
+ * 　② 案件IDは「いまある最大＋1」で振るので、番号が使い回される
+ * 　③ 顧客タブは残るので、そのアドレスを新着メールが拾い続ける
+ * 移しておけば、取り込みも採番もアーカイブを一緒に見るため、どれも起きない。
+ * **返送の記録がある案件には触らない。** 請求の根拠を動かさないため。
+ */
+function boardArchiveClosedCases() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  boardUseCurrentColumns_();
+
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!cases || cases.getLastRow() < 2) {
+    ui.alert('片づける案件はありませんでした。');
+    return;
+  }
+
+  const busy = boardCaseIdsInRecords_(ss);
+  const values = cases.getRange(2, 1, cases.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+
+  const targets = [];
+  const kept = [];
+  values.forEach(function (row, i) {
+    const caseId = String(row[BOARD_COL.caseId - 1] || '').trim();
+    if (!caseId) return;
+    if (String(row[BOARD_COL.status - 1] || '').trim() !== BOARD_STATUS_CLOSED) return;
+    if (busy[caseId]) { kept.push(caseId); return; }
+    targets.push({ row: i + 2, caseId: caseId, values: row });
+  });
+
+  if (targets.length === 0) {
+    ui.alert('片づけられる見送りの案件はありませんでした。' +
+      (kept.length ? String.fromCharCode(10) + String.fromCharCode(10) +
+        '返送や請求の記録がある案件は動かしません: ' + kept.join('、') : ''));
+    return;
+  }
+
+  const answer = ui.alert('見送りの案件を片づけます',
+    '次の ' + targets.length + ' 件を「' + BOARD_SHEET_ARCHIVE_CASES + '」タブへ移します。' +
+    String.fromCharCode(10) + '削除ではないので、あとから見返せます。' +
+    String.fromCharCode(10) + String.fromCharCode(10) +
+    targets.map(function (t) {
+      return '　' + t.caseId + '　' + String(t.values[BOARD_COL.customer - 1] || '');
+    }).join(String.fromCharCode(10)) +
+    (kept.length ? String.fromCharCode(10) + String.fromCharCode(10) +
+      '※ 返送や請求の記録があるため動かさない案件: ' + kept.join('、') : '') +
+    String.fromCharCode(10) + String.fromCharCode(10) + '進めてよろしいですか？',
+    ui.ButtonSet.YES_NO);
+  if (answer !== ui.Button.YES) return;
+
+  const archive = boardEnsureArchiveSheet_(ss, BOARD_SHEET_ARCHIVE_CASES, BOARD_CASE_HEADERS);
+  const stamp = new Date();
+  targets.forEach(function (t) {
+    // 数式のままでは移した先で壊れる。見えている値をそのまま写す
+    archive.appendRow(t.values.concat([stamp]));
+  });
+  // **下から消す。** 上から消すと、次の行番号がずれる
+  targets.slice().sort(function (a, b) { return b.row - a.row; })
+    .forEach(function (t) { cases.deleteRow(t.row); });
+
+  boardLog_('片づけ', '見送りの案件を ' + BOARD_SHEET_ARCHIVE_CASES + ' へ移しました: ' +
+    targets.map(function (t) { return t.caseId; }).join('、'));
+
+  boardArchiveIdleCustomers_(ss, ui);
+  boardApplyCaseFormatting_(cases);
+  ui.alert('片づけました', targets.length + ' 件を「' + BOARD_SHEET_ARCHIVE_CASES +
+    '」タブへ移しました。', ui.ButtonSet.OK);
+}
+
+/**
+ * 案件が1件も残らなかったお客様を、続けて片づけるか尋ねる。
+ *
+ * 新着メールの読み取りは顧客タブのアドレスだけを見る。動作確認に使った
+ * 自分のアドレスが残っていると、関係のないメールを拾い続ける。
+ * **返送や請求の記録があるお客様には触らない。**
+ */
+function boardArchiveIdleCustomers_(ss, ui) {
+  const customers = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!customers || customers.getLastRow() < 2) return 0;
+
+  const alive = {};
+  if (cases && cases.getLastRow() > 1) {
+    cases.getRange(2, BOARD_COL.customerId, cases.getLastRow() - 1, 1).getValues()
+      .forEach(function (row) {
+        const id = String(row[0] || '').trim();
+        if (id) alive[id] = true;
+      });
+  }
+  const busy = boardCustomerIdsInRecords_(ss);
+
+  const rows = customers.getRange(2, 1, customers.getLastRow() - 1, BOARD_CUSTOMER_HEADERS.length).getValues();
+  const targets = [];
+  rows.forEach(function (row, i) {
+    const id = String(row[BOARD_CUSTOMER_COL.id - 1] || '').trim();
+    if (!id || alive[id] || busy[id]) return;
+    targets.push({ row: i + 2, id: id, values: row });
+  });
+  if (targets.length === 0) return 0;
+
+  const answer = ui.alert('案件が残らなかったお客様も片づけますか？',
+    '次の ' + targets.length + ' 名は、案件も返送も請求の記録もなくなりました。' +
+    String.fromCharCode(10) + '「' + BOARD_SHEET_ARCHIVE_CUSTOMERS + '」タブへ移すと、' +
+    '新着メールの読み取りの対象から外れます。' +
+    String.fromCharCode(10) + '依頼フォームのURLも開けなくなります。' +
+    String.fromCharCode(10) + String.fromCharCode(10) +
+    targets.map(function (t) {
+      return '　' + t.id + '　' + String(t.values[BOARD_CUSTOMER_COL.company - 1] || '') +
+        '　' + String(t.values[BOARD_CUSTOMER_COL.email - 1] || '');
+    }).join(String.fromCharCode(10)),
+    ui.ButtonSet.YES_NO);
+  if (answer !== ui.Button.YES) return 0;
+
+  const archive = boardEnsureArchiveSheet_(ss, BOARD_SHEET_ARCHIVE_CUSTOMERS, BOARD_CUSTOMER_HEADERS);
+  const stamp = new Date();
+  targets.forEach(function (t) { archive.appendRow(t.values.concat([stamp])); });
+  targets.slice().sort(function (a, b) { return b.row - a.row; })
+    .forEach(function (t) { customers.deleteRow(t.row); });
+
+  boardLog_('片づけ', 'お客様を ' + BOARD_SHEET_ARCHIVE_CUSTOMERS + ' へ移しました: ' +
+    targets.map(function (t) { return t.id; }).join('、'));
+  return targets.length;
+}
+
+/** 返送履歴・請求書に名前の出ている案件ID。**動かしてはいけない目印。** */
+function boardCaseIdsInRecords_(ss) {
+  const out = {};
+  const ships = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (ships && ships.getLastRow() > 1) {
+    ships.getRange(2, BOARD_SHIPMENT_COL.caseId, ships.getLastRow() - 1, 1).getValues()
+      .forEach(function (row) {
+        const id = String(row[0] || '').trim();
+        if (id) out[id] = true;
+      });
+  }
+  const invoices = ss.getSheetByName(BOARD_SHEET_INVOICES);
+  if (invoices && invoices.getLastRow() > 1) {
+    invoices.getRange(2, BOARD_INVOICE_COL.targets, invoices.getLastRow() - 1, 1).getValues()
+      .forEach(function (row) {
+        String(row[0] || '').split(/[^A-Za-z0-9-]+/).forEach(function (id) {
+          if (id) out[id] = true;
+        });
+      });
+  }
+  return out;
+}
+
+/** 返送履歴・請求書に名前の出ているお客様。 */
+function boardCustomerIdsInRecords_(ss) {
+  const out = {};
+  [[BOARD_SHEET_SHIPMENTS, BOARD_SHIPMENT_COL.customerId],
+   [BOARD_SHEET_INVOICES, BOARD_INVOICE_COL.customerId]].forEach(function (pair) {
+    const sheet = ss.getSheetByName(pair[0]);
+    if (!sheet || sheet.getLastRow() < 2) return;
+    sheet.getRange(2, pair[1], sheet.getLastRow() - 1, 1).getValues().forEach(function (row) {
+      const id = String(row[0] || '').trim();
+      if (id) out[id] = true;
+    });
+  });
+  return out;
+}
+
+/** 片づけ先のタブ。無ければ作る。見出しは移す前のものと同じ並び＋片づけた日。 */
+function boardEnsureArchiveSheet_(ss, name, headers) {
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.hideSheet();   // ふだんは見えなくてよい。必要なときだけ表示する
+  }
+  const want = headers.concat([BOARD_ARCHIVE_STAMP]);
+  const now = sheet.getLastColumn() > 0
+    ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+      .map(function (h) { return String(h || '').trim(); })
+    : [];
+  // **中身があるのに並びが違うときは、見出しを書き換えない。**
+  // 書き換えると、名前と中身が総取り替えになる
+  if (now.join('\t') !== want.join('\t')) {
+    if (sheet.getLastRow() > 1) {
+      boardLog_('片づけ', name + ' の見出しが想定と違うため、そのままにしました');
+    } else {
+      sheet.getRange(1, 1, 1, want.length).setValues([want]);
+      sheet.setFrozenRows(1);
+    }
+  }
+  return sheet;
+}
+
+/** 片づけた案件の行。取り込み済みの判断と、案件IDの採番に使う。 */
+function boardArchivedCaseRows_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_ARCHIVE_CASES);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
 }
 
 /** 案件ボードにある案件の数。黙って減っていないかを見張るために使う。 */
@@ -3962,6 +4166,12 @@ function boardImportResponses_(ss) {
       if (row[0]) imported[String(row[0])] = true;
     });
   }
+  // **片づけた案件も「取り込み済み」。** ここを見落とすと、片づけたそばから
+  // 同じ回答がもう一度案件になって戻ってくる
+  boardArchivedCaseRows_(ss).forEach(function (row) {
+    const at = row[BOARD_COL.sourceRow - 1];
+    if (at) imported[String(at)] = true;
+  });
 
   const rows = source.getRange(2, 1, source.getLastRow() - 1, source.getLastColumn()).getValues();
   let added = 0;
@@ -4726,9 +4936,12 @@ function boardAppendCase_(ss, options) {
  * **行番号からは作らない。** 並べ替えると番号が変わってしまう。
  */
 function boardNextCaseId_(sheet, customerId) {
-  const rows = sheet.getLastRow() > 1
+  const rows = (sheet.getLastRow() > 1
     ? sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues()
-    : [];
+    : [])
+    // **片づけた案件の番号も使い切ったものとして数える。**
+    // 入れないと A012 を片づけた翌日に、別のご依頼がまた A012 を名乗る
+    .concat(boardArchivedCaseRows_(sheet.getParent()));
 
   let parent = '';
   let branch = 1;

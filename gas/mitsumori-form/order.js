@@ -491,7 +491,10 @@ function orderMonthly_(ss, customerId, caseRow) {
         current: !!here && Number(t.quantity || 0) === Number(here.quantity || 0)
       };
     });
-  const next = tiers.filter(function (t) { return t.from > count; })[0] || null;
+  // **並び順に頼らない。** 段が上から順に並んでいない表でも、
+  // 「次の段」はいつも、いまの点数より上でいちばん近いもの
+  const next = tiers.filter(function (t) { return t.from > count; })
+    .sort(function (a, b) { return a.from - b.from; })[0] || null;
 
   return {
     monthLabel: Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy年M月'),
