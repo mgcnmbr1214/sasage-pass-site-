@@ -52,9 +52,19 @@ function shipCheckAll() {
     if (!result || !result.shipped) return;
 
     const tracking = String(result.tracking || '').trim();
-    sheet.getRange(i + 2, BOARD_COL.tracking).setValue(tracking);
+    // 12桁の数字をそのまま入れると 1.23E+11 になる。文字として入れる
+    sheet.getRange(i + 2, BOARD_COL.tracking).setNumberFormat('@').setValue(tracking);
+
+    // 追跡ページへ飛べるように、業者名も文面から読み取る
+    const carrier = boardCarrierFromText_(message.getPlainBody() + ' ' + message.getSubject());
+    if (carrier && !String(row[BOARD_COL.carrier - 1] || '').trim()) {
+      sheet.getRange(i + 2, BOARD_COL.carrier).setValue(carrier);
+    }
+
+    // **発送完了日は、こちらが気づいた日ではなくお知らせが届いた日。**
+    // 数量割引の段を決める日なので、確認が遅れた分だけ後ろにずれては困る
     if (!sheet.getRange(i + 2, BOARD_COL.shippedAt).getValue()) {
-      sheet.getRange(i + 2, BOARD_COL.shippedAt).setValue(new Date());
+      sheet.getRange(i + 2, BOARD_COL.shippedAt).setValue(message.getDate());
     }
     sheet.getRange(i + 2, BOARD_COL.status).setValue(BOARD_STATUS_SHIPPED);
     sheet.getRange(i + 2, BOARD_COL.teamNote)
@@ -64,6 +74,7 @@ function shipCheckAll() {
     shipped++;
   });
 
+  if (shipped > 0) boardRefreshTrackingLinks_(ss);
   return shipped;
 }
 

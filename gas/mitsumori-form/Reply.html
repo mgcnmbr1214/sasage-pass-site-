@@ -371,7 +371,7 @@
     return '<div class="cases"><label>どのご依頼への対応か</label>' +
       '<select id="caseSelect">' + ctx.cases.map(function (c) {
         var parts = [c.caseId, c.status];
-        if (c.orderedAt) parts.push(c.orderedAt + ' 依頼');
+        if (c.shippedAt) parts.push(c.shippedAt + ' 発送');
         if (c.qty) parts.push(c.qty + '点');
         return '<option value="' + c.caseRow + '"' +
           (c.caseRow === ctx.caseRow ? ' selected' : '') + '>' +

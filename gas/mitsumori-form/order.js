@@ -180,7 +180,6 @@ function orderSubmitRequest(payload) {
     at: new Date().toISOString()
   }));
   sheet.getRange(caseRow, BOARD_COL.qty).setValue(Number(qty));
-  sheet.getRange(caseRow, BOARD_COL.orderedAt).setValue(new Date());
   // 備考が空のときは消さない。こちらで書いた申し送りが、再送信で消えてしまう
   const note = String(data.note || '').trim();
   if (note) sheet.getRange(caseRow, BOARD_COL.memo).setValue(note);
@@ -229,7 +228,9 @@ function orderSubmitShipping(payload) {
 
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   sheet.getRange(open.caseRow, BOARD_COL.carrier).setValue(carrier.name);
-  sheet.getRange(open.caseRow, BOARD_COL.tracking).setValue(tracking);
+  // 12桁の数字をそのまま入れると 1.23E+11 になる。文字として入れる
+  sheet.getRange(open.caseRow, BOARD_COL.tracking).setNumberFormat('@').setValue(tracking);
+  boardRefreshTrackingLinks_(sheet.getParent());
   // **数量割引の段は、この日付の月で決まる。** お客様が決める日なので動かせない
   if (!sheet.getRange(open.caseRow, BOARD_COL.shippedAt).getValue()) {
     sheet.getRange(open.caseRow, BOARD_COL.shippedAt).setValue(new Date());

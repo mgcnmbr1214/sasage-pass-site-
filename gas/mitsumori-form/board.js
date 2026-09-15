@@ -88,24 +88,26 @@ const BOARD_REG_DONE = [BOARD_REG_SIGNED];
 
 /** 案件ボードの列。順序を変えたら docs/シート設計.md も更新すること。 */
 const BOARD_CASE_HEADERS = [
-  '案件ID', 'ステータス', 'お客様の登録状況', '対応者', 'お客様', '依頼日',
+  // 手前に置くのは、一覧で真っ先に知りたいこと。
+  // **お客様がいつ送ったか（＝請求月の根拠）と、荷物がいまどこか。**
+  '案件ID', 'ステータス', 'お客様の登録状況', '対応者', 'お客様', '発送完了日', '追跡番号',
   '予定点数', 'お預かり点数', '返送点数',
   '納期予定（自）', '納期予定（至）', '次にやること',
   '未返信', '未請求の返送',
   '顧客ID', '依頼内容', '選択の控え', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール',
   '単価', '単価調整', '固定調整', '調整の理由', '請求見込み', '単価の内訳',
-  '運送業者', '追跡番号', '発送完了日', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
+  '運送業者', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
 const BOARD_COL = {
-  caseId: 1, status: 2, registration: 3, owner: 4, customer: 5, orderedAt: 6,
-  qty: 7, receivedQty: 8, shippedQty: 9,
-  dueFrom: 10, dueTo: 11, todo: 12,
-  unreplied: 13, unbilled: 14,
-  customerId: 15, detail: 16, selection: 17, formInquiry: 18, lastInbound: 19, lastOutbound: 20,
-  unitPrice: 21, priceAdjust: 22, flatAdjust: 23, adjustNote: 24, estimate: 25, priceNote: 26,
-  carrier: 27, tracking: 28, shippedAt: 29, teamNote: 30,
-  guideDraftAt: 31, lastContact: 32, memo: 33, sourceRow: 34
+  caseId: 1, status: 2, registration: 3, owner: 4, customer: 5, shippedAt: 6, tracking: 7,
+  qty: 8, receivedQty: 9, shippedQty: 10,
+  dueFrom: 11, dueTo: 12, todo: 13,
+  unreplied: 14, unbilled: 15,
+  customerId: 16, detail: 17, selection: 18, formInquiry: 19, lastInbound: 20, lastOutbound: 21,
+  unitPrice: 22, priceAdjust: 23, flatAdjust: 24, adjustNote: 25, estimate: 26, priceNote: 27,
+  carrier: 28, teamNote: 29,
+  guideDraftAt: 30, lastContact: 31, memo: 32, sourceRow: 33
 };
 
 /**
@@ -364,7 +366,7 @@ const BOARD_SHEET_SHIPMENTS = '返送履歴';
 const BOARD_SHIPMENT_HEADERS = [
   '送信日時', '案件ID', '顧客ID', 'お客様', '点数', '単価', '固定調整', '金額（税抜）',
   '単価の内訳', '返送追跡番号',
-  '状態', '請求月', 'Square請求書ID', '依頼内容', '依頼日', '納期予定', '件名', '本文',
+  '状態', '請求月', 'Square請求書ID', '依頼内容', 'お客様の発送完了日', '納期予定', '件名', '本文',
   'GmailスレッドID', 'GmailメッセージID'
 ];
 const BOARD_SHIPMENT_COL = {
@@ -738,7 +740,6 @@ function boardMigrateCases_(ss) {
       .map(function (h) { return String(h || '').trim(); });
     boardLog_('移行', '案件ボードの 対応不要 列を削除しました（メール履歴へ移動）');
   }
-  headers = boardInsertColumnAfter_(sheet, headers, 'お客様', '依頼日');
 
   // 受付開始日は使わなくなった。納期の目安はメールでお伝えする
   const startCol = headers.indexOf('受付開始日');
@@ -785,6 +786,9 @@ function boardMigrateCases_(ss) {
     sheet.deleteColumn(contract + 1);
     boardLog_('移行', '契約書作成日 列を削除しました');
   }
+
+  // 一覧の手前に置くのは、お客様がいつ送ったかと、荷物がいまどこか
+  headers = boardMoveShippingColumnsFront_(sheet, headers);
 
   boardRemoveDuplicateCaseColumns_(sheet);
 
@@ -968,6 +972,65 @@ function boardMoveSignedAtToCustomers_(ss, sheet, headers) {
     .map(function (h) { return String(h || '').trim(); });
 }
 
+/** いまシートに並んでいる見出し。 */
+function boardHeadersOf_(sheet) {
+  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function (h) { return String(h || '').trim(); });
+}
+
+/**
+ * 依頼日の列をやめ、発送完了日と追跡番号をお客様の右へ移す。
+ *
+ * 一覧で真っ先に知りたいのは、**お客様がいつ送ったか**（数量割引の月を決める日）と、
+ * **荷物がいまどこか**。依頼日はどちらにも使っておらず、場所を取るだけだった。
+ * **消す前に中身をログへ控える。** 戻したくなったときの手がかりにする。
+ */
+function boardMoveShippingColumnsFront_(sheet, headers) {
+  const ordered = headers.indexOf('依頼日') + 1;
+  if (ordered) boardLogOrderedDates_(sheet, headers.indexOf('案件ID') + 1, ordered);
+
+  headers = boardMoveColumnAfter_(sheet, headers, '発送完了日', 'お客様');
+  headers = boardMoveColumnAfter_(sheet, headers, '追跡番号', '発送完了日');
+
+  const doomed = headers.indexOf('依頼日') + 1;
+  if (doomed) {
+    sheet.deleteColumn(doomed);
+    boardLog_('移行', '案件ボードの 依頼日 列を削除しました');
+    headers = boardHeadersOf_(sheet);
+  }
+  return headers;
+}
+
+/** 消す前の依頼日を、案件IDと一緒に記録へ残す。 */
+function boardLogOrderedDates_(sheet, idCol, col) {
+  if (!idCol || !col || sheet.getLastRow() < 2) return;
+  const rows = sheet.getLastRow() - 1;
+  const ids = sheet.getRange(2, idCol, rows, 1).getValues();
+  const list = sheet.getRange(2, col, rows, 1).getValues()
+    .map(function (row, i) {
+      const id = String(ids[i][0] || '').trim();
+      const at = boardFormatDate_(row[0]);
+      return id && at ? id + '=' + at : '';
+    })
+    .filter(function (v) { return v; });
+  if (list.length > 0) boardLog_('移行', '削除する依頼日を控えます: ' + list.join('／'));
+}
+
+/**
+ * すでにある列を、別の列の右隣へ動かす。中身も書式も一緒に動く。
+ *
+ * **行き先は「動かす前の並び」での位置。** 動かしたあとの位置で指定すると
+ * 狙いより1つずれる。moveColumns はそういう決まりになっている。
+ */
+function boardMoveColumnAfter_(sheet, headers, name, after) {
+  const from = headers.indexOf(name) + 1;
+  const anchor = headers.indexOf(after) + 1;
+  if (!from || !anchor || from === anchor + 1) return headers;
+  sheet.moveColumns(sheet.getRange(1, from, sheet.getMaxRows(), 1), anchor + 1);
+  boardLog_('移行', name + ' 列を ' + after + ' の右へ移しました');
+  return boardHeadersOf_(sheet);
+}
+
 /** 見出しの名前を変える。変更後の見出し配列を返す。 */
 function boardRenameColumn_(sheet, headers, from, to) {
   const index = headers.indexOf(from);
@@ -1149,14 +1212,14 @@ function boardRestorePastRequests_(ss) {
       customerId: customerId,
       caseId: caseId,
       status: BOARD_STATUS_DONE,
-      orderedAt: ship[BOARD_SHIPMENT_COL.startDate - 1] || ship[BOARD_SHIPMENT_COL.date - 1],
+
       values: {
         customer: ship[BOARD_SHIPMENT_COL.customer - 1],
         // 返送履歴に残っているのは、実際に返送した点数。ご申告の数は分からない
         shippedQty: ship[BOARD_SHIPMENT_COL.qty - 1],
         unitPrice: ship[BOARD_SHIPMENT_COL.unitPrice - 1],
         detail: ship[BOARD_SHIPMENT_COL.detail - 1],
-        startDate: ship[BOARD_SHIPMENT_COL.startDate - 1],
+        shippedAt: ship[BOARD_SHIPMENT_COL.startDate - 1],
         dueFrom: due.from,
         dueTo: due.to,
         lastContact: ship[BOARD_SHIPMENT_COL.date - 1],
@@ -1225,7 +1288,7 @@ function boardListCases_(ss, customerId) {
         caseRow: i + 2,
         caseId: caseId,
         status: String(row[BOARD_COL.status - 1] || '').trim(),
-        orderedAt: boardFormatDate_(row[BOARD_COL.orderedAt - 1]),
+        shippedAt: boardFormatDate_(row[BOARD_COL.shippedAt - 1]),
         qty: String(row[BOARD_COL.qty - 1] == null ? '' : row[BOARD_COL.qty - 1]),
         rank: parts.number * 1000 + parts.branch
       });
@@ -1525,12 +1588,13 @@ const BOARD_UNPAID_LABEL = '未入金あり';
 
 /** 列の幅。並べ替えても効くよう、位置ではなく列の意味で指定する。 */
 const BOARD_CASE_WIDTHS = {
-  caseId: 90, status: 130, registration: 105, owner: 70, customer: 150, orderedAt: 95,
+  caseId: 90, status: 130, registration: 105, owner: 70, customer: 150,
+  shippedAt: 95, tracking: 130,
   qty: 70, receivedQty: 85, shippedQty: 70,
   dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
   customerId: 70, detail: 160, selection: 90, formInquiry: 160, lastInbound: 200, lastOutbound: 200,
   unitPrice: 70, priceAdjust: 75, flatAdjust: 75, adjustNote: 150, estimate: 100, priceNote: 300,
-  carrier: 100, tracking: 130, shippedAt: 95, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
+  carrier: 100, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
 };
 
 function boardApplyCaseFormatting_(sheet) {
@@ -1613,6 +1677,7 @@ function boardApplyCaseFormatting_(sheet) {
 
   boardRefreshUnreplied_(sheet.getParent());
   boardRefreshUnbilled_(sheet.getParent());
+  boardRefreshTrackingLinks_(sheet.getParent());
 
   boardApplyGroups_(sheet, BOARD_DETAIL_COLS.map(function (key) { return BOARD_COL[key]; }));
   boardApplyCaseFilter_(sheet);
@@ -3293,8 +3358,9 @@ function boardEnsureLayout_(ss) {
 /**
  * 列を足す前の案件に、あとから足した欄を埋め直す。**一度きり。空欄だけ。**
  *
- * 　依頼日　　　← 返送履歴に凍結してある同じ案件の依頼日
- * 　発送完了日　← その案件の追跡番号が書かれた受信メールの日時
+ * 　追跡番号　　← お客様から届いた発送のお知らせメール
+ * 　運送業者　　← 同じメールに書かれた業者名
+ * 　発送完了日　← その追跡番号が書かれた受信メールの日時
  * 　お預かり点数 ← 「◯点お預かりいたしました」と送ったメールの数
  *
  * **推測で埋めない。** 根拠が見つからないものは空のまま残し、
@@ -3307,7 +3373,6 @@ function boardBackfillPastCases_(ss) {
 
   const rows = sheet.getLastRow() - 1;
   const values = sheet.getRange(2, 1, rows, BOARD_CASE_HEADERS.length).getValues();
-  const ordered = boardShipmentStartDates_(ss);
   const mails = boardMailsByCustomer_(ss);
 
   const filled = [];
@@ -3320,26 +3385,53 @@ function boardBackfillPastCases_(ss) {
     const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
     const missing = [];
 
-    if (!row[BOARD_COL.orderedAt - 1] && ordered[caseId]) {
-      sheet.getRange(i + 2, BOARD_COL.orderedAt).setValue(ordered[caseId]);
-      filled.push(caseId + ' 依頼日');
-    } else if (!row[BOARD_COL.orderedAt - 1]) {
-      missing.push('依頼日');
+    // **2件目以降のご依頼には当てない。** どの便のお知らせか決められない
+    const onlyCase = boardCountCasesOf_(values, customerId) === 1;
+
+    // 追跡番号と運送業者は、お客様から届いた発送のお知らせにだけ根拠がある
+    if (!String(row[BOARD_COL.tracking - 1] || '').trim()) {
+      const notice = onlyCase ? boardShipNoticeFromMails_(mails[customerId]) : null;
+      if (notice) {
+        // 12桁の数字をそのまま入れると 1.23E+11 になる。文字として入れる
+        sheet.getRange(i + 2, BOARD_COL.tracking).setNumberFormat('@').setValue(notice.tracking);
+        row[BOARD_COL.tracking - 1] = notice.tracking;
+        filled.push(caseId + ' 追跡番号 ' + notice.tracking);
+        if (notice.carrier && !String(row[BOARD_COL.carrier - 1] || '').trim()) {
+          sheet.getRange(i + 2, BOARD_COL.carrier).setValue(notice.carrier);
+          row[BOARD_COL.carrier - 1] = notice.carrier;
+          filled.push(caseId + ' 運送業者 ' + notice.carrier);
+        }
+      } else {
+        missing.push(onlyCase ? '追跡番号' : '追跡番号（2件目以降のため当てられません）');
+      }
+    }
+
+    // 追跡番号はあるのに業者が分からないと、追跡ページへのリンクにできない
+    if (String(row[BOARD_COL.tracking - 1] || '').trim() &&
+        !String(row[BOARD_COL.carrier - 1] || '').trim()) {
+      const carrier = boardCarrierFromMails_(mails[customerId], row[BOARD_COL.tracking - 1]);
+      if (carrier) {
+        sheet.getRange(i + 2, BOARD_COL.carrier).setValue(carrier);
+        row[BOARD_COL.carrier - 1] = carrier;
+        filled.push(caseId + ' 運送業者 ' + carrier);
+      } else {
+        missing.push('運送業者');
+      }
     }
 
     if (!row[BOARD_COL.shippedAt - 1]) {
       const at = boardShippedAtFromMails_(mails[customerId], row[BOARD_COL.tracking - 1]);
       if (at) {
         sheet.getRange(i + 2, BOARD_COL.shippedAt).setValue(at);
-        filled.push(caseId + ' 発送完了日');
+        row[BOARD_COL.shippedAt - 1] = at;
+        filled.push(caseId + ' 発送完了日 ' + boardFormatDate_(at));
       } else {
         missing.push('発送完了日');
       }
     }
 
-    // **2件目以降のご依頼には当てない。** どの便のお預かりか決められず、
-    // 前のご依頼の点数を持ってきてしまう。実際にA005-2へA005の10点が入った
-    const onlyCase = boardCountCasesOf_(values, customerId) === 1;
+    // 前のご依頼の点数を持ってきてしまうので、ここも1件目だけ。
+    // 実際にA005-2へA005の10点が入ったことがある
     if (!row[BOARD_COL.receivedQty - 1] && onlyCase) {
       const qty = boardReceivedQtyFromMails_(mails[customerId], row[BOARD_COL.dueFrom - 1]);
       if (qty) {
@@ -3516,20 +3608,6 @@ function boardClearBorrowedQty_(ss, sheet, values) {
   return cleared;
 }
 
-/** 返送履歴に凍結してある、案件ごとの依頼日。 */
-function boardShipmentStartDates_(ss) {
-  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
-  const out = {};
-  if (!sheet || sheet.getLastRow() < 2) return out;
-  sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_SHIPMENT_HEADERS.length).getValues()
-    .forEach(function (row) {
-      const caseId = String(row[BOARD_SHIPMENT_COL.caseId - 1] || '').trim();
-      const at = row[BOARD_SHIPMENT_COL.startDate - 1];
-      if (caseId && at && !out[caseId]) out[caseId] = at;
-    });
-  return out;
-}
-
 /** お客様ごとのメールを、古い順に並べて返す。 */
 function boardMailsByCustomer_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
@@ -3551,6 +3629,80 @@ function boardMailsByCustomer_(ss) {
     out[id].sort(function (a, b) { return (a.date || 0) - (b.date || 0); });
   });
   return out;
+}
+
+/** 業者名の手がかり。メールの書き方はお客様ごとに違う。 */
+const BOARD_CARRIER_HINTS = [
+  { name: 'ヤマト運輸', words: ['ヤマト', 'やまと', 'クロネコ', 'くろねこ', '宅急便', 'kuronekoyamato'] },
+  { name: '佐川急便', words: ['佐川', 'さがわ', '飛脚', 'sagawa'] },
+  { name: '日本郵便', words: ['日本郵便', 'ゆうパック', 'ゆうパケット', 'レターパック', '郵便局', 'クリックポスト', 'japanpost'] }
+];
+
+/**
+ * お客様から届いたメールの中から、発送のお知らせを探す。
+ *
+ * **いちばん古いものを採る。** 古い順に並んでいるので、最初に見つかったものが
+ * そのご依頼の発送。返信のやり取りで番号が引用されても、日付は最初のものになる。
+ */
+function boardShipNoticeFromMails_(mails) {
+  if (!mails) return null;
+  for (let i = 0; i < mails.length; i++) {
+    const body = String(mails[i].received || '');
+    if (!body) continue;
+    const tracking = boardTrackingFromInbound_(body);
+    if (!tracking) continue;
+    return {
+      tracking: tracking,
+      carrier: boardCarrierFromText_(body + ' ' + String(mails[i].subject || '')),
+      date: mails[i].date
+    };
+  }
+  return null;
+}
+
+/**
+ * 受信メールの本文から、お客様の荷物の追跡番号を読む。
+ *
+ * **数字なら何でも拾う、はしない。** 電話番号や注文番号を追跡番号にしてしまうと、
+ * 発送完了日＝請求月の判定まで狂う。「追跡番号」などの言葉のそばにある数字か、
+ * 言葉が無いときは12〜13桁で0から始まらない数字だけを見る。
+ */
+function boardTrackingFromInbound_(body) {
+  const text = String(body || '');
+  const named = text.match(/(?:追跡|伝票|送り状|お問い?合わせ)[^0-9\n]{0,10}番?号?[^0-9\n]{0,6}([0-9][0-9- 　]{9,})/);
+  if (named) {
+    const digits = named[1].replace(/[^0-9]/g, '');
+    if (digits.length >= 10 && digits.length <= 13) return digits;
+  }
+
+  const loose = text.match(/(?:^|[^0-9])([1-9](?:[0-9]|[- ](?=[0-9])){11,14})(?![0-9])/);
+  if (loose) {
+    const digits = loose[1].replace(/[^0-9]/g, '');
+    if (digits.length === 12 || digits.length === 13) return digits;
+  }
+  return '';
+}
+
+/** その追跡番号が書かれた受信メールから、運送業者を読む。 */
+function boardCarrierFromMails_(mails, tracking) {
+  const wanted = String(tracking || '').replace(/[^0-9]/g, '');
+  if (!wanted || wanted.length < 8 || !mails) return '';
+  for (let i = 0; i < mails.length; i++) {
+    const text = mails[i].received + ' ' + mails[i].subject;
+    if (text.replace(/[^0-9]/g, '').indexOf(wanted) < 0) continue;
+    const carrier = boardCarrierFromText_(text);
+    if (carrier) return carrier;
+  }
+  return '';
+}
+
+/** 文面から運送業者を見分ける。分からなければ空。**当て推量はしない。** */
+function boardCarrierFromText_(text) {
+  const hay = String(text || '').toLowerCase();
+  const hits = BOARD_CARRIER_HINTS.filter(function (c) {
+    return c.words.some(function (w) { return hay.indexOf(w.toLowerCase()) >= 0; });
+  });
+  return hits.length === 1 ? hits[0].name : '';
 }
 
 /**
@@ -3751,7 +3903,6 @@ function boardImportResponses_(ss) {
     const created = boardAppendCase_(ss, {
       customerId: customerId,
       status: '問合せ',
-      orderedAt: pick('date') || new Date(),
       values: {
         customer: company || name,
         detail: monthly
@@ -4463,7 +4614,6 @@ function boardAppendCase_(ss, options) {
     values[BOARD_COL.caseId - 1] = options.caseId || boardNextCaseId_(sheet, customerId);
     values[BOARD_COL.customerId - 1] = customerId;
     values[BOARD_COL.status - 1] = options.status || BOARD_STATUS_NEW;
-    values[BOARD_COL.orderedAt - 1] = options.orderedAt || new Date();
 
     const row = sheet.getLastRow() + 1;
     sheet.getRange(row, 1, 1, BOARD_CASE_HEADERS.length).setValues([values]);
@@ -4744,6 +4894,41 @@ function boardRefreshUnbilled_(ss) {
   boardTraceWrote_('未請求の返送', wroteUnbilled);
 }
 
+/**
+ * 追跡番号を、運送業者の追跡ページへのリンクにする。
+ *
+ * 番号だけ見ても荷物の居場所は分からない。一覧から1回で開けるようにする。
+ * **数として扱わせない。** 12桁の数字はそのままだと 1.23E+11 と表示され、
+ * 先頭の0も消える。書く前に文字列の書式へ戻す。
+ * 運送業者が分からない案件はリンクにしない。**当て推量で別の会社へ飛ばさない。**
+ */
+function boardRefreshTrackingLinks_(ss) {
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!cases || cases.getLastRow() < 2) return 0;
+
+  const rows = cases.getLastRow() - 1;
+  const trackings = cases.getRange(2, BOARD_COL.tracking, rows, 1).getValues();
+  const carriers = cases.getRange(2, BOARD_COL.carrier, rows, 1).getValues();
+  let linked = 0;
+
+  const range = cases.getRange(2, BOARD_COL.tracking, rows, 1);
+  range.setNumberFormat('@');
+  range.setRichTextValues(
+    trackings.map(function (row, i) {
+      const text = String(row[0] == null ? '' : row[0]).trim();
+      const value = SpreadsheetApp.newRichTextValue().setText(text);
+      if (!text) return [value.build()];
+      const url = orderTrackingUrl_(String(carriers[i][0] || '').trim(), text);
+      if (url) {
+        value.setLinkUrl(0, text.length, url);
+        linked++;
+      }
+      return [value.build()];
+    })
+  );
+  return linked;
+}
+
 /** どの案件に何を書いたか。書式が混ざる原因を追うための控え。 */
 function boardTraceWrote_(label, list) {
   try {
@@ -4908,7 +5093,8 @@ function boardSetTodoFormula_(sheet, row) {
   const reg = cell(BOARD_COL.registration);
   const from = cell(BOARD_COL.dueFrom);
   const to = cell(BOARD_COL.dueTo);
-  const ordered = cell(BOARD_COL.orderedAt);
+  // 依頼日の列はやめた。ご発送待ちの日数は**案内メールを送った日**から数える
+  const guided = cell(BOARD_COL.guideDraftAt);
   const dueEnd = 'IF(' + to + '="",' + from + ',' + to + ')';
   // 放置に気づけるよう、待たせている日数を添える
   const elapsedFrom = function (since) {
@@ -4925,7 +5111,7 @@ function boardSetTodoFormula_(sheet, row) {
     b + '="' + BOARD_STATUS_SIGNING + '",IF(' + sentAt + '="","請求書を送る",' +
       'IF(' + reg + '="' + BOARD_REG_SIGNED + '","お客様のご発送待ち",' +
       '"支払い情報の登録・署名待ち"&' + elapsedFrom(sentAt) + ')),' +
-    b + '="' + BOARD_STATUS_WAITING_SHIP + '","お客様のご発送待ち"&' + elapsedFrom(ordered) + ',' +
+    b + '="' + BOARD_STATUS_WAITING_SHIP + '","お客様のご発送待ち"&' + elapsedFrom(guided) + ',' +
     b + '="' + BOARD_STATUS_SHIPPED + '",IF(' + from + '="","受取準備（納期の返信）",' +
       '"作業チームへ共有・荷受待ち"),' +
     b + '="' + BOARD_STATUS_WORKING + '","作業"&IF(' + from + '="","","（納期 "&TEXT(' + dueEnd + ',"m/d")&"）"),' +
@@ -5297,8 +5483,8 @@ function boardRecordShipment_(ss, caseRow, fields, mail) {
   // 送ったあとに呼ばれる。送信済みかどうかを確かめ直す必要はない
   values[BOARD_SHIPMENT_COL.status - 1] = SHIP_STATUS_SENT;
   values[BOARD_SHIPMENT_COL.detail - 1] = v[BOARD_COL.detail - 1];
-  // 受付開始日は持たなくなった。返送履歴には依頼日を凍結する
-  values[BOARD_SHIPMENT_COL.startDate - 1] = v[BOARD_COL.orderedAt - 1];
+  // **請求月の根拠を一緒に残す。** 数量割引の段は、お客様が発送した月で決まる
+  values[BOARD_SHIPMENT_COL.startDate - 1] = v[BOARD_COL.shippedAt - 1];
   values[BOARD_SHIPMENT_COL.due - 1] = boardFormatDateRange_(v[BOARD_COL.dueFrom - 1], v[BOARD_COL.dueTo - 1]);
   values[BOARD_SHIPMENT_COL.subject - 1] = (mail || {}).subject || '';
   values[BOARD_SHIPMENT_COL.body - 1] = (mail || {}).body || '';
@@ -5446,6 +5632,7 @@ function boardMigrateShipments_(ss) {
     .map(function (h) { return String(h || '').trim(); });
   if (headers.join('\t') === BOARD_SHIPMENT_HEADERS.join('\t')) return;
 
+  headers = boardRenameColumn_(sheet, headers, '依頼日', 'お客様の発送完了日');
   headers = boardInsertColumnAfter_(sheet, headers, '単価', '固定調整');
   headers = boardInsertColumnAfter_(sheet, headers, '金額（税抜）', '単価の内訳');
 

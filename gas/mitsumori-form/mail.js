@@ -980,7 +980,7 @@ function mailBuildCaseContext_(row, expectedCustomerId, wantedCaseRow) {
     cases: caseList.map(function (c) {
       return {
         caseRow: c.caseRow, caseId: c.caseId, status: c.status,
-        orderedAt: String(c.orderedAt || ''), qty: String(c.qty || '')
+        shippedAt: String(c.shippedAt || ''), qty: String(c.qty || '')
       };
     }),
     caseId: text(v[BOARD_COL.caseId - 1]),
@@ -1860,7 +1860,7 @@ function mailFindCaseSummary_(ss, customerId) {
       row[BOARD_COL.caseId - 1],
       'ステータス: ' + row[BOARD_COL.status - 1],
       '依頼内容: ' + (row[BOARD_COL.detail - 1] || '未確定'),
-      '依頼日: ' + (boardFormatDate_(row[BOARD_COL.orderedAt - 1]) || '未記録'),
+      '発送完了日: ' + (boardFormatDate_(row[BOARD_COL.shippedAt - 1]) || '未記録'),
       '納期: ' + (boardFormatDateRange_(row[BOARD_COL.dueFrom - 1], row[BOARD_COL.dueTo - 1]) || '未定')
     ].join(' / '));
   });

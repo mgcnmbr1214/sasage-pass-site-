@@ -1005,10 +1005,11 @@ function priceTidyIds_(ss) {
  * 前後するし、返送のタイミングもこちらが決められる。どちらで区切っても
  * こちらの操作で割引が動いてしまう。発送日はお客様が決めるので動かせない。
  *
- * 発送完了日が無い古い案件は、依頼日で代用する。
+ * **発送完了日が無い案件は、請求月を決めない。** 代わりの日で埋めると、
+ * こちらの都合で割引の段が動いてしまう。
  */
 function priceShipMonthOf_(values) {
-  const at = values[BOARD_COL.shippedAt - 1] || values[BOARD_COL.orderedAt - 1];
+  const at = values[BOARD_COL.shippedAt - 1];
   if (!at) return '';
   const date = at instanceof Date ? at : new Date(at);
   if (isNaN(date.getTime())) return '';
