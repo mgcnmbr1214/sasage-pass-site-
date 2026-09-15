@@ -78,6 +78,19 @@ function orderRender_(params) {
   const template = HtmlService.createTemplateFromFile('Order');
   template.customerId = String(params.cid || '').trim();
   template.formKey = String(params.k || '').trim();
+
+  // **最初の1回ぶんの往復を省く。** 画面を出してから改めて中身を聞きに行くと、
+  // GASへの往復が2回になり、待ち時間がそのまま倍になる
+  let state = null;
+  try {
+    state = orderGetState(template.customerId, template.formKey);
+  } catch (err) {
+    state = null;   // 失敗しても画面は出す。あとから聞き直せばよい
+  }
+  // `<` をそのまま埋めると、文面に </script> が入ったとき画面が壊れる
+  template.stateJson = state
+    ? JSON.stringify(state).replace(/</g, '\\u003c')
+    : 'null';
   return template
     .evaluate()
     .setTitle('ササゲパス ご依頼フォーム')
@@ -120,6 +133,7 @@ function orderGetState(customerId, formKey) {
       registered: orderIsRegistered_(customer),
       profileFields: orderProfileForm_(customer),
       current: open ? orderCaseView_(ss, open) : null,
+      monthly: orderMonthly_(ss, customer.id, (open || latest) ? (open || latest).caseRow : 0),
       shipTo: orderShipTo_(settings, signed)
     };
   } catch (err) {
@@ -411,14 +425,93 @@ function orderCustomerView_(customer) {
 function orderCaseView_(ss, hit) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   const v = sheet.getRange(hit.caseRow, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
+  const carrier = String(v[BOARD_COL.carrier - 1] || '');
+  const tracking = String(v[BOARD_COL.tracking - 1] || '');
+  const returned = boardReturnShipments_(ss)[hit.caseId] || {};
+
   return {
     caseId: hit.caseId,
     status: hit.status,
     qty: String(v[BOARD_COL.qty - 1] == null ? '' : v[BOARD_COL.qty - 1]),
     note: String(v[BOARD_COL.memo - 1] || ''),
-    tracking: String(v[BOARD_COL.tracking - 1] || ''),
-    carrier: String(v[BOARD_COL.carrier - 1] || '')
+    tracking: tracking,
+    carrier: carrier,
+
+    // ここから下は進み具合。**分かったところから出る。**
+    // 空の欄を並べても不安になるだけなので、値のある行だけ画面に出す
+    trackingUrl: orderTrackingUrl_(carrier, tracking),
+    shippedAt: boardFormatDate_(v[BOARD_COL.shippedAt - 1]),
+    receivedQty: String(v[BOARD_COL.receivedQty - 1] == null ? '' : v[BOARD_COL.receivedQty - 1]),
+    shippedQty: String(v[BOARD_COL.shippedQty - 1] == null ? '' : v[BOARD_COL.shippedQty - 1]),
+    due: boardFormatDateRange_(v[BOARD_COL.dueFrom - 1], v[BOARD_COL.dueTo - 1]),
+    returnTracking: String(returned.tracking || ''),
+    returnCarrier: String(returned.carrier || ''),
+    returnTrackingUrl: orderTrackingUrl_(returned.carrier, returned.tracking)
   };
+}
+
+/**
+ * 今月のご利用状況と、数量割引のどの段にいるか。
+ *
+ * **段は「当月に発送されたぶんのお預かり点数」で決まる。** お客様がご自分で
+ * 決められる日で区切るという取り決めなので、ここでも同じ数え方をする。
+ * 次の段まであと何点かも一緒に返す。知らないうちに損をしていた、をなくすため。
+ */
+function orderMonthly_(ss, customerId, caseRow) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 2) return null;
+
+  const config = getConfig_();
+  const now = new Date();
+  const month = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM');
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+
+  let count = 0;
+  rows.forEach(function (row) {
+    if (String(row[BOARD_COL.customerId - 1] || '').trim() !== customerId) return;
+    if (String(row[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_CLOSED) return;
+    if (priceShipMonthOf_(row) !== month) return;
+    count += priceCountOf_(row);
+  });
+
+  const values = caseRow
+    ? sheet.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0]
+    : null;
+  const selection = values ? priceSelectionOf_(config, values) : null;
+  const price = selection && selection.options ? priceUnitPrice_(config, selection, count) : null;
+
+  const here = priceTierFor_(config, count);
+  const tiers = ((config.quantityOptions && config.quantityOptions.monthly) || [])
+    .filter(function (t) { return t.enabled !== false; })
+    .map(function (t) {
+      return {
+        label: String(t.label || ''),
+        from: Number(t.quantity || 0),
+        discount: orderTierText_(t, config),
+        current: !!here && Number(t.quantity || 0) === Number(here.quantity || 0)
+      };
+    });
+  const next = tiers.filter(function (t) { return t.from > count; })[0] || null;
+
+  return {
+    monthLabel: Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy年M月'),
+    count: count,
+    unitPrice: price ? price.unitPrice : 0,
+    tierLabel: price ? price.tierLabel : '',
+    tiers: tiers,
+    next: next ? { label: next.label, more: next.from - count, discount: next.discount } : null
+  };
+}
+
+/** 段ごとの割引の書き方。金額引きと率引きで言い方が変わる。 */
+function orderTierText_(tier, config) {
+  if (!tier || tier.discountType === 'none') return '通常料金';
+  if (tier.discountType === 'amount') {
+    const amount = Math.max(0, Number(tier.discountAmount || 0));
+    return amount ? '1点あたり ' + formatYen_(amount, config) + ' 引き' : '通常料金';
+  }
+  const rate = Math.max(0, Number(tier.discountRate || 0));
+  return rate ? Math.round(rate * 100) + '% 引き' : '通常料金';
 }
 
 /** 発送先のご案内。**契約が済むまで出さない。** */

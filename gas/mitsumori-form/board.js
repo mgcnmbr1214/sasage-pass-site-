@@ -91,7 +91,7 @@ const BOARD_CASE_HEADERS = [
   // 手前に置くのは、一覧で真っ先に知りたいこと。
   // **お客様がいつ送ったか（＝請求月の根拠）と、荷物がいまどこか。**
   '案件ID', 'ステータス', 'お客様の登録状況', '対応者', 'お客様', '発送完了日', '追跡番号',
-  '予定点数', 'お預かり点数', '返送点数',
+  '予定点数', 'お預かり点数', '返送点数', '返送追跡番号',
   '納期予定（自）', '納期予定（至）', '次にやること',
   '未返信', '未請求の返送',
   '顧客ID', '依頼内容', '選択の控え', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール',
@@ -101,13 +101,13 @@ const BOARD_CASE_HEADERS = [
 
 const BOARD_COL = {
   caseId: 1, status: 2, registration: 3, owner: 4, customer: 5, shippedAt: 6, tracking: 7,
-  qty: 8, receivedQty: 9, shippedQty: 10,
-  dueFrom: 11, dueTo: 12, todo: 13,
-  unreplied: 14, unbilled: 15,
-  customerId: 16, detail: 17, selection: 18, formInquiry: 19, lastInbound: 20, lastOutbound: 21,
-  unitPrice: 22, priceAdjust: 23, flatAdjust: 24, adjustNote: 25, estimate: 26, priceNote: 27,
-  carrier: 28, teamNote: 29,
-  guideDraftAt: 30, lastContact: 31, memo: 32, sourceRow: 33
+  qty: 8, receivedQty: 9, shippedQty: 10, returnTracking: 11,
+  dueFrom: 12, dueTo: 13, todo: 14,
+  unreplied: 15, unbilled: 16,
+  customerId: 17, detail: 18, selection: 19, formInquiry: 20, lastInbound: 21, lastOutbound: 22,
+  unitPrice: 23, priceAdjust: 24, flatAdjust: 25, adjustNote: 26, estimate: 27, priceNote: 28,
+  carrier: 29, teamNote: 30,
+  guideDraftAt: 31, lastContact: 32, memo: 33, sourceRow: 34
 };
 
 /**
@@ -365,15 +365,15 @@ function boardFindResponseType_(id) {
 const BOARD_SHEET_SHIPMENTS = '返送履歴';
 const BOARD_SHIPMENT_HEADERS = [
   '送信日時', '案件ID', '顧客ID', 'お客様', '点数', '単価', '固定調整', '金額（税抜）',
-  '単価の内訳', '返送追跡番号',
+  '単価の内訳', '返送追跡番号', '返送運送業者',
   '状態', '請求月', 'Square請求書ID', '依頼内容', 'お客様の発送完了日', '納期予定', '件名', '本文',
   'GmailスレッドID', 'GmailメッセージID'
 ];
 const BOARD_SHIPMENT_COL = {
   date: 1, caseId: 2, customerId: 3, customer: 4, qty: 5, unitPrice: 6, flatAdjust: 7, amount: 8,
-  priceNote: 9, tracking: 10,
-  status: 11, billingMonth: 12, invoiceId: 13, detail: 14, startDate: 15, due: 16,
-  subject: 17, body: 18, threadId: 19, messageId: 20
+  priceNote: 9, tracking: 10, carrier: 11,
+  status: 12, billingMonth: 13, invoiceId: 14, detail: 15, startDate: 16, due: 17,
+  subject: 18, body: 19, threadId: 20, messageId: 21
 };
 const BOARD_SHIPMENT_WIDTHS = {
   date: 130, caseId: 80, customerId: 70, customer: 150, qty: 70, unitPrice: 80,
@@ -760,6 +760,8 @@ function boardMigrateCases_(ss) {
   // ひとつの列で上書きしていたので、**数が合わないときに どこで変わったのか追えなかった**
   headers = boardInsertColumnAfter_(sheet, headers, '予定点数', 'お預かり点数');
   headers = boardInsertColumnAfter_(sheet, headers, 'お預かり点数', '返送点数');
+  // 返送した荷物が着いたかを、案件ボードだけで追えるようにする
+  headers = boardInsertColumnAfter_(sheet, headers, '返送点数', '返送追跡番号');
 
   // 割引・割増は、お客様にずっと効くもの（顧客タブ）と、その依頼だけのもの（ここ）がある。
   // **理由を一緒に置く。** 何の値引きか分からない請求書は送れない
@@ -1590,7 +1592,7 @@ const BOARD_UNPAID_LABEL = '未入金あり';
 const BOARD_CASE_WIDTHS = {
   caseId: 90, status: 130, registration: 105, owner: 70, customer: 150,
   shippedAt: 95, tracking: 130,
-  qty: 70, receivedQty: 85, shippedQty: 70,
+  qty: 70, receivedQty: 85, shippedQty: 70, returnTracking: 130,
   dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
   customerId: 70, detail: 160, selection: 90, formInquiry: 160, lastInbound: 200, lastOutbound: 200,
   unitPrice: 70, priceAdjust: 75, flatAdjust: 75, adjustNote: 150, estimate: 100, priceNote: 300,
@@ -2076,6 +2078,10 @@ function boardMigrateSettings_(sheet) {
     if (key === '契約書作成の手順') {
       sheet.deleteRow(i + 2);
       boardLog_('移行', '設定「契約書作成の手順」を削除しました');
+    } else if (key === BOARD_SETTING_NOTE_PREFIX + '取り込み元② お問い合わせフォーム') {
+      // 「問い合わせ窓口」に名前を変えたときの古い行。同じことが二重に並んでいた
+      sheet.deleteRow(i + 2);
+      boardLog_('移行', '設定「取り込み元② お問い合わせフォーム」を削除しました（問い合わせ窓口の行と重複）');
     } else if (key === '返信案の自動チェック') {
       // 検知の時点では返信案を作らなくなったため、実態に合う名前に変える。オン/オフの値はそのまま
       sheet.getRange(i + 2, 1).setValue('新着メールの読み取り');
@@ -3451,7 +3457,11 @@ function boardBackfillPastCases_(ss) {
     boardLog_('移行', '前のご依頼から取り違えていたお預かり点数を消しました: ' + wrong.join('／'));
   }
 
-  if (filled.length > 0) boardLog_('移行', '過去の案件を埋めました: ' + filled.join('／'));
+  if (filled.length > 0) {
+    boardLog_('移行', '過去の案件を埋めました: ' + filled.join('／'));
+    // 書式を整えたあとに埋めているので、リンクはここで付け直す
+    boardRefreshTrackingLinks_(ss);
+  }
   if (left.length > 0) {
     boardLog_('移行', '根拠が見つからず空のままにした欄: ' + left.join('、') +
       '　手で入れていただくか、そのままで構いません');
@@ -4988,26 +4998,74 @@ function boardRefreshTrackingLinks_(ss) {
   if (!cases || cases.getLastRow() < 2) return 0;
 
   const rows = cases.getLastRow() - 1;
-  const trackings = cases.getRange(2, BOARD_COL.tracking, rows, 1).getValues();
   const carriers = cases.getRange(2, BOARD_COL.carrier, rows, 1).getValues();
   let linked = 0;
 
-  const range = cases.getRange(2, BOARD_COL.tracking, rows, 1);
-  range.setNumberFormat('@');
-  range.setRichTextValues(
-    trackings.map(function (row, i) {
-      const text = String(row[0] == null ? '' : row[0]).trim();
-      const value = SpreadsheetApp.newRichTextValue().setText(text);
-      if (!text) return [value.build()];
-      const url = orderTrackingUrl_(String(carriers[i][0] || '').trim(), text);
-      if (url) {
-        value.setLinkUrl(0, text.length, url);
-        linked++;
-      }
-      return [value.build()];
-    })
-  );
+  // ① お客様からこちらへ届いた荷物
+  linked += boardWriteTrackingColumn_(cases, BOARD_COL.tracking, rows,
+    cases.getRange(2, BOARD_COL.tracking, rows, 1).getValues().map(function (row, i) {
+      return {
+        text: String(row[0] == null ? '' : row[0]).trim(),
+        carrier: String(carriers[i][0] || '').trim()
+      };
+    }));
+
+  // ② こちらからお客様へ返した荷物。**もとは返送履歴。**
+  // 請求の台帳と食い違わないよう、案件ボード側は毎回そこから書き直す
+  const returned = boardReturnShipments_(ss);
+  linked += boardWriteTrackingColumn_(cases, BOARD_COL.returnTracking, rows,
+    cases.getRange(2, BOARD_COL.caseId, rows, 1).getValues().map(function (row) {
+      const hit = returned[String(row[0] || '').trim()] || {};
+      return { text: String(hit.tracking || ''), carrier: String(hit.carrier || '') };
+    }));
+
   return linked;
+}
+
+/** 追跡番号の列をまとめて書く。数として扱われないよう、文字列の書式にしてから入れる。 */
+function boardWriteTrackingColumn_(sheet, col, rows, items) {
+  let linked = 0;
+  const range = sheet.getRange(2, col, rows, 1);
+  range.setNumberFormat('@');
+  range.setRichTextValues(items.map(function (item) {
+    const value = SpreadsheetApp.newRichTextValue().setText(item.text);
+    if (!item.text) return [value.build()];
+    const url = orderTrackingUrl_(item.carrier, item.text);
+    if (url) {
+      value.setLinkUrl(0, item.text.length, url);
+      linked++;
+    }
+    return [value.build()];
+  }));
+  return linked;
+}
+
+/**
+ * 案件ごとの、返した荷物の追跡番号と運送業者。返送履歴がもと。
+ *
+ * 業者の列は後から足したので、古い記録では空になっている。
+ * その場合は送ったお知らせの本文から読み、シートにも書き戻す。
+ */
+function boardReturnShipments_(ss) {
+  const out = {};
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!sheet || sheet.getLastRow() < 2) return out;
+
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_SHIPMENT_HEADERS.length).getValues()
+    .forEach(function (row, i) {
+      const caseId = String(row[BOARD_SHIPMENT_COL.caseId - 1] || '').trim();
+      const tracking = String(row[BOARD_SHIPMENT_COL.tracking - 1] || '').trim();
+      if (!caseId || !tracking) return;
+
+      let carrier = String(row[BOARD_SHIPMENT_COL.carrier - 1] || '').trim();
+      if (!carrier) {
+        carrier = boardCarrierFromText_(String(row[BOARD_SHIPMENT_COL.body - 1] || ''));
+        if (carrier) sheet.getRange(i + 2, BOARD_SHIPMENT_COL.carrier).setValue(carrier);
+      }
+      // 同じ案件を2回返していれば、新しいほうを出す
+      out[caseId] = { tracking: tracking, carrier: carrier };
+    });
+  return out;
 }
 
 /** どの案件に何を書いたか。書式が混ざる原因を追うための控え。 */
@@ -5561,6 +5619,7 @@ function boardRecordShipment_(ss, caseRow, fields, mail) {
   values[BOARD_SHIPMENT_COL.priceNote - 1] = billing.note;
   // 金額は数式にする（appendRow のあとで入れる）
   values[BOARD_SHIPMENT_COL.tracking - 1] = String((fields || {}).shipTracking || '').trim();
+  values[BOARD_SHIPMENT_COL.carrier - 1] = String((fields || {}).shipCarrier || '').trim();
   // 送ったあとに呼ばれる。送信済みかどうかを確かめ直す必要はない
   values[BOARD_SHIPMENT_COL.status - 1] = SHIP_STATUS_SENT;
   values[BOARD_SHIPMENT_COL.detail - 1] = v[BOARD_COL.detail - 1];
@@ -5714,6 +5773,8 @@ function boardMigrateShipments_(ss) {
   if (headers.join('\t') === BOARD_SHIPMENT_HEADERS.join('\t')) return;
 
   headers = boardRenameColumn_(sheet, headers, '依頼日', 'お客様の発送完了日');
+  // 業者が分からないと、追跡ページへのリンクが作れない
+  headers = boardInsertColumnAfter_(sheet, headers, '返送追跡番号', '返送運送業者');
   headers = boardInsertColumnAfter_(sheet, headers, '単価', '固定調整');
   headers = boardInsertColumnAfter_(sheet, headers, '金額（税抜）', '単価の内訳');
 
