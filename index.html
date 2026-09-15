@@ -1079,6 +1079,12 @@
         var tiers = (data.tiers || []).filter(function (t) { return t && t.label; });
         if (!tiers.length) return;
 
+        // **割引の中身が無いなら、表には触らない。**
+        // 古い口は段の名前しか返さない。そのまま組むと、どの段も同じ単価に
+        // なってしまう。書いてある控えを出したほうが正しい
+        var complete = tiers.every(function (t) { return typeof t.type === 'string'; });
+        if (!complete) return;
+
         // 見出し。段の数が変わっても、そのぶんだけ列ができます
         var head = document.getElementById('matrix-head');
         if (head) {
