@@ -299,6 +299,38 @@ function priceSyncLegacyDiscounts_() {
   return 1;
 }
 
+/** 混雑の注意書きを止めたかどうかの控え。**一度きり。** */
+const PRICE_PROP_BUSY_OFF = 'PRICE_BUSY_NOTICE_OFF';
+
+/**
+ * 見積もりフォームの「撮影プラン・月501点以上の混雑注意」を止める。**一度きり。**
+ *
+ * 条件が「月間数量の下限0・対象の数量は未指定」だったため、点数に関係なく
+ * **撮影だけを選んだ方全員**に「割引が適用できない場合がある」と出ていた。
+ * 501点の段も取りやめたので、前提そのものが無くなっている。
+ */
+function priceMigrateBusyNotice_() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty(PRICE_PROP_BUSY_OFF)) return 0;
+
+  const config = getConfig_();
+  let off = 0;
+  (config.conditionalNotices || []).forEach(function (rule) {
+    if (String(rule.id || '') !== 'busy_photo_501') return;
+    if (rule.enabled === false) return;
+    rule.enabled = false;
+    off++;
+  });
+
+  // 対象が無くても控えは残す。毎回確かめ直さない
+  props.setProperty(PRICE_PROP_BUSY_OFF, new Date().toISOString());
+  if (off === 0) return 0;
+
+  writeConfig_(config);
+  boardLog_('料金', '見積もりフォームの注意書き「撮影プラン・月501点以上の混雑注意」を止めました');
+  return off;
+}
+
 /** この直しを当てたかどうかの控え。**一度きり。** */
 const PRICE_PROP_TIERS_3 = 'PRICE_TIERS_3';
 

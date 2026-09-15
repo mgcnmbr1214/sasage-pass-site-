@@ -154,7 +154,7 @@ const BOARD_CUSTOMER_HEADERS = [
   '顧客ID', '会社名・屋号', '担当者名', 'メールアドレス', '電話番号',
   'ストア名', '代表者名義', '請求先 郵便番号', '請求先 住所',
   '返送先 郵便番号', '返送先 住所', '返送先 宛名', '返送先 電話番号',
-  '依頼内容', '月間予定数', '初回ご依頼予定数', '初回ご依頼予定日', '単価', '初回問い合わせ日', '最終更新日', 'メモ', 'Square顧客ID',
+  '依頼内容', '月間予定数', '年間予定数', '初回ご依頼予定数', '初回ご依頼予定日', '単価', '初回問い合わせ日', '最終更新日', 'メモ', 'Square顧客ID',
   '登録請求書ID', '登録請求書の送付日',
   '契約書署名日', 'カード登録', '登録の確認日',
   '単価調整', '固定調整', '調整の理由', '依頼フォームの鍵', '依頼フォームURL'
@@ -164,12 +164,13 @@ const BOARD_CUSTOMER_COL = {
   id: 1, company: 2, name: 3, email: 4, tel: 5,
   storeName: 6, representative: 7, billZip: 8, billAddress: 9,
   returnZip: 10, returnAddress: 11, returnName: 12, returnTel: 13,
-  detail: 14, monthly: 15, firstQty: 16, firstDate: 17, unitPrice: 18, firstAt: 19, updatedAt: 20,
-  memo: 21, squareId: 22,
+  detail: 14, monthly: 15, yearly: 16,
+  firstQty: 17, firstDate: 18, unitPrice: 19, firstAt: 20, updatedAt: 21,
+  memo: 22, squareId: 23,
   // 登録手数料の請求書はお客様に一度きり。案件ごとに持つものではない
-  regInvoiceId: 23, regInvoiceSent: 24,
-  signedAt: 25, card: 26, checkedAt: 27,
-  priceAdjust: 28, flatAdjust: 29, adjustNote: 30, formKey: 31, formUrl: 32
+  regInvoiceId: 24, regInvoiceSent: 25,
+  signedAt: 26, card: 27, checkedAt: 28,
+  priceAdjust: 29, flatAdjust: 30, adjustNote: 31, formKey: 32, formUrl: 33
 };
 
 /**
@@ -453,6 +454,7 @@ const BOARD_SOURCE_FIELDS = {
   email: ['メールアドレス', 'メール'],
   tel: ['電話番号', 'お電話番号'],
   monthly: ['月間予定数', '月間の依頼予定数量'],
+  yearly: ['年間予定数', '年間の依頼予定数量'],
   detail: ['選択内容'],
   unitPrice: ['概算単価'],
   inquiry: ['問い合わせ内容', 'お問い合わせ・ご要望', 'お問い合わせ内容・補足', 'ご要望', '備考']
@@ -618,6 +620,8 @@ function boardSetup() {
   // **表を書き出す前に段をそろえる。** 逆にすると、古い段のまま書き出してしまう
   step('数量割引の段', function () { priceMigrateTiers_(); });
   step('割引の控え', function () { priceSyncLegacyDiscounts_(); });
+  step('混雑の注意書き', function () { priceMigrateBusyNotice_(); });
+  step('年間予定数の埋め戻し', function () { boardBackfillYearly_(ss); });
   step('料金設計タブ', function () { priceRenderSheet_(ss); });
   step('割引・割増の見直し', function () { boardRepairCustomerAdjust_(ss); });
   step('返送記録の取りこぼし', function () { boardRestoreShipments_(ss); });
@@ -3827,6 +3831,74 @@ function boardClearBorrowedQty_(ss, sheet, values) {
   return cleared;
 }
 
+/**
+ * 顧客タブの「年間予定数」を、フォーム回答から埋め戻す。**空欄だけ。**
+ *
+ * 見積もりフォームでは前から伺っていたのに、顧客タブに置き場が無く、
+ * 回答シートの中に埋もれたままだった。案件の「元回答行」をたどって拾う。
+ * **片づけた案件も見る。** 見送りになったお客様の回答もそこにあるため。
+ */
+function boardBackfillYearly_(ss) {
+  const customers = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  const source = ss.getSheetByName(BOARD_SOURCE_SHEET);
+  if (!customers || !source || customers.getLastRow() < 2 || source.getLastRow() < 2) return 0;
+
+  const col = boardResolveSourceColumns_(source);
+  if (col.yearly < 0) return 0;   // 回答シートに年間予定数の列が無ければ何もしない
+
+  const answers = source.getRange(2, 1, source.getLastRow() - 1, source.getLastColumn()).getValues();
+
+  // 顧客IDごとに、いちばん古い回答から年間予定数を拾う
+  const found = {};
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  const rows = (cases && cases.getLastRow() > 1
+    ? cases.getRange(2, 1, cases.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues()
+    : []).concat(boardArchivedCaseRows_(ss));
+
+  rows.forEach(function (row) {
+    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
+    const at = Number(row[BOARD_COL.sourceRow - 1] || 0);
+    if (!customerId || at < 2 || at > answers.length + 1) return;
+    const value = answers[at - 2][col.yearly];
+    if (value === '' || value === null || value === undefined) return;
+    if (found[customerId] && found[customerId].at <= at) return;
+    found[customerId] = { at: at, value: value };
+  });
+
+  // **元回答行が無い案件もある。** そのときはメールアドレスで引き当てる
+  const byMail = {};
+  if (col.email >= 0) {
+    answers.forEach(function (answer, i) {
+      const mail = String(answer[col.email] || '').trim().toLowerCase();
+      const value = answer[col.yearly];
+      if (!mail || value === '' || value === null || value === undefined) return;
+      if (byMail[mail] && byMail[mail].at <= i + 2) return;
+      byMail[mail] = { at: i + 2, value: value };
+    });
+  }
+
+  const filled = [];
+  const rowsOfCustomers = customers.getRange(2, 1, customers.getLastRow() - 1, BOARD_CUSTOMER_HEADERS.length).getValues();
+
+  rowsOfCustomers.forEach(function (row, i) {
+    const id = String(row[BOARD_CUSTOMER_COL.id - 1] || '').trim();
+    if (!id) return;
+    if (String(row[BOARD_CUSTOMER_COL.yearly - 1] || '').trim()) return;   // 手で入れた値は触らない
+
+    const mail = String(row[BOARD_CUSTOMER_COL.email - 1] || '').trim().toLowerCase();
+    const hit = found[id] || byMail[mail];
+    if (!hit) return;
+
+    customers.getRange(i + 2, BOARD_CUSTOMER_COL.yearly).setValue(hit.value);
+    filled.push(id + ' ' + hit.value);
+  });
+
+  if (filled.length > 0) {
+    boardLog_('移行', '顧客タブの年間予定数を埋めました: ' + filled.join('／'));
+  }
+  return filled.length;
+}
+
 /** お客様ごとのメールを、古い順に並べて返す。 */
 function boardMailsByCustomer_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
@@ -4202,6 +4274,7 @@ function boardImportResponses_(ss) {
       tel: String(pick('tel') || '').trim(),
       detail: detail,
       monthly: pick('monthly'),
+      yearly: pick('yearly'),
       unitPrice: pick('unitPrice'),
       date: pick('date')
     });
@@ -4510,6 +4583,7 @@ function boardUpsertCustomer_(sheet, data) {
   values[BOARD_CUSTOMER_COL.tel - 1] = data.tel;
   values[BOARD_CUSTOMER_COL.detail - 1] = data.detail;
   values[BOARD_CUSTOMER_COL.monthly - 1] = data.monthly;
+  values[BOARD_CUSTOMER_COL.yearly - 1] = data.yearly;
   values[BOARD_CUSTOMER_COL.unitPrice - 1] = data.unitPrice;
   values[BOARD_CUSTOMER_COL.firstAt - 1] = data.date;
   values[BOARD_CUSTOMER_COL.updatedAt - 1] = new Date();
