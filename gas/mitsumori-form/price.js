@@ -282,7 +282,8 @@ function priceSyncLegacyDiscounts_() {
   const monthly = (config.quantityOptions && config.quantityOptions.monthly) || [];
   if (monthly.length === 0) return 0;
 
-  const next = monthly.map(function (tier) {
+  const next = monthly.filter(function (tier) { return tier.enabled !== false; })
+    .map(function (tier) {
     return {
       label: tier.label,
       minMonthlyQty: Number(tier.quantity || 0),
@@ -509,7 +510,10 @@ function priceApplyToConfig_(config, table) {
   });
 
   // 古い discounts は見積もりフォームの控え。食い違ったままにしない
-  config.discounts = monthly.map(function (tier) {
+  // **止めた段は控えにも残さない。** 月の段が見当たらないときの
+  // 逃げ道に古い割引が残っていると、取りやめたはずの値引きが顔を出す
+  config.discounts = monthly.filter(function (tier) { return tier.enabled !== false; })
+    .map(function (tier) {
     return {
       label: tier.label,
       minMonthlyQty: Number(tier.quantity || 0),
