@@ -70,6 +70,8 @@
     font-weight: 700; color: #3B6EF8; white-space: nowrap; }
   .t-more { margin-left: auto; font-size: 12px; color: #B4741B; font-weight: 600; }
   a.track { color: #3B6EF8; }
+  #carrierOther { margin: 4px 0 6px; }
+  .opt-note { font-size: 12px; color: #7A8AA8; margin: 2px 0 10px 24px; }
 </style>
 </head>
 <body>
@@ -234,27 +236,52 @@
           (r[0] === '電話番号'
             ? '<br><span style="color:#7A8AA8;font-size:12px">' + esc(state.notes.tel) + '</span>'
             : '') + '</span></div>';
-      }).join('') + '</div>' +
-      (carrierId === 'yamato' ? ''
-        : '<div class="note note-plain">※ ' + esc(s.note) + '</div>');
+      }).join('') + '</div>';
   }
 
-  /** いま選ばれている運送業者。未選択ならヤマト運輸を初期値にする。 */
+  /**
+   * いま選ばれている運送業者のID。
+   * 「それ以外」のときは、その下で選ばれたものを返す。
+   */
   function pickedCarrier() {
-    var on = document.querySelector('input[name=carrier]:checked');
-    if (on) return on.value;
-    return (state.current && state.current.carrier) ? '' : 'yamato';
+    var top = document.querySelector('input[name=carrier]:checked');
+    if (!top) return '';
+    if (top.value !== '__other') return top.value;
+    var sub = document.querySelector('input[name=carrier2]:checked');
+    return sub ? sub.value : 'other';
   }
 
+  function digitsOf(c) {
+    return c.digits && c.digits.length ? '（' + c.digits.join('桁／') + '桁）' : '';
+  }
+
+  /**
+   * 運送業者。**ヤマト運輸とそれ以外に分ける。**
+   * 営業所止めが使えるのはヤマトだけで、そのあとの発送先の案内が変わる。
+   * 一覧に無い業者は「その他」にお名前を書いていただき、そのまま記録する。
+   */
   function carriersHtml() {
-    // まだ選ばれていなければ、営業所止めが使えるヤマト運輸を初期値にする
-    var none = !(state.current && state.current.carrier);
-    return state.carriers.map(function (c) {
-      var on = none ? c.id === 'yamato' : state.current.carrier === c.name;
-      return '<label class="opt"><input type="radio" name="carrier" value="' + esc(c.id) + '"' +
-        (on ? ' checked' : '') + '>' + esc(c.name) +
-        (c.digits.length ? '（' + c.digits.join('桁／') + '桁）' : '') + '</label>';
-    }).join('');
+    var cur = (state.current && state.current.carrier) || '';
+    var known = state.carriers.filter(function (c) { return c.name === cur; })[0];
+    var yamato = state.carriers.filter(function (c) { return c.id === 'yamato'; })[0] || { digits: [] };
+    // 初めての方はヤマト運輸から。営業所止めがいちばん早くお受け取りできる
+    var pickYamato = cur ? (!!known && known.id === 'yamato') : true;
+    // 一覧に無い名前が入っていたら「その他」に入れて、お名前をそのまま出す
+    var subPick = (known && known.id !== 'yamato') ? known.id : (cur && !known ? 'other' : '');
+
+    return '<label class="opt"><input type="radio" name="carrier" value="yamato"' +
+        (pickYamato ? ' checked' : '') + '>ヤマト運輸' + digitsOf(yamato) + '</label>' +
+      '<label class="opt"><input type="radio" name="carrier" value="__other"' +
+        (pickYamato ? '' : ' checked') + '>それ以外</label>' +
+      '<div class="opt-note">※ ' + esc(state.shipTo ? state.shipTo.note : '') + '</div>' +
+      '<div class="subs" id="otherCarriers">' +
+        state.carriers.filter(function (c) { return c.id !== 'yamato'; }).map(function (c) {
+          return '<label class="opt"><input type="radio" name="carrier2" value="' + esc(c.id) + '"' +
+            (subPick === c.id ? ' checked' : '') + '>' + esc(c.name) + digitsOf(c) + '</label>';
+        }).join('') +
+        '<input type="text" id="carrierOther" placeholder="運送業者名をご入力ください" value="' +
+          (subPick === 'other' ? esc(cur) : '') + '">' +
+      '</div>';
   }
 
   /** 追跡番号。業者のページが分かるときだけリンクにする。 */
@@ -370,15 +397,25 @@
     bindCarrier();
   }
 
-  /** 運送業者を選び直したら、発送先の表示も入れ替える。 */
+  /** 運送業者を選び直したら、下の表示も入れ替える。 */
   function bindCarrier() {
     var box = el('shipTo');
     if (!box) return;
-    var radios = document.querySelectorAll('input[name=carrier]');
-    var draw = function () { box.innerHTML = shipToHtml(pickedCarrier()); };
-    Array.prototype.forEach.call(radios, function (r) {
-      r.addEventListener('change', draw);
-    });
+    var subs = el('otherCarriers');
+    var typed = el('carrierOther');
+
+    var draw = function () {
+      var top = document.querySelector('input[name=carrier]:checked');
+      var isOther = !!top && top.value === '__other';
+      var sub = document.querySelector('input[name=carrier2]:checked');
+      if (subs) subs.style.display = isOther ? '' : 'none';
+      if (typed) typed.style.display = (isOther && sub && sub.value === 'other') ? '' : 'none';
+      box.innerHTML = shipToHtml(pickedCarrier());
+    };
+
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name=carrier], input[name=carrier2]'),
+      function (r) { r.addEventListener('change', draw); });
     draw();
   }
 
@@ -409,7 +446,7 @@
 
     var ship = el('btnShipping');
     if (ship) ship.addEventListener('click', function () {
-      var carrier = document.querySelector('input[name=carrier]:checked');
+      var carrier = pickedCarrier();
       if (!carrier) { show('msgShipping', 'err', '運送業者をお選びください。'); return; }
       ship.disabled = true;
       show('msgShipping', 'ok', '送信しています...');
@@ -422,7 +459,9 @@
         .withFailureHandler(function (e) { show('msgShipping', 'err', e.message); ship.disabled = false; })
         .orderSubmitShipping({
           c: CUSTOMER_ID, k: FORM_KEY,
-          carrier: carrier.value, tracking: el('tracking').value
+          carrier: carrier,
+          carrierOther: el('carrierOther') ? el('carrierOther').value : '',
+          tracking: el('tracking').value
         });
     });
   }

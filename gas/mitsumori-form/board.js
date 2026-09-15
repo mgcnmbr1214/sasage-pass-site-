@@ -2382,7 +2382,6 @@ function boardSetupTemplates_(ss) {
   boardMigrateStartDateLines_(sheet);
   boardMigrateShipPrompt_(sheet);
   boardMigrateTrackingUrl_(sheet);
-  boardMigrateOtherCarrierAddress_(sheet);
 
   const last = sheet.getLastColumn();
   if (last > 1) {
@@ -2864,15 +2863,6 @@ function boardDefaultGuideRepeatBody_() {
     '・手書きの送り状の場合は上記のとおりご記入のうえ、',
     '　伝票右下の「営業所受け取りサービス」へのチェックを必ずお願いいたします。',
     '',
-    'ヤマト運輸以外でご発送の場合は、下記へお願いいたします。',
-    '',
-    '　〒{{発送先郵便番号}}　{{ヤマト以外の発送先住所}}',
-    '　{{ヤマト以外の発送先宛名}}',
-    '　電 話 番 号　：{{発送先TEL}}',
-    '　品　　　名　：{{品名}}',
-    '',
-    '※ ヤマト運輸のほうが受け取り・検品が早く進むため、先に受付をさせていただくことがございます。',
-    '',
     '━━━━━━━━━━━━━━━━━━━━',
     '■ 発送にあたってのお願い',
     '━━━━━━━━━━━━━━━━━━━━',
@@ -3014,52 +3004,6 @@ function boardMigrateReceivedCount_(sheet) {
     cell.setValue(body.split('{{予定点数}}').join('{{点数}}'));
     boardLog_('移行', 'テンプレ T7 の点数を、実際にお預かりした点数に付け替えました');
     return;
-  }
-}
-
-/**
- * 発送先の案内に、ヤマト運輸以外でお送りいただくときの住所を足す。
- *
- * 営業所止めはヤマトにしかない。**書いていないと、お客様が止まって聞き直す。**
- * 実際に「日通では営業所止めに対応していない」とお問い合わせをいただいた。
- * ヤマトのほうが早いことだけは、あわせて短く添える。
- */
-function boardMigrateOtherCarrierAddress_(sheet) {
-  const last = sheet.getLastColumn();
-  if (last < 2) return;
-
-  const NL = String.fromCharCode(10);
-  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
-  let changed = 0;
-
-  for (let c = 1; c < ids.length; c++) {
-    const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
-    const body = String(cell.getValue() || '');
-    if (!body) continue;
-    if (body.indexOf('{{ヤマト以外の発送先住所}}') >= 0) continue;
-
-    const lines = body.split(NL);
-    const at = lines.findIndex(function (l) {
-      return l.indexOf('営業所受け取りサービス') >= 0;
-    });
-    if (at < 0) continue;
-
-    lines.splice(at + 1, 0,
-      '',
-      'ヤマト運輸以外でご発送の場合は、下記へお願いいたします。',
-      '',
-      '　〒{{発送先郵便番号}}　{{ヤマト以外の発送先住所}}',
-      '　{{ヤマト以外の発送先宛名}}',
-      '　電 話 番 号　：{{発送先TEL}}',
-      '　品　　　名　：{{品名}}',
-      '',
-      '※ ヤマト運輸のほうが受け取り・検品が早く進むため、先に受付をさせていただくことがございます。');
-    cell.setValue(lines.join(NL));
-    changed++;
-  }
-
-  if (changed > 0) {
-    boardLog_('移行', 'テンプレ ' + changed + ' 件に、ヤマト以外の発送先を足しました');
   }
 }
 

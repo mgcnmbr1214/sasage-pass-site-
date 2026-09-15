@@ -34,8 +34,7 @@ const ORDER_CARRIERS = [
     id: 'japanpost', name: '日本郵便', digits: [11, 12, 13],
     url: 'https://trackings.post.japanpost.jp/services/srv/search/direct?reqCodeNo1='
   },
-  // 日通は番号から直接開けるページが公開されていない。名前だけ記録する
-  { id: 'nittsu', name: '日本通運', digits: [], url: '' },
+  // ここに無い業者は「その他」でお名前をご入力いただく
   { id: 'other', name: 'その他', digits: [], url: '' }
 ];
 
@@ -235,6 +234,12 @@ function orderSubmitShipping(payload) {
   const carrier = orderFindCarrier_(data.carrier);
   if (!carrier) throw new Error('運送業者をお選びください。');
 
+  // 「その他」はお客様がお名前を書いてくださる。**書かれた名前をそのまま残す。**
+  // 「その他」とだけ記録すると、あとから荷物を追えなくなる
+  const typed = String(data.carrierOther || '').trim();
+  if (carrier.id === 'other' && !typed) throw new Error('運送業者名をご入力ください。');
+  const carrierName = carrier.id === 'other' ? typed : carrier.name;
+
   const tracking = String(data.tracking || '').replace(/[\s　]/g, '');
   const error = orderCheckTracking_(carrier, tracking);
   if (error) throw new Error(error);
@@ -243,7 +248,7 @@ function orderSubmitShipping(payload) {
   if (!open) throw new Error('ご発送前のご依頼が見つかりません。先にご依頼内容をお送りください。');
 
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-  sheet.getRange(open.caseRow, BOARD_COL.carrier).setValue(carrier.name);
+  sheet.getRange(open.caseRow, BOARD_COL.carrier).setValue(carrierName);
   // 12桁の数字をそのまま入れると 1.23E+11 になる。文字として入れる
   sheet.getRange(open.caseRow, BOARD_COL.tracking).setNumberFormat('@').setValue(tracking);
   boardRefreshTrackingLinks_(sheet.getParent());
@@ -257,7 +262,7 @@ function orderSubmitShipping(payload) {
 
   priceRefreshUnitPrices_(ss);
   boardLog_('依頼フォーム', open.caseId + ' の発送情報を受け付けました（' +
-    carrier.name + ' ' + tracking + '）');
+    carrierName + ' ' + tracking + '）');
   return { ok: true, caseId: open.caseId };
 }
 
