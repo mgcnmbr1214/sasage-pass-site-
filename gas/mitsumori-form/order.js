@@ -520,13 +520,35 @@ function orderTierText_(tier, config) {
 /** 発送先のご案内。**契約が済むまで出さない。** */
 function orderShipTo_(settings, signed) {
   if (!signed) return null;
+  const zip = String(settings['発送先郵便番号'] || '');
+  const tel = String(settings['発送先TEL'] || '');
+  const item = String(settings['品名'] || '');
+
   return {
-    office: String(settings['営業所名'] || ''),
-    officeCode: String(settings['営業所コード'] || ''),
-    zip: String(settings['発送先郵便番号'] || ''),
-    name: String(settings['発送先宛名'] || ''),
-    tel: String(settings['発送先TEL'] || ''),
-    item: String(settings['品名'] || '')
+    // ヤマト運輸は営業所止め。こちらの都合で受け取りに行けるので、いちばん早い
+    yamato: {
+      title: 'ご発送先（ヤマト運輸「営業所止め」）',
+      rows: [
+        ['営業所コード', String(settings['営業所コード'] || '')],
+        ['営業所名', String(settings['営業所名'] || '')],
+        ['郵便番号', zip ? '〒' + zip : ''],
+        ['宛名', String(settings['発送先宛名'] || '')],
+        ['電話番号', tel],
+        ['品名', item]
+      ]
+    },
+    // **営業所止めはヤマトにしかない。** 書いていないとお客様が止まって聞き直す
+    other: {
+      title: 'ご発送先（ヤマト運輸以外）',
+      rows: [
+        ['郵便番号', zip ? '〒' + zip : ''],
+        ['住所', String(settings['ヤマト以外の発送先住所'] || '')],
+        ['宛名', String(settings['ヤマト以外の発送先宛名'] || '')],
+        ['電話番号', tel],
+        ['品名', item]
+      ]
+    },
+    note: 'ヤマト運輸のほうが受け取り・検品が早く進むため、先に受付をさせていただくことがございます。'
   };
 }
 

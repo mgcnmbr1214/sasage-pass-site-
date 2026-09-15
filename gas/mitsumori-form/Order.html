@@ -218,26 +218,39 @@
       '<div class="note note-plain">' + esc(state.notes.profile) + '</div>';
   }
 
-  function shipToHtml() {
+  /**
+   * 選ばれた運送業者に合わせた発送先。
+   * ヤマト運輸だけ営業所止めが使えるので、それ以外は住所をお伝えする。
+   */
+  function shipToHtml(carrierId) {
     var s = state.shipTo;
     if (!s) return '';
-    var rows = [
-      ['営業所コード', s.officeCode], ['営業所名', s.office],
-      ['郵便番号', s.zip ? '〒' + s.zip : ''], ['宛名', s.name],
-      ['電話番号', s.tel], ['品名', s.item]
-    ].filter(function (r) { return r[1]; });
-    return '<div class="note note-plain"><b>ご発送先（ヤマト運輸「営業所止め」）</b></div>' +
+    var box = (carrierId === 'yamato') ? s.yamato : s.other;
+    var rows = box.rows.filter(function (r) { return r[1]; });
+
+    return '<div class="note note-plain"><b>' + esc(box.title) + '</b></div>' +
       '<div class="info">' + rows.map(function (r) {
         return '<div><dt>' + esc(r[0]) + '</dt><span>' + esc(r[1]) +
           (r[0] === '電話番号'
             ? '<br><span style="color:#7A8AA8;font-size:12px">' + esc(state.notes.tel) + '</span>'
             : '') + '</span></div>';
-      }).join('') + '</div>';
+      }).join('') + '</div>' +
+      (carrierId === 'yamato' ? ''
+        : '<div class="note note-plain">※ ' + esc(s.note) + '</div>');
+  }
+
+  /** いま選ばれている運送業者。未選択ならヤマト運輸を初期値にする。 */
+  function pickedCarrier() {
+    var on = document.querySelector('input[name=carrier]:checked');
+    if (on) return on.value;
+    return (state.current && state.current.carrier) ? '' : 'yamato';
   }
 
   function carriersHtml() {
+    // まだ選ばれていなければ、営業所止めが使えるヤマト運輸を初期値にする
+    var none = !(state.current && state.current.carrier);
     return state.carriers.map(function (c) {
-      var on = state.current && state.current.carrier === c.name;
+      var on = none ? c.id === 'yamato' : state.current.carrier === c.name;
       return '<label class="opt"><input type="radio" name="carrier" value="' + esc(c.id) + '"' +
         (on ? ' checked' : '') + '>' + esc(c.name) +
         (c.digits.length ? '（' + c.digits.join('桁／') + '桁）' : '') + '</label>';
@@ -333,8 +346,8 @@
       (state.signed
         ? '<p class="lead">ご発送後、追跡番号をお知らせください。ここまでで依頼が完了します。<br>' +
           '点数が変わった場合は、先に「1. ご依頼内容」の予定数を直して更新してください。</p>' +
-          shipToHtml() +
           '<label class="field">運送業者</label>' + carriersHtml() +
+          '<div id="shipTo"></div>' +
           '<label class="field">追跡番号</label>' +
           '<input type="text" id="tracking" value="' + esc(cur ? cur.tracking : '') + '">' +
           '<div class="note note-warn">⚠ ' + esc(state.notes.tracking) + '</div>' +
@@ -354,6 +367,19 @@
     }
     bind();
     bindZip();
+    bindCarrier();
+  }
+
+  /** 運送業者を選び直したら、発送先の表示も入れ替える。 */
+  function bindCarrier() {
+    var box = el('shipTo');
+    if (!box) return;
+    var radios = document.querySelectorAll('input[name=carrier]');
+    var draw = function () { box.innerHTML = shipToHtml(pickedCarrier()); };
+    Array.prototype.forEach.call(radios, function (r) {
+      r.addEventListener('change', draw);
+    });
+    draw();
   }
 
   function bind() {
