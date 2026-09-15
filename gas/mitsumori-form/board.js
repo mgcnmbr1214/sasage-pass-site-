@@ -4712,6 +4712,9 @@ function boardRefreshUnbilled_(ss) {
   const caseIds = cases.getRange(2, BOARD_COL.caseId, rows, 1).getValues();
   const blank = SpreadsheetApp.newRichTextValue().setText('').build();
 
+  const wroteUnbilled = [];
+  // **日付に化けさせない。** 日付書式のセルに 2026/09/14 と書くと 9/14 と表示される
+  cases.getRange(2, BOARD_COL.unbilled, rows, 1).setNumberFormat('@');
   cases.getRange(2, BOARD_COL.unbilled, rows, 1).setRichTextValues(
     caseIds.map(function (row) {
       const caseId = String(row[0] || '').trim();
@@ -4725,6 +4728,7 @@ function boardRefreshUnbilled_(ss) {
       const labels = hits.map(function (h) { return h.label; });
 
       let text = labels.join(BOARD_UNREPLIED_SEPARATOR) + (rest > 0 ? ' +' + rest : '');
+      wroteUnbilled.push(caseId + '=' + text);
       if (unpaid[caseId]) text = (text ? text + '　' : '') + BOARD_UNPAID_LABEL;
       if (!text) return [blank];
 
@@ -4737,6 +4741,21 @@ function boardRefreshUnbilled_(ss) {
       return [value.build()];
     })
   );
+  boardTraceWrote_('未請求の返送', wroteUnbilled);
+}
+
+/** どの案件に何を書いたか。書式が混ざる原因を追うための控え。 */
+function boardTraceWrote_(label, list) {
+  try {
+    const text = list.filter(function (v) { return v.indexOf('=') !== v.length - 1; }).join('／');
+    const props = PropertiesService.getScriptProperties();
+    const key = 'BOARD_TRACE_' + label;
+    if (props.getProperty(key) === text) return;
+    props.setProperty(key, text);
+    boardLog_('表示', label + 'を書き直しました: ' + (text || '（すべて空）'));
+  } catch (err) {
+    // 記録に失敗しても本体は止めない
+  }
 }
 
 /**
@@ -4844,6 +4863,9 @@ function boardRefreshUnreplied_(ss) {
   // **そのお客様のいちばん新しい依頼にだけ**出す
   const newest = boardNewestCaseRows_(caseIds, customerIds, statuses);
 
+  const wroteUnreplied = [];
+  // **日付に化けさせない。** 日付書式のセルに 2026/09/14 と書くと 9/14 と表示される
+  cases.getRange(2, BOARD_COL.unreplied, rows, 1).setNumberFormat('@');
   cases.getRange(2, BOARD_COL.unreplied, rows, 1).setRichTextValues(
     caseIds.map(function (row, i) {
       if (!String(row[0] || '').trim()) return [blank];
@@ -4859,6 +4881,7 @@ function boardRefreshUnreplied_(ss) {
         .slice(0, BOARD_UNREPLIED_MAX_LINKS);
       const rest = hits.length - shown.length;
       const labels = shown.map(function (h) { return h.label; });
+      wroteUnreplied.push(String(row[0] || '') + '=' + labels.join(','));
       const value = SpreadsheetApp.newRichTextValue()
         .setText(labels.join(BOARD_UNREPLIED_SEPARATOR) + (rest > 0 ? ' +' + rest : ''));
 
@@ -4870,6 +4893,7 @@ function boardRefreshUnreplied_(ss) {
       return [value.build()];
     })
   );
+  boardTraceWrote_('未返信', wroteUnreplied);
 }
 
 /**
