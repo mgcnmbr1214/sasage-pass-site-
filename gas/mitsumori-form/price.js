@@ -270,6 +270,35 @@ function priceJson_() {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+/**
+ * 古い `discounts` の控えを、いまの数量割引にそろえる。**毎回確かめる。**
+ *
+ * 見積もりフォームは、月の段が見当たらないときだけこの控えを見る。ふだんは
+ * 使われないが、食い違ったまま置いておくと、いつか古い割引が顔を出す。
+ * 実際、段を3つに直したあともこの控えだけ4段のまま残っていた。
+ */
+function priceSyncLegacyDiscounts_() {
+  const config = getConfig_();
+  const monthly = (config.quantityOptions && config.quantityOptions.monthly) || [];
+  if (monthly.length === 0) return 0;
+
+  const next = monthly.map(function (tier) {
+    return {
+      label: tier.label,
+      minMonthlyQty: Number(tier.quantity || 0),
+      rate: tier.discountType === 'rate' ? Number(tier.discountRate || 0) : 0,
+      discountType: tier.discountType === 'amount' ? 'amount' : 'rate',
+      discountAmount: tier.discountType === 'amount' ? Number(tier.discountAmount || 0) : 0
+    };
+  });
+  if (JSON.stringify(config.discounts || []) === JSON.stringify(next)) return 0;
+
+  config.discounts = next;
+  writeConfig_(config);
+  boardLog_('料金', '割引の控えを、いまの数量割引にそろえました');
+  return 1;
+}
+
 /** この直しを当てたかどうかの控え。**一度きり。** */
 const PRICE_PROP_TIERS_3 = 'PRICE_TIERS_3';
 

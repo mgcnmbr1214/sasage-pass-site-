@@ -6,6 +6,8 @@
   --navy-dark: #2454D6;
   --orange: #FF6B35;
   --orange-dark: #E8511E;
+  /* 料金表の金額。お得感を出すための赤 */
+  --price-red: #E0352B;
   --white: #fff;
   --gray: #F4F7FF;
   --gray-mid: #DDE4F8;
@@ -1132,10 +1134,23 @@ a { text-decoration: none; color: inherit; }
   margin-top: 2px;
 }
 .price-table tbody td {
-  font-weight: 600;
+  font-weight: 900;
+  font-size: 20px;
+  color: var(--price-red);
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+/* プラン名の列は金額ではないので、赤くしない */
+.price-table tbody td.plan-cell {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
 }
 .price-table tbody tr:last-child td { border-bottom: 0; }
+@media (max-width: 767px) {
+  .price-table tbody td { font-size: 17px; }
+  .price-table tbody td.plan-cell { font-size: 14px; }
+}
 
 /* =============================================
    ギャラリー

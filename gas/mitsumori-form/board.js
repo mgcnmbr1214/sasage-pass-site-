@@ -617,6 +617,7 @@ function boardSetup() {
   step('IDの整理', function () { priceTidyIds_(ss); });
   // **表を書き出す前に段をそろえる。** 逆にすると、古い段のまま書き出してしまう
   step('数量割引の段', function () { priceMigrateTiers_(); });
+  step('割引の控え', function () { priceSyncLegacyDiscounts_(); });
   step('料金設計タブ', function () { priceRenderSheet_(ss); });
   step('割引・割増の見直し', function () { boardRepairCustomerAdjust_(ss); });
   step('返送記録の取りこぼし', function () { boardRestoreShipments_(ss); });
