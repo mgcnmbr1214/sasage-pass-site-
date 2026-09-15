@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ササゲパス | 古着・アパレルEC向け ささげ代行サービス</title>
-  <meta name="description" content="古着・アパレルEC事業者向けのささげ代行サービス。撮影・採寸・出品を1点400円〜全部お任せ。クリーニング無料。商品を送るだけでOK。メルカリShops・BASE・Shopify・楽天など主要EC対応。">
+  <meta name="description" content="古着・アパレルEC事業者向けのささげ代行サービス。撮影・採寸・出品を1点300円〜全部お任せ。クリーニング無料。商品を送るだけでOK。メルカリShops・BASE・Shopify・楽天など主要EC対応。">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -69,7 +69,7 @@
         <h1 class="hero-title" data-edit-id="hero-title" data-edit-label="ヒーロー：メイン見出し" data-edit-type="richtext">商品を送るだけで、<br>あとは全部<span class="highlight">おまかせ</span>。</h1>
         <p class="hero-sub" data-edit-id="hero-sub" data-edit-label="ヒーロー：サブテキスト" data-edit-type="richtext">撮影・採寸・出品・クリーニングまで一括代行。<br>それぞれの作業のプロがあなたの商品を輝かせます。</p>
         <div class="hero-badges">
-          <span class="badge"><i class="fa-solid fa-check"></i> 1点400円〜</span>
+          <span class="badge"><i class="fa-solid fa-check"></i> 1点300円〜</span>
           <span class="badge"><i class="fa-solid fa-check"></i> クリーニング無料</span>
           <span class="badge"><i class="fa-solid fa-check"></i> 複数EC対応</span>
         </div>
@@ -649,69 +649,39 @@
       <div class="section-header">
         <p class="section-label">PRICING</p>
         <h2 class="section-title">料金プランの一例</h2>
-        <p class="section-desc">すべて<strong>1商品あたりの単価</strong>です。クリーニングは無料で選択可能。<br>数量・オプション内容により、店舗ごとに個別調整いたします。</p>
+        <p class="section-desc">すべて<strong>1商品あたりの単価</strong>です。<br>月にご依頼いただく点数が増えるほど、単価が下がります。</p>
       </div>
       <div class="price-table-wrap">
-        <table class="price-table">
-          <thead>
+        <table class="price-table" id="price-matrix">
+          <thead id="matrix-head">
             <tr>
-              <th></th>
-              <th>撮影<br><span class="th-sub">基本5〜10枚</span></th>
-              <th>採寸<br><span class="th-sub">情報登録込み</span></th>
-              <th>出品<br><span class="th-sub">1サイト</span></th>
-              <th>出品<br><span class="th-sub">2サイト以上</span></th>
-              <th>料金<br><span class="th-sub">1商品あたり</span></th>
+              <th class="plan-col">プラン</th>
+              <th>月1〜49点<span class="th-sub">通常料金</span></th>
+              <th>月50〜100点<span class="th-sub">1点あたり ¥50 引き</span></th>
+              <th>月101点〜<span class="th-sub">1点あたり ¥100 引き</span></th>
             </tr>
           </thead>
-          <tbody>
-            <tr>
-              <td class="plan-name" data-edit-id="price-a-name" data-edit-label="料金表 プランA：名称" data-edit-type="text">プランA</td>
-              <td><i class="fa-solid fa-circle-check check"></i></td>
-              <td><i class="fa-solid fa-xmark cross"></i></td>
-              <td><i class="fa-solid fa-xmark cross"></i></td>
-              <td><i class="fa-solid fa-xmark cross"></i></td>
-              <td class="plan-price" data-plan="a" data-edit-id="price-a-price" data-edit-label="料金表 プランA：料金" data-edit-type="text">¥400</td>
+          <tbody id="matrix-body">
+            <tr data-plan-row="a">
+              <td class="plan-cell"><b>プランA</b><small>撮影</small></td>
+              <td>¥400</td><td>¥350</td><td>¥300</td>
             </tr>
-            <tr>
-              <td class="plan-name" data-edit-id="price-b-name" data-edit-label="料金表 プランB：名称" data-edit-type="text">プランB</td>
-              <td><i class="fa-solid fa-circle-check check"></i></td>
-              <td><i class="fa-solid fa-circle-check check"></i></td>
-              <td><i class="fa-solid fa-xmark cross"></i></td>
-              <td><i class="fa-solid fa-xmark cross"></i></td>
-              <td class="plan-price" data-plan="b" data-edit-id="price-b-price" data-edit-label="料金表 プランB：料金" data-edit-type="text">¥600</td>
+            <tr data-plan-row="b">
+              <td class="plan-cell"><b>プランB</b><small>撮影＋採寸</small></td>
+              <td>¥600</td><td>¥550</td><td>¥500</td>
             </tr>
-            <tr>
-              <td class="plan-name"><span data-edit-id="price-c-name" data-edit-label="料金表 プランC：名称" data-edit-type="text">プランC</span></td>
-              <td><i class="fa-solid fa-circle-check check"></i></td>
-              <td><i class="fa-solid fa-circle-check check"></i></td>
-              <td><i class="fa-solid fa-circle-check check"></i></td>
-              <td><i class="fa-solid fa-xmark cross"></i></td>
-              <td class="plan-price" data-plan="c" data-edit-id="price-c-price" data-edit-label="料金表 プランC：料金" data-edit-type="text">¥900</td>
+            <tr data-plan-row="c">
+              <td class="plan-cell"><b>プランC</b><small>撮影＋採寸＋出品1サイト</small></td>
+              <td>¥900</td><td>¥850</td><td>¥800</td>
             </tr>
-            <tr>
-              <td class="plan-name" data-edit-id="price-d-name" data-edit-label="料金表 プランD：名称" data-edit-type="text">プランD</td>
-              <td><i class="fa-solid fa-circle-check check"></i></td>
-              <td><i class="fa-solid fa-circle-check check"></i></td>
-              <td><i class="fa-solid fa-circle-check check"></i></td>
-              <td><i class="fa-solid fa-circle-check check"></i></td>
-              <td class="plan-price" data-plan="d" data-edit-id="price-d-price" data-edit-label="料金表 プランD：料金" data-edit-type="text">¥1,000〜</td>
+            <tr data-plan-row="d">
+              <td class="plan-cell"><b>プランD</b><small>撮影＋採寸＋複数サイト出品</small></td>
+              <td>¥1,100〜</td><td>¥1,050〜</td><td>¥1,000〜</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <p class="price-note"><i class="fa-solid fa-circle-info"></i> <span data-edit-id="price-note" data-edit-label="料金表：下部注記" data-edit-type="text">※クリーニングは無料サービス。数量や各オプションの有無で、店舗様毎に調整させていただきます。</span></p>
-
-      <!-- 数量割引。中身は料金設計タブから読み込みます（読めなければ下の内容のまま） -->
-      <div class="price-tiers" id="price-tiers">
-        <h3 class="price-tiers-title">数量割引</h3>
-        <ul class="tier-list" id="tier-list">
-          <li><span class="tier-name">月1〜49点</span><span class="tier-off">通常料金</span></li>
-          <li><span class="tier-name">月50〜100点</span><span class="tier-off">1点あたり ¥50 引き</span></li>
-          <li><span class="tier-name">月100~500点</span><span class="tier-off">1点あたり ¥100 引き</span></li>
-          <li><span class="tier-name">月501点以上</span><span class="tier-off">1点あたり ¥200 引き</span></li>
-        </ul>
-        <p class="price-note">※ その月にご発送いただいたお荷物の、お預かり点数の合計で決まります。</p>
-      </div>
+      <p class="price-note"><i class="fa-solid fa-circle-info"></i> <span data-edit-id="price-note" data-edit-label="料金表：下部注記" data-edit-type="text">※ クリーニングは全プラン無料。数量割引は、その月にご発送いただいたお荷物の点数の合計で自動的に決まります。オプションの有無により、店舗様ごとに調整させていただきます。</span></p>
       <div class="price-cta">
         <a href="/mitsumori/" class="btn btn-primary" target="_blank" rel="noopener">１分で料金チェック <i class="fa-solid fa-arrow-right"></i></a>
       </div>
@@ -744,7 +714,7 @@
         </details>
         <details class="faq-item">
           <summary class="faq-q"><i class="fa-solid fa-circle-question"></i> <span>支払い方法を教えてください。</span></summary>
-          <div class="faq-a">毎月末に当月のご依頼数量を集計し、ご請求内容をご案内いたします。翌月5日までに銀行振込またはクレジットカードで自動的にお支払いいただく仕組みのため、都度払いの手間がなく継続してご利用いただきやすくなっています。</div>
+          <div class="faq-a">毎月末に当月のご依頼数量を集計し、ご請求内容をご案内いたします。翌月5日までに、ご登録いただいたクレジットカードで自動的にお支払いいただく仕組みのため、都度払いの手間がなく継続してご利用いただきやすくなっています。</div>
         </details>
         <details class="faq-item">
           <summary class="faq-q"><i class="fa-solid fa-circle-question"></i> <span>他の代行業者との違いは何ですか？</span></summary>
@@ -824,10 +794,10 @@
             <label for="service">ご希望のサービス</label>
             <select id="service" name="service">
               <option value="">選択してください</option>
-              <option value="撮影のみ" data-plan-option="a">撮影のみ（プランA / 400円〜）</option>
-              <option value="撮影+採寸" data-plan-option="b">撮影＋採寸（プランB / 600円〜）</option>
-              <option value="撮影+採寸+出品" data-plan-option="c">撮影＋採寸＋出品（プランC / 900円〜）</option>
-              <option value="複数サイト出品" data-plan-option="d">複数サイト出品（プランD / 1,100円〜）</option>
+              <option value="撮影のみ" data-plan-option="a">撮影のみ（プランA / 300円〜）</option>
+              <option value="撮影+採寸" data-plan-option="b">撮影＋採寸（プランB / 500円〜）</option>
+              <option value="撮影+採寸+出品" data-plan-option="c">撮影＋採寸＋出品（プランC / 800円〜）</option>
+              <option value="複数サイト出品" data-plan-option="d">複数サイト出品（プランD / 1,000円〜）</option>
               <option value="サイト制作">自社サイト制作</option>
               <option value="未定・相談したい">まだ決めていない・相談したい</option>
             </select>
@@ -1070,7 +1040,7 @@
       };
       var OPEN_ENDED = { d: true };   // 「〜」を付けるプラン
 
-      // 問い合わせフォームの選択肢。ここも同じ料金から書き換えます
+      // 問い合わせフォームの選択肢。いちばん安い段の単価を出します
       var OPTION_LABEL = {
         a: '撮影のみ（プランA / {n}円〜）',
         b: '撮影＋採寸（プランB / {n}円〜）',
@@ -1079,56 +1049,72 @@
       };
 
       function yen(n) { return '¥' + Number(n).toLocaleString('ja-JP'); }
+      function esc(v) {
+        return String(v == null ? '' : v)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
 
-      function fillPlans(items) {
+      /** その段での単価。円引きと率引きで計算が変わります。 */
+      function withTier(base, tier) {
+        if (tier.type === 'amount') return Math.max(0, base - Number(tier.amount || 0));
+        if (tier.type === 'rate') return Math.round(base * (1 - Number(tier.rate || 0)));
+        return base;
+      }
+
+      /** プランごとの、割引前の単価。項目が消えていたら触りません。 */
+      function planBase(price, key) {
+        var sum = 0;
+        var ok = PLANS[key].every(function (id) {
+          if (price[id] === undefined) return false;
+          sum += price[id];
+          return true;
+        });
+        return ok ? sum : null;
+      }
+
+      function fill(data) {
         var price = {};
-        items.forEach(function (item) { price[item.id] = Number(item.price || 0); });
+        (data.items || []).forEach(function (item) { price[item.id] = Number(item.price || 0); });
+
+        var tiers = (data.tiers || []).filter(function (t) { return t && t.label; });
+        if (!tiers.length) return;
+
+        // 見出し。段の数が変わっても、そのぶんだけ列ができます
+        var head = document.getElementById('matrix-head');
+        if (head) {
+          head.innerHTML = '<tr><th class="plan-col">プラン</th>' + tiers.map(function (t) {
+            return '<th>' + esc(t.label) + '<span class="th-sub">' + esc(t.text) + '</span></th>';
+          }).join('') + '</tr>';
+        }
 
         Object.keys(PLANS).forEach(function (key) {
-          var cell = document.querySelector('[data-plan="' + key + '"]');
-          if (!cell) return;
-          var sum = 0;
-          var ok = PLANS[key].every(function (id) {
-            if (price[id] === undefined) return false;   // 項目が消えていれば触らない
-            sum += price[id];
-            return true;
-          });
-          if (!ok) return;
-          cell.textContent = yen(sum) + (OPEN_ENDED[key] ? '〜' : '');
+          var base = planBase(price, key);
+          if (base === null) return;
+          var tail = OPEN_ENDED[key] ? '〜' : '';
 
-          // 問い合わせフォームの選択肢も、同じ金額にそろえる
+          var row = document.querySelector('[data-plan-row="' + key + '"]');
+          if (row && row.cells.length) {
+            var head0 = row.cells[0].outerHTML;
+            row.innerHTML = head0 + tiers.map(function (t) {
+              return '<td>' + yen(withTier(base, t)) + tail + '</td>';
+            }).join('');
+          }
+
+          // 問い合わせフォームの選択肢は、いちばん安い段に合わせます
+          var lowest = tiers.reduce(function (min, t) {
+            var v = withTier(base, t);
+            return (min === null || v < min) ? v : min;
+          }, null);
           var opt = document.querySelector('[data-plan-option="' + key + '"]');
-          if (opt && OPTION_LABEL[key]) {
-            opt.textContent = OPTION_LABEL[key]
-              .replace('{n}', Number(sum).toLocaleString('ja-JP'));
+          if (opt && OPTION_LABEL[key] && lowest !== null) {
+            opt.textContent = OPTION_LABEL[key].replace('{n}', Number(lowest).toLocaleString('ja-JP'));
           }
         });
       }
 
-      function fillTiers(tiers) {
-        var list = document.getElementById('tier-list');
-        if (!list || !tiers || !tiers.length) return;
-        list.innerHTML = tiers.map(function (t) {
-          var li = document.createElement('li');
-          var name = document.createElement('span');
-          var off = document.createElement('span');
-          name.className = 'tier-name';
-          off.className = 'tier-off';
-          name.textContent = t.label;
-          off.textContent = t.text;
-          li.appendChild(name);
-          li.appendChild(off);
-          return li.outerHTML;
-        }).join('');
-      }
-
       fetch(PRICE_ENDPOINT, { method: 'GET' })
         .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (data) {
-          if (!data) return;
-          if (data.items) fillPlans(data.items);
-          if (data.tiers) fillTiers(data.tiers);
-        })
+        .then(function (data) { if (data) fill(data); })
         .catch(function () { /* 読めなければ、書いてある控えのまま出します */ });
     })();
   </script>

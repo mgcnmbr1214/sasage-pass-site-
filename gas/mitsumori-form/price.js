@@ -256,7 +256,11 @@ function priceJson_() {
       return {
         label: String(t.label || ''),
         from: Number(t.quantity || 0),
-        text: orderTierText_(t, config)
+        text: orderTierText_(t, config),
+        // サイト側が段ごとの単価を出すのに要る
+        type: String(t.discountType || 'none'),
+        amount: Number(t.discountAmount || 0),
+        rate: Number(t.discountRate || 0)
       };
     })
     .sort(function (a, b) { return a.from - b.from; });
@@ -264,6 +268,57 @@ function priceJson_() {
   return ContentService
     .createTextOutput(JSON.stringify({ items: items, tiers: tiers, updatedAt: priceNow_() }))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/** この直しを当てたかどうかの控え。**一度きり。** */
+const PRICE_PROP_TIERS_3 = 'PRICE_TIERS_3';
+
+/**
+ * 数量割引を3段階にする。**一度きり。**
+ *
+ * 月501点以上の段（▲¥200）は、撮影だけのご依頼だと単価が半額になり
+ * 利益が残らないため取りやめた。あわせて「月50～100点」と「月100~500点」で
+ * ちょうど100点がどちらの段か読めなかったのを、下限101点にして直す。
+ *
+ * **当てたら控えを残し、二度と触らない。** あとから501点の段を戻したくなった
+ * ときに、初期セットアップのたびに消し直されては困る。
+ */
+function priceMigrateTiers_() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty(PRICE_PROP_TIERS_3)) return 0;
+
+  const config = getConfig_();
+  const monthly = (config.quantityOptions && config.quantityOptions.monthly) || [];
+  if (monthly.length === 0) return 0;
+
+  const done = [];
+  monthly.forEach(function (tier) {
+    const from = Number(tier.quantity || 0);
+
+    if (from === 50 && tier.label !== '月50〜100点') {
+      done.push(tier.label + ' → 月50〜100点');
+      tier.label = '月50〜100点';
+    }
+    if (from === 100) {
+      done.push(tier.label + '（下限100）→ 月101点〜（下限101）');
+      tier.label = '月101点〜';
+      tier.quantity = 101;
+    }
+    if (from === 501 && tier.enabled !== false) {
+      done.push(tier.label + ' を取りやめ');
+      tier.enabled = false;
+    }
+  });
+
+  if (done.length === 0) {
+    props.setProperty(PRICE_PROP_TIERS_3, '対象なし');
+    return 0;
+  }
+
+  writeConfig_(config);
+  props.setProperty(PRICE_PROP_TIERS_3, new Date().toISOString());
+  boardLog_('料金', '数量割引を3段階にしました: ' + done.join('／'));
+  return done.length;
 }
 
 function priceNow_() {
