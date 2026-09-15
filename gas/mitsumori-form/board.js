@@ -3374,6 +3374,7 @@ function boardBackfillPastCases_(ss) {
   const rows = sheet.getLastRow() - 1;
   const values = sheet.getRange(2, 1, rows, BOARD_CASE_HEADERS.length).getValues();
   const mails = boardMailsByCustomer_(ss);
+  const notices = boardShipNoticesByCase_(values, mails);
 
   const filled = [];
   const left = [];
@@ -3390,7 +3391,7 @@ function boardBackfillPastCases_(ss) {
 
     // 追跡番号と運送業者は、お客様から届いた発送のお知らせにだけ根拠がある
     if (!String(row[BOARD_COL.tracking - 1] || '').trim()) {
-      const notice = onlyCase ? boardShipNoticeFromMails_(mails[customerId]) : null;
+      const notice = notices[caseId];
       if (notice) {
         // 12桁の数字をそのまま入れると 1.23E+11 になる。文字として入れる
         sheet.getRange(i + 2, BOARD_COL.tracking).setNumberFormat('@').setValue(notice.tracking);
@@ -3402,7 +3403,7 @@ function boardBackfillPastCases_(ss) {
           filled.push(caseId + ' 運送業者 ' + notice.carrier);
         }
       } else {
-        missing.push(onlyCase ? '追跡番号' : '追跡番号（2件目以降のため当てられません）');
+        missing.push('追跡番号');
       }
     }
 
@@ -3420,7 +3421,8 @@ function boardBackfillPastCases_(ss) {
     }
 
     if (!row[BOARD_COL.shippedAt - 1]) {
-      const at = boardShippedAtFromMails_(mails[customerId], row[BOARD_COL.tracking - 1]);
+      const at = (notices[caseId] || {}).date ||
+        boardShippedAtFromMails_(mails[customerId], row[BOARD_COL.tracking - 1]);
       if (at) {
         sheet.getRange(i + 2, BOARD_COL.shippedAt).setValue(at);
         row[BOARD_COL.shippedAt - 1] = at;
@@ -3635,29 +3637,75 @@ function boardMailsByCustomer_(ss) {
 const BOARD_CARRIER_HINTS = [
   { name: 'ヤマト運輸', words: ['ヤマト', 'やまと', 'クロネコ', 'くろねこ', '宅急便', 'kuronekoyamato'] },
   { name: '佐川急便', words: ['佐川', 'さがわ', '飛脚', 'sagawa'] },
-  { name: '日本郵便', words: ['日本郵便', 'ゆうパック', 'ゆうパケット', 'レターパック', '郵便局', 'クリックポスト', 'japanpost'] }
+  { name: '日本郵便', words: ['日本郵便', 'ゆうパック', 'ゆうパケット', 'レターパック', '郵便局', 'クリックポスト', 'japanpost'] },
+  { name: '日本通運', words: ['日本通運', '日通', 'ニットツウ', 'アロー便', 'ペリカン便', 'nittsu', 'nipponexpress'] }
 ];
 
 /**
- * お客様から届いたメールの中から、発送のお知らせを探す。
+ * 発送のお知らせを、案件ごとに割り当てる。
  *
- * **いちばん古いものを採る。** 古い順に並んでいるので、最初に見つかったものが
- * そのご依頼の発送。返信のやり取りで番号が引用されても、日付は最初のものになる。
+ * ご依頼が2件以上あるお客様でも、**お知らせの数と、番号が空いている案件の数が
+ * 同じなら**、古い順に前の依頼から当てられる。数が合わないときは当てない。
+ * どれがどの便か決められないまま入れると、請求月まで間違える。
  */
-function boardShipNoticeFromMails_(mails) {
-  if (!mails) return null;
-  for (let i = 0; i < mails.length; i++) {
-    const body = String(mails[i].received || '');
-    if (!body) continue;
+function boardShipNoticesByCase_(values, mails) {
+  const byCustomer = {};
+  values.forEach(function (row) {
+    const caseId = String(row[BOARD_COL.caseId - 1] || '').trim();
+    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
+    if (!caseId || !customerId) return;
+    if (String(row[BOARD_COL.status - 1] || '').trim() === BOARD_STATUS_CLOSED) return;
+    const parts = boardCaseIdParts_(caseId);
+    if (!byCustomer[customerId]) byCustomer[customerId] = [];
+    byCustomer[customerId].push({
+      caseId: caseId,
+      rank: parts.number * 1000 + parts.branch,
+      tracking: String(row[BOARD_COL.tracking - 1] || '').replace(/[^0-9]/g, '')
+    });
+  });
+
+  const out = {};
+  Object.keys(byCustomer).forEach(function (customerId) {
+    const cases = byCustomer[customerId].sort(function (a, b) { return a.rank - b.rank; });
+    const notices = boardShipNoticesFromMails_(mails[customerId]);
+
+    // すでに番号が入っている案件と、その番号のお知らせは、対から外す
+    const taken = {};
+    cases.forEach(function (c) { if (c.tracking) taken[c.tracking] = true; });
+    const open = cases.filter(function (c) { return !c.tracking; });
+    const free = notices.filter(function (n) { return !taken[n.tracking]; });
+    if (open.length === 0 || free.length === 0) return;
+
+    if (open.length !== free.length) {
+      boardLog_('移行', customerId + '：発送のお知らせ ' + free.length + ' 件に対して' +
+        '追跡番号の空いた案件が ' + open.length + ' 件あり、どれがどの便か決められないため当てませんでした');
+      return;
+    }
+    open.forEach(function (c, i) { out[c.caseId] = free[i]; });
+  });
+  return out;
+}
+
+/**
+ * お客様から届いたメールに含まれる、発送のお知らせを古い順に並べる。
+ * 同じ番号が引用で何度も出てくるので、番号ごとに最初の1通だけを採る。
+ */
+function boardShipNoticesFromMails_(mails) {
+  const out = [];
+  const seen = {};
+  (mails || []).forEach(function (mail) {
+    const body = String(mail.received || '');
+    if (!body) return;
     const tracking = boardTrackingFromInbound_(body);
-    if (!tracking) continue;
-    return {
+    if (!tracking || seen[tracking]) return;
+    seen[tracking] = true;
+    out.push({
       tracking: tracking,
-      carrier: boardCarrierFromText_(body + ' ' + String(mails[i].subject || '')),
-      date: mails[i].date
-    };
-  }
-  return null;
+      carrier: boardCarrierFromText_(body + ' ' + String(mail.subject || '')),
+      date: mail.date
+    });
+  });
+  return out;
 }
 
 /**

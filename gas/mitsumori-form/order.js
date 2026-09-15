@@ -34,6 +34,8 @@ const ORDER_CARRIERS = [
     id: 'japanpost', name: '日本郵便', digits: [11, 12, 13],
     url: 'https://trackings.post.japanpost.jp/services/srv/search/direct?reqCodeNo1='
   },
+  // 日通は番号から直接開けるページが公開されていない。名前だけ記録する
+  { id: 'nittsu', name: '日本通運', digits: [], url: '' },
   { id: 'other', name: 'その他', digits: [], url: '' }
 ];
 
