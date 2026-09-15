@@ -3389,28 +3389,25 @@ function boardBackfillPastCases_(ss) {
     // **2件目以降のご依頼には当てない。** どの便のお知らせか決められない
     const onlyCase = boardCountCasesOf_(values, customerId) === 1;
 
-    // 追跡番号と運送業者は、お客様から届いた発送のお知らせにだけ根拠がある
+    const notice = notices[caseId] || {};
+
+    // 追跡番号は、お客様が書いてくださったときだけ分かる
     if (!String(row[BOARD_COL.tracking - 1] || '').trim()) {
-      const notice = notices[caseId];
-      if (notice) {
+      if (notice.tracking) {
         // 12桁の数字をそのまま入れると 1.23E+11 になる。文字として入れる
         sheet.getRange(i + 2, BOARD_COL.tracking).setNumberFormat('@').setValue(notice.tracking);
         row[BOARD_COL.tracking - 1] = notice.tracking;
         filled.push(caseId + ' 追跡番号 ' + notice.tracking);
-        if (notice.carrier && !String(row[BOARD_COL.carrier - 1] || '').trim()) {
-          sheet.getRange(i + 2, BOARD_COL.carrier).setValue(notice.carrier);
-          row[BOARD_COL.carrier - 1] = notice.carrier;
-          filled.push(caseId + ' 運送業者 ' + notice.carrier);
-        }
       } else {
         missing.push('追跡番号');
       }
     }
 
-    // 追跡番号はあるのに業者が分からないと、追跡ページへのリンクにできない
-    if (String(row[BOARD_COL.tracking - 1] || '').trim() &&
-        !String(row[BOARD_COL.carrier - 1] || '').trim()) {
-      const carrier = boardCarrierFromMails_(mails[customerId], row[BOARD_COL.tracking - 1]);
+    // 業者が分からないと、追跡ページへのリンクにできない
+    if (!String(row[BOARD_COL.carrier - 1] || '').trim()) {
+      const carrier = notice.carrier ||
+        boardCarrierFromMails_(mails[customerId], row[BOARD_COL.tracking - 1]) ||
+        boardCarrierOfCustomer_(mails[customerId]);
       if (carrier) {
         sheet.getRange(i + 2, BOARD_COL.carrier).setValue(carrier);
         row[BOARD_COL.carrier - 1] = carrier;
@@ -3421,7 +3418,7 @@ function boardBackfillPastCases_(ss) {
     }
 
     if (!row[BOARD_COL.shippedAt - 1]) {
-      const at = (notices[caseId] || {}).date ||
+      const at = notice.date ||
         boardShippedAtFromMails_(mails[customerId], row[BOARD_COL.tracking - 1]);
       if (at) {
         sheet.getRange(i + 2, BOARD_COL.shippedAt).setValue(at);
@@ -3644,9 +3641,9 @@ const BOARD_CARRIER_HINTS = [
 /**
  * 発送のお知らせを、案件ごとに割り当てる。
  *
- * ご依頼が2件以上あるお客様でも、**お知らせの数と、番号が空いている案件の数が
- * 同じなら**、古い順に前の依頼から当てられる。数が合わないときは当てない。
- * どれがどの便か決められないまま入れると、請求月まで間違える。
+ * **お知らせの数と、そのお客様の案件の数が同じときだけ**、古い順に前の依頼から当てる。
+ * 数が合わないときは当てず、理由を記録に出す。どれがどの便か決められないまま
+ * 入れると、請求月まで間違える。
  */
 function boardShipNoticesByCase_(values, mails) {
   const byCustomer = {};
@@ -3660,52 +3657,88 @@ function boardShipNoticesByCase_(values, mails) {
     byCustomer[customerId].push({
       caseId: caseId,
       rank: parts.number * 1000 + parts.branch,
-      tracking: String(row[BOARD_COL.tracking - 1] || '').replace(/[^0-9]/g, '')
+      // 埋めたい欄が残っているか。そろっている案件のために記録を汚さない
+      needs: !row[BOARD_COL.shippedAt - 1] ||
+        !String(row[BOARD_COL.tracking - 1] || '').trim() ||
+        !String(row[BOARD_COL.carrier - 1] || '').trim()
     });
   });
 
   const out = {};
   Object.keys(byCustomer).forEach(function (customerId) {
     const cases = byCustomer[customerId].sort(function (a, b) { return a.rank - b.rank; });
+    if (!cases.some(function (c) { return c.needs; })) return;
+
     const notices = boardShipNoticesFromMails_(mails[customerId]);
+    if (notices.length === 0) return;
 
-    // すでに番号が入っている案件と、その番号のお知らせは、対から外す
-    const taken = {};
-    cases.forEach(function (c) { if (c.tracking) taken[c.tracking] = true; });
-    const open = cases.filter(function (c) { return !c.tracking; });
-    const free = notices.filter(function (n) { return !taken[n.tracking]; });
-    if (open.length === 0 || free.length === 0) return;
-
-    if (open.length !== free.length) {
-      boardLog_('移行', customerId + '：発送のお知らせ ' + free.length + ' 件に対して' +
-        '追跡番号の空いた案件が ' + open.length + ' 件あり、どれがどの便か決められないため当てませんでした');
+    if (notices.length !== cases.length) {
+      boardLog_('移行', customerId + '：発送のお知らせ ' + notices.length + ' 件に対して案件が ' +
+        cases.length + ' 件あり、どれがどの便か決められないため当てませんでした');
       return;
     }
-    open.forEach(function (c, i) { out[c.caseId] = free[i]; });
+    // 古いお知らせを、古いご依頼から順に当てる
+    cases.forEach(function (c, i) { out[c.caseId] = notices[i]; });
+  });
+  return out;
+}
+
+/** 発送のお知らせだと分かる言葉。**すべて済んだ形。**「発送します」は予定なので数えない。 */
+const BOARD_SHIP_WORDS =
+  /(発送しました|発送いたしました|発送済|発送完了|送りました|送付しました|お送りしました|配送番号|追跡番号|伝票番号|お問い?合わせ番号)/;
+
+/**
+ * お客様から届いたメールのうち、発送のお知らせを古い順に並べる。
+ *
+ * **追跡番号が無くても、お知らせはお知らせ。** 実際、過去のご依頼は
+ * 「本日10点発送いたしました」「送りました」だけで番号がなかった。
+ * 番号は書いてあれば一緒に読む。
+ */
+function boardShipNoticesFromMails_(mails) {
+  const out = [];
+  (mails || []).forEach(function (mail) {
+    const subject = String(mail.subject || '');
+    const own = boardOwnWords_(mail.received);
+    // 返信の件名には元のやり取りの言葉が残る。件名で数えるのは返信でない1通だけ
+    const bySubject = !/^\s*(re|fwd|fw)\s*[:：]/i.test(subject) && BOARD_SHIP_WORDS.test(subject);
+    if (!BOARD_SHIP_WORDS.test(own) && !bySubject) return;
+    out.push({
+      tracking: boardTrackingFromInbound_(own),
+      carrier: boardCarrierFromText_(own + ' ' + subject),
+      date: mail.date
+    });
   });
   return out;
 }
 
 /**
- * お客様から届いたメールに含まれる、発送のお知らせを古い順に並べる。
- * 同じ番号が引用で何度も出てくるので、番号ごとに最初の1通だけを採る。
+ * 受信メールのうち、**お客様がご自身で書いた部分だけ**を返す。
+ *
+ * 引用でぶら下がったこちらの文面にも「追跡番号」「発送しました」が出てくる。
+ * そこまで数えると、ただの返信が発送のお知らせに化けてしまう。
  */
-function boardShipNoticesFromMails_(mails) {
-  const out = [];
-  const seen = {};
-  (mails || []).forEach(function (mail) {
-    const body = String(mail.received || '');
-    if (!body) return;
-    const tracking = boardTrackingFromInbound_(body);
-    if (!tracking || seen[tracking]) return;
-    seen[tracking] = true;
-    out.push({
-      tracking: tracking,
-      carrier: boardCarrierFromText_(body + ' ' + String(mail.subject || '')),
-      date: mail.date
-    });
-  });
-  return out;
+function boardOwnWords_(body) {
+  const text = String(body || '');
+  const marks = [
+    text.search(/\n[^\n]{0,80}<[^>\n]+@[^>\n]+>[^\n]{0,10}[:：]\s*$/m),
+    text.search(/\n>/),
+    text.search(/\n[^\n]{0,80}wrote:\s*$/m)
+  ].filter(function (at) { return at >= 0; });
+  return marks.length ? text.slice(0, Math.min.apply(null, marks)) : text;
+}
+
+/**
+ * そのお客様がいつも使っている運送業者。
+ *
+ * お知らせの1通に業者名が無くても、やり取りのどこかに書かれていることがある。
+ * 実際「前回同様ヤマト宅急便にて」とだけ書かれていた。
+ * **2社以上出てきたら決めない。** 別の会社の追跡ページへ飛ばすほうが害が大きい。
+ */
+function boardCarrierOfCustomer_(mails) {
+  const text = (mails || []).map(function (mail) {
+    return boardOwnWords_(mail.received) + ' ' + String(mail.subject || '');
+  }).join(' ');
+  return boardCarrierFromText_(text);
 }
 
 /**
