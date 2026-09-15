@@ -707,7 +707,7 @@
         <ul class="tier-list" id="tier-list">
           <li><span class="tier-name">月1〜49点</span><span class="tier-off">通常料金</span></li>
           <li><span class="tier-name">月50〜100点</span><span class="tier-off">1点あたり ¥50 引き</span></li>
-          <li><span class="tier-name">月100〜500点</span><span class="tier-off">1点あたり ¥100 引き</span></li>
+          <li><span class="tier-name">月100~500点</span><span class="tier-off">1点あたり ¥100 引き</span></li>
           <li><span class="tier-name">月501点以上</span><span class="tier-off">1点あたり ¥200 引き</span></li>
         </ul>
         <p class="price-note">※ その月にご発送いただいたお荷物の、お預かり点数の合計で決まります。</p>
@@ -824,10 +824,10 @@
             <label for="service">ご希望のサービス</label>
             <select id="service" name="service">
               <option value="">選択してください</option>
-              <option value="撮影のみ">撮影のみ（プランA / 400円〜）</option>
-              <option value="撮影+採寸">撮影＋採寸（プランB / 600円〜）</option>
-              <option value="撮影+採寸+出品">撮影＋採寸＋出品（プランC / 900円〜）</option>
-              <option value="複数サイト出品">複数サイト出品（プランD / 1,000円〜）</option>
+              <option value="撮影のみ" data-plan-option="a">撮影のみ（プランA / 400円〜）</option>
+              <option value="撮影+採寸" data-plan-option="b">撮影＋採寸（プランB / 600円〜）</option>
+              <option value="撮影+採寸+出品" data-plan-option="c">撮影＋採寸＋出品（プランC / 900円〜）</option>
+              <option value="複数サイト出品" data-plan-option="d">複数サイト出品（プランD / 1,100円〜）</option>
               <option value="サイト制作">自社サイト制作</option>
               <option value="未定・相談したい">まだ決めていない・相談したい</option>
             </select>
@@ -1070,6 +1070,14 @@
       };
       var OPEN_ENDED = { d: true };   // 「〜」を付けるプラン
 
+      // 問い合わせフォームの選択肢。ここも同じ料金から書き換えます
+      var OPTION_LABEL = {
+        a: '撮影のみ（プランA / {n}円〜）',
+        b: '撮影＋採寸（プランB / {n}円〜）',
+        c: '撮影＋採寸＋出品（プランC / {n}円〜）',
+        d: '複数サイト出品（プランD / {n}円〜）'
+      };
+
       function yen(n) { return '¥' + Number(n).toLocaleString('ja-JP'); }
 
       function fillPlans(items) {
@@ -1087,6 +1095,13 @@
           });
           if (!ok) return;
           cell.textContent = yen(sum) + (OPEN_ENDED[key] ? '〜' : '');
+
+          // 問い合わせフォームの選択肢も、同じ金額にそろえる
+          var opt = document.querySelector('[data-plan-option="' + key + '"]');
+          if (opt && OPTION_LABEL[key]) {
+            opt.textContent = OPTION_LABEL[key]
+              .replace('{n}', Number(sum).toLocaleString('ja-JP'));
+          }
         });
       }
 

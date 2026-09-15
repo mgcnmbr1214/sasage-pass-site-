@@ -131,7 +131,12 @@ function orderGetState(customerId, formKey) {
       profileNeeded: orderProfileNeeded_(customer),
       registered: orderIsRegistered_(customer),
       profileFields: orderProfileForm_(customer),
+      // ご依頼の入力に使うのは、まだ発送前の案件だけ
       current: open ? orderCaseView_(ss, open) : null,
+      // **状況のご案内は、発送後・作業中・返送済でも出す。**
+      // いちばん知りたいのは「いま自分の荷物がどうなっているか」で、
+      // それは発送を終えたあとのほうがむしろ知りたい
+      progress: (open || latest) ? orderCaseView_(ss, open || latest) : null,
       monthly: orderMonthly_(ss, customer.id, (open || latest) ? (open || latest).caseRow : 0),
       shipTo: orderShipTo_(settings, signed)
     };
