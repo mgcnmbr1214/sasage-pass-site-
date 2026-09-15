@@ -1801,9 +1801,13 @@ function boardStampMailBodies_(sheet) {
     const at = row[BOARD_MAIL_COL.date - 1];
     const savedAt = row[BOARD_MAIL_COL.sentAt - 1];
     const before = [row[BOARD_MAIL_COL.summary - 1], row[BOARD_MAIL_COL.finalText - 1]];
+    // **すでに日時が付いているものは触らない。**
+    // 実際に送った時刻を入れ直す処理と時刻が食い違い、毎回17件ずつ
+    // 書き換え合っていた。付け足すのは一度きりでよい
     const after = [
-      mailStamp_(at, before[0]),
-      mailStamp_(savedAt instanceof Date ? savedAt : at, before[1])
+      mailHasStamp_(before[0]) ? String(before[0] || '') : mailStamp_(at, before[0]),
+      mailHasStamp_(before[1]) ? String(before[1] || '')
+        : mailStamp_(savedAt instanceof Date ? savedAt : at, before[1])
     ];
     if (after[0] !== String(before[0] || '') || after[1] !== String(before[1] || '')) stamped++;
     received.push([after[0]]);
@@ -4695,7 +4699,7 @@ function boardRefreshUnbilled_(ss) {
           row: i + 2,
           at: when instanceof Date ? when.getTime() : 0,
           label: when instanceof Date
-            ? Utilities.formatDate(when, Session.getScriptTimeZone(), 'M/d')
+            ? Utilities.formatDate(when, Session.getScriptTimeZone(), 'yyyy/MM/dd')
             : '?'
         });
       });
@@ -4824,7 +4828,7 @@ function boardRefreshUnreplied_(ss) {
           row: i + 2,
           at: when instanceof Date ? when.getTime() : 0,
           label: when instanceof Date
-            ? Utilities.formatDate(when, Session.getScriptTimeZone(), 'M/d')
+            ? Utilities.formatDate(when, Session.getScriptTimeZone(), 'yyyy/MM/dd')
             : '?'
         });
       });

@@ -72,6 +72,11 @@ function mailStamp_(when, text) {
   return Utilities.formatDate(at, Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm') + '\n' + body;
 }
 
+/** すでに先頭へ日時が付いているか。 */
+function mailHasStamp_(text) {
+  return MAIL_STAMP_PATTERN.test(String(text || ''));
+}
+
 function mailUnstamp_(text) {
   return String(text || '').replace(MAIL_STAMP_PATTERN, '');
 }
