@@ -1255,7 +1255,70 @@ function priceRefreshUnitPrices_(ss) {
     notes.setValues(nextNotes);
     boardLog_('料金', '単価を計算し直しました（' + changed + ' 件）');
   }
+
+  // **返送履歴の単価も一緒に直す。** 請求書はあちらの単価で作られるので、
+  // 案件ボードだけ直しても請求額は変わらない
+  priceRefreshShipmentPrices_(ss, config, monthly, values);
   return changed;
+}
+
+/**
+ * まだ請求していない返送の単価を、いまの月の段で引き直す。
+ *
+ * **数量割引の段は、その月が終わるまで決まらない。** 月初に10点だけ返送した
+ * 時点では割引なしでも、月末に合計60点になれば、その10点にも割引がかかる。
+ * 返送したときの単価を凍結したままだと、お客様が損をする。
+ *
+ * **請求書を作ったあとの行には触らない。** 送った請求書と食い違わせない。
+ */
+function priceRefreshShipmentPrices_(ss, config, monthly, caseValues) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_SHIPMENTS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  // 案件IDから、その案件の選択の控えと発送月を引けるようにする
+  const byCase = {};
+  caseValues.forEach(function (row) {
+    const caseId = String(row[BOARD_COL.caseId - 1] || '').trim();
+    if (caseId) byCase[caseId] = row;
+  });
+
+  const rows = sheet.getLastRow() - 1;
+  const values = sheet.getRange(2, 1, rows, BOARD_SHIPMENT_HEADERS.length).getValues();
+  const changed = [];
+
+  values.forEach(function (row, i) {
+    // 請求書を作る前の行だけ。作ったあとに動かすと、送った請求書と食い違う
+    if (String(row[BOARD_SHIPMENT_COL.status - 1] || '').trim() !== SHIP_STATUS_SENT) return;
+
+    const caseId = String(row[BOARD_SHIPMENT_COL.caseId - 1] || '').trim();
+    const values2 = byCase[caseId];
+    if (!values2) return;
+
+    const raw = String(values2[BOARD_COL.selection - 1] || '').trim();
+    if (!raw) return;                 // 控えが無ければ、いまの単価をそのまま残す
+    let selection;
+    try { selection = JSON.parse(raw); } catch (err) { return; }
+    if (!selection || !selection.options) return;
+
+    const customerId = String(values2[BOARD_COL.customerId - 1] || '').trim();
+    const month = priceShipMonthOf_(values2);
+    const total = month ? (monthly[customerId + '/' + month] || 0) : priceCountOf_(values2);
+
+    const result = priceUnitPrice_(config, selection, total);
+    const before = Number(row[BOARD_SHIPMENT_COL.unitPrice - 1] || 0);
+    if (before === result.unitPrice) return;
+
+    sheet.getRange(i + 2, BOARD_SHIPMENT_COL.unitPrice).setValue(result.unitPrice);
+    sheet.getRange(i + 2, BOARD_SHIPMENT_COL.priceNote)
+      .setValue(priceExplain_(config, selection, result, month, total, values2));
+    changed.push(caseId + '　' + squareYen_(before) + ' → ' + squareYen_(result.unitPrice));
+  });
+
+  if (changed.length > 0) {
+    boardLog_('料金', 'まだ請求していない返送の単価を、いまの月の段に直しました: ' +
+      changed.join('／'));
+  }
+  return changed.length;
 }
 
 /**

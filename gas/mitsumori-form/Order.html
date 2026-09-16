@@ -396,7 +396,8 @@
 
     var head = '<div class="stat">' +
       '<div><span>' + esc(m.monthLabel) + ' ここまで</span><br><b>' + m.count + '</b> 点</div>' +
-      (m.unitPrice ? '<div><span>いまの単価</span><br><b>¥' +
+      // 同じ月に内容の違うご依頼があると、どちらの単価か分からなくなる
+      (m.unitPrice ? '<div><span>このご依頼の単価</span><br><b>¥' +
         Number(m.unitPrice).toLocaleString() + '</b> / 点</div>' : '') +
       '</div>';
 

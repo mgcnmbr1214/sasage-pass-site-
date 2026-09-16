@@ -107,7 +107,7 @@ const BOARD_CASE_HEADERS = [
   '未返信', '未請求の返送',
   '顧客ID', '依頼内容', '選択の控え', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール',
   '単価', '単価調整', '固定調整', '調整の理由', '請求見込み', '単価の内訳',
-  '運送業者', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
+  '運送業者', '作業チーム共有', '案内メール作成日', 'ご依頼受付日', '最終連絡日', 'メモ', '元回答行'
 ];
 
 const BOARD_COL = {
@@ -118,7 +118,8 @@ const BOARD_COL = {
   customerId: 17, detail: 18, selection: 19, formInquiry: 20, lastInbound: 21, lastOutbound: 22,
   unitPrice: 23, priceAdjust: 24, flatAdjust: 25, adjustNote: 26, estimate: 27, priceNote: 28,
   carrier: 29, teamNote: 30,
-  guideDraftAt: 31, lastContact: 32, memo: 33, sourceRow: 34
+  // 依頼フォームで送信・更新された日。ご発送待ちの日数はここから数える
+  guideDraftAt: 31, requestedAt: 32, lastContact: 33, memo: 34, sourceRow: 35
 };
 
 /**
@@ -1813,7 +1814,7 @@ const BOARD_CASE_WIDTHS = {
   dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
   customerId: 70, detail: 160, selection: 90, formInquiry: 160, lastInbound: 200, lastOutbound: 200,
   unitPrice: 70, priceAdjust: 75, flatAdjust: 75, adjustNote: 150, estimate: 100, priceNote: 300,
-  carrier: 100, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
+  carrier: 100, teamNote: 160, guideDraftAt: 95, requestedAt: 95, lastContact: 95, memo: 160, sourceRow: 70
 };
 
 function boardApplyCaseFormatting_(sheet) {
@@ -1868,7 +1869,7 @@ function boardApplyCaseFormatting_(sheet) {
   sheet.setConditionalFormatRules(rules);
 
   [BOARD_COL.dueFrom, BOARD_COL.dueTo, BOARD_COL.shippedAt,
-   BOARD_COL.guideDraftAt, BOARD_COL.lastContact].forEach(function (col) {
+   BOARD_COL.guideDraftAt, BOARD_COL.requestedAt, BOARD_COL.lastContact].forEach(function (col) {
     // 日付列のみ書式を揃える
     sheet.getRange(2, col, maxRows, 1).setNumberFormat('yyyy/mm/dd');
   });
@@ -2272,10 +2273,13 @@ const BOARD_DEFAULT_SETTINGS = [
    'ヤマト運輸以外でご発送いただくときの住所。依頼フォームと案内メールに出ます'],
   ['ヤマト以外の発送先宛名', 'ササゲパス第二窓口', ''],
   ['署名待ちリマインド日数', 5, '支払い情報の登録・契約書署名が確認できないまま経過した日数'],
-  ['発送待ちリマインド日数', 7, '追跡番号の連絡がないまま経過した日数'],
+  ['発送待ちリマインド日数', '5, 10',
+   'ご依頼受付から何日で、お客様へ発送の催促（T6）を自動送信するか。カンマ区切り。空にすると送らない'],
   ['新着メールの読み取り', 'オン', 'オフにすると定期チェックで新着メールを読み取らない'],
   ['手続き完了の自動送信', 'オン', '支払いと署名の確認後、テンプレT4をお客様へ自動送信する。オフで停止'],
   ['依頼フォームの通知', 'オン', '依頼フォームでご依頼が届いたとき、通知先メールアドレスへ知らせる。オフで停止'],
+  ['発送の催促の自動送信', 'オン',
+   'ご発送待ちのまま日が過ぎたお客様へ、テンプレT6を自動送信する。オフで停止'],
   ['依頼受付の自動返信', 'オン',
    '依頼フォームでご依頼が届いたとき、テンプレT10（ご発送のお願い）をお客様へ自動送信する。オフで停止'],
   ['請求書送信の手順', boardDefaultInvoiceSteps_(), 'Square手続き画面に表示される手順。実際の操作に合わせて自由に書き換えてください']
@@ -2305,6 +2309,12 @@ function boardMigrateSettings_(sheet) {
       // 「問い合わせ窓口」に名前を変えたときの古い行。同じことが二重に並んでいた
       sheet.deleteRow(i + 2);
       boardLog_('移行', '設定「取り込み元② お問い合わせフォーム」を削除しました（問い合わせ窓口の行と重複）');
+    } else if (key === '発送待ちリマインド日数' && (value === '7' || Number(value) === 7)) {
+      // 使われていない既定値のまま残っていた。実際に催促を送る日数に置き換える
+      sheet.getRange(i + 2, 2).setValue('5, 10');
+      sheet.getRange(i + 2, 3).setValue(
+        'ご依頼受付から何日で、お客様へ発送の催促（T6）を自動送信するか。カンマ区切り。空にすると送らない');
+      boardLog_('移行', '設定「発送待ちリマインド日数」を 5, 10 に変えました');
     } else if (key === '返信案の自動チェック') {
       // 検知の時点では返信案を作らなくなったため、実態に合う名前に変える。オン/オフの値はそのまま
       sheet.getRange(i + 2, 1).setValue('新着メールの読み取り');
@@ -5613,6 +5623,10 @@ function boardSetTodoFormula_(sheet, row) {
   // 依頼日の列はやめた。ご発送待ちの日数は**案内メールを送った日**から数える
   const guided = cell(BOARD_COL.guideDraftAt);
   const last = cell(BOARD_COL.lastContact);
+  // **ご発送待ちは、依頼フォームで送られた日から数える。**
+  // 案内メールの日だと、2回目以降のご依頼で前回の日付が残ってしまう
+  const asked = 'IF(' + cell(BOARD_COL.requestedAt) + '="",' + guided + ',' +
+    cell(BOARD_COL.requestedAt) + ')';
   const dueEnd = 'IF(' + to + '="",' + from + ',' + to + ')';
   // 放置に気づけるよう、待たせている日数を添える
   const elapsedFrom = function (since) {
@@ -5629,7 +5643,7 @@ function boardSetTodoFormula_(sheet, row) {
     b + '="' + BOARD_STATUS_SIGNING + '",IF(' + sentAt + '="","請求書を送る",' +
       'IF(' + reg + '="' + BOARD_REG_SIGNED + '","お客様のご発送待ち",' +
       '"支払い情報の登録・署名待ち"&' + elapsedFrom(sentAt) + ')),' +
-    b + '="' + BOARD_STATUS_WAITING_SHIP + '","お客様のご発送待ち"&' + elapsedFrom(guided) + ',' +
+    b + '="' + BOARD_STATUS_WAITING_SHIP + '","お客様のご発送待ち"&' + elapsedFrom(asked) + ',' +
     b + '="' + BOARD_STATUS_SHIPPED + '",IF(' + from + '="","受取準備（納期の返信）",' +
       '"作業チームへ共有・荷受待ち"),' +
     b + '="' + BOARD_STATUS_WORKING + '","作業"&IF(' + from + '="","","（納期 "&TEXT(' + dueEnd + ',"m/d")&"）"),' +

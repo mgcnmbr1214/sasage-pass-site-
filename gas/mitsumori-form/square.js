@@ -1127,6 +1127,14 @@ function squareCreateMonthlyInvoices() {
     return;
   }
 
+  // **お金を出す直前に、単価を引き直す。** その月の合計点数が確定してから
+  // でないと、月初の返送に割引がかからないまま請求してしまう
+  try {
+    priceRefreshUnitPrices_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '請求前の単価の引き直しに失敗: ' + err.message);
+  }
+
   const month = squareBillingMonth_(new Date());
   const groups = squareCollectBillable_(ss);
   const ids = Object.keys(groups);

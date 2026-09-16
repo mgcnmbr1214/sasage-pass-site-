@@ -109,6 +109,9 @@ function mailHoldsFreshDraft_(text, sentAt) {
 /** 確認画面に出し続ける状態。実際に送信するまでは一覧から消さない。 */
 const MAIL_OPEN_STATUSES = [MAIL_STATUS_PENDING];
 
+/** 1回の確認で送る催促の上限。まとめて送って驚かせないように少しずつ。 */
+const MAIL_REMIND_PER_RUN = 3;
+
 // ------------------------------------------------------------
 // メニューから呼ぶ操作
 // ------------------------------------------------------------
@@ -391,6 +394,11 @@ function mailScan_(options) {
     mailSendScheduled_(ss);
   } catch (err) {
     boardLog_('②エラー', '予約したメールの送信に失敗: ' + err.message);
+  }
+  try {
+    mailRemindShipping_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '発送の催促に失敗: ' + err.message);
   }
 
   // 画面から送った分はその場で「返信済み」になる。
@@ -1464,6 +1472,122 @@ function mailSendScheduled_(ss) {
   return sent;
 }
 
+/** 発送の催促を送る日数。「5, 10」のように設定から読む。 */
+function mailRemindDays_(settings) {
+  return String(settings['発送待ちリマインド日数'] || '')
+    .split(/[,、\s]+/)
+    .map(function (v) { return Number(v); })
+    .filter(function (n) { return n > 0; })
+    .sort(function (a, b) { return a - b; });
+}
+
+/**
+ * ご発送待ちのまま日が過ぎたお客様へ、発送の催促（T6）を自動で送る。
+ *
+ * **何通目かは、メール履歴の対応種別から数える。** 送った記録そのものを
+ * 数えるので、控えが消えても二重に送らない。ご依頼受付日より前に送った
+ * 催促は、前のご依頼のものなので数えない。
+ */
+function mailRemindShipping_(ss) {
+  const settings = boardGetSettings_(ss);
+  if (String(settings['発送の催促の自動送信'] || 'オン').trim() === 'オフ') return 0;
+
+  const days = mailRemindDays_(settings);
+  if (days.length === 0) return 0;
+
+  const type = boardFindResponseType_('T6');
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!type || !cases || cases.getLastRow() < 2) return 0;
+
+  const already = mailRemindHistory_(ss, type.name);
+  const rows = cases.getRange(2, 1, cases.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  const now = new Date().getTime();
+  const sent = [];
+
+  rows.forEach(function (row, i) {
+    if (sent.length >= MAIL_REMIND_PER_RUN) return;
+    if (String(row[BOARD_COL.status - 1] || '').trim() !== BOARD_STATUS_WAITING_SHIP) return;
+
+    const since = boardTimeOf_(row[BOARD_COL.requestedAt - 1] || row[BOARD_COL.guideDraftAt - 1]);
+    if (!since) return;   // いつからか分からないものは数えない
+
+    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
+    const done = (already[customerId] || []).filter(function (t) { return t >= since; }).length;
+    if (done >= days.length) return;   // 送りきった
+
+    const elapsed = Math.floor((now - since) / 86400000);
+    if (elapsed < days[done]) return;
+
+    const caseId = String(row[BOARD_COL.caseId - 1] || '').trim();
+    if (mailSendRemind_(ss, settings, type, i + 2, row)) {
+      sent.push(caseId + '（' + elapsed + '日経過・' + (done + 1) + '通目）');
+    }
+  });
+
+  if (sent.length > 0) {
+    boardLog_('②催促', '発送の催促を送りました: ' + sent.join('、'));
+  }
+  return sent.length;
+}
+
+/** お客様ごとに、発送の催促をいつ送ったか。 */
+function mailRemindHistory_(ss, typeName) {
+  const out = {};
+  const sheet = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (!sheet || sheet.getLastRow() < 2) return out;
+
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues()
+    .forEach(function (row) {
+      if (String(row[BOARD_MAIL_COL.responseType - 1] || '').trim() !== typeName) return;
+      const id = String(row[BOARD_MAIL_COL.customerId - 1] || '').trim();
+      const at = boardTimeOf_(row[BOARD_MAIL_COL.date - 1]);
+      if (!id || !at) return;
+      if (!out[id]) out[id] = [];
+      out[id].push(at);
+    });
+  return out;
+}
+
+/** 催促を1通送り、メール履歴に残す。 */
+function mailSendRemind_(ss, settings, type, caseRow, row) {
+  const customer = boardFindCustomer_(ss, row[BOARD_COL.customerId - 1]);
+  if (!customer || !boardIsEmail_(customer.email)) return false;
+
+  let built;
+  try {
+    built = boardBuildTemplateText_(ss, caseRow, type.template);
+  } catch (err) {
+    boardLog_('②催促', '催促の文面を作れませんでした: ' + err.message);
+    return false;
+  }
+
+  const options = { name: 'ササゲパス' };
+  const alias = settings['送信元エイリアス'];
+  if (alias && GmailApp.getAliases().indexOf(alias) >= 0) options.from = alias;
+
+  try {
+    GmailApp.sendEmail(customer.email, built.subject, built.body, options);
+  } catch (err) {
+    boardLog_('②催促', '催促を送れませんでした（' + customer.email + '）: ' + err.message);
+    return false;
+  }
+
+  ss.getSheetByName(BOARD_SHEET_CASES)
+    .getRange(caseRow, BOARD_COL.lastContact).setValue(new Date());
+  mailAppendHistory_(ss, {
+    customerId: row[BOARD_COL.customerId - 1],
+    from: customer.email,
+    subject: built.subject,
+    summary: 'ご発送待ちのまま日が過ぎたため、自動で送信しました。',
+    aiFirst: built.body,
+    finalText: built.body,
+    status: MAIL_STATUS_SENT,
+    responseType: type.name,
+    threadId: ''
+  });
+  return true;
+}
+
 /** 送る前に必ず確かめること。今すぐ送るときも、予約するときも通す。 */
 function mailValidateBeforeSend_(ss, values, text, fields) {
   if (!String(text || '').trim()) throw new Error('本文が空です。先に返信案を作成してください。');
@@ -1941,11 +2065,22 @@ function mailAppendHistory_(ss, data) {
   // 日時は「メールが届いた日時」。記録した時刻を入れると、
   // 同じスレッドの何通目なのかが見分けられなくなる
   const when = data.date || new Date();
-  sheet.appendRow([
-    when, data.customerId, '', data.from, data.subject, mailStamp_(when, data.summary),
-    data.aiFirst || '', '', mailStamp_(new Date(), data.finalText), data.status,
-    data.threadId, '', data.responseType || '', '', data.messageId || ''
-  ]);
+
+  // **位置で並べない。** 列が1本増えたときに、静かに別の列へ書き込んでしまう。
+  // 実際、対応種別のつもりが送信予定日時の列に入っていた
+  const line = new Array(BOARD_MAIL_HEADERS.length).fill('');
+  line[BOARD_MAIL_COL.date - 1] = when;
+  line[BOARD_MAIL_COL.customerId - 1] = data.customerId;
+  line[BOARD_MAIL_COL.from - 1] = data.from;
+  line[BOARD_MAIL_COL.subject - 1] = data.subject;
+  line[BOARD_MAIL_COL.summary - 1] = mailStamp_(when, data.summary);
+  line[BOARD_MAIL_COL.aiFirst - 1] = data.aiFirst || '';
+  line[BOARD_MAIL_COL.finalText - 1] = mailStamp_(new Date(), data.finalText);
+  line[BOARD_MAIL_COL.status - 1] = data.status;
+  line[BOARD_MAIL_COL.threadId - 1] = data.threadId;
+  line[BOARD_MAIL_COL.responseType - 1] = data.responseType || '';
+  line[BOARD_MAIL_COL.messageId - 1] = data.messageId || '';
+  sheet.appendRow(line);
   const row = sheet.getLastRow();
   boardSetMailCustomerFormula_(sheet, row);
   boardForceRowHeight_(sheet, row, 1);
