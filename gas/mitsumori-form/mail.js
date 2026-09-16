@@ -1508,7 +1508,7 @@ function mailRemindShipping_(ss) {
     if (sent.length >= MAIL_REMIND_PER_RUN) return;
     if (String(row[BOARD_COL.status - 1] || '').trim() !== BOARD_STATUS_WAITING_SHIP) return;
 
-    const since = boardTimeOf_(row[BOARD_COL.requestedAt - 1] || row[BOARD_COL.guideDraftAt - 1]);
+    const since = boardTimeOf_(row[BOARD_COL.guideDraftAt - 1]);
     if (!since) return;   // いつからか分からないものは数えない
 
     const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();

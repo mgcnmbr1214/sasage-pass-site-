@@ -200,8 +200,6 @@ function orderSubmitRequest(payload) {
     at: new Date().toISOString()
   }));
   sheet.getRange(caseRow, BOARD_COL.qty).setValue(Number(qty));
-  // **送るたびに入れ直す。** 内容を直したなら、待たせている日数もそこから数える
-  sheet.getRange(caseRow, BOARD_COL.requestedAt).setValue(new Date());
   // 備考が空のときは消さない。こちらで書いた申し送りが、再送信で消えてしまう
   const note = String(data.note || '').trim();
   if (note) sheet.getRange(caseRow, BOARD_COL.memo).setValue(note);

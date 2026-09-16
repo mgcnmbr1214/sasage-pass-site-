@@ -107,7 +107,7 @@ const BOARD_CASE_HEADERS = [
   '未返信', '未請求の返送',
   '顧客ID', '依頼内容', '選択の控え', 'フォームの問い合わせ内容', '最新の受信メール', '最新の送信メール',
   '単価', '単価調整', '固定調整', '調整の理由', '請求見込み', '単価の内訳',
-  '運送業者', '作業チーム共有', '案内メール作成日', 'ご依頼受付日', '最終連絡日', 'メモ', '元回答行'
+  '運送業者', '作業チーム共有', '案内メール作成日', '最終連絡日', 'メモ', '元回答行'
 ];
 
 const BOARD_COL = {
@@ -118,8 +118,7 @@ const BOARD_COL = {
   customerId: 17, detail: 18, selection: 19, formInquiry: 20, lastInbound: 21, lastOutbound: 22,
   unitPrice: 23, priceAdjust: 24, flatAdjust: 25, adjustNote: 26, estimate: 27, priceNote: 28,
   carrier: 29, teamNote: 30,
-  // 依頼フォームで送信・更新された日。ご発送待ちの日数はここから数える
-  guideDraftAt: 31, requestedAt: 32, lastContact: 33, memo: 34, sourceRow: 35
+  guideDraftAt: 31, lastContact: 32, memo: 33, sourceRow: 34
 };
 
 /**
@@ -1899,7 +1898,7 @@ const BOARD_CASE_WIDTHS = {
   dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
   customerId: 70, detail: 160, selection: 90, formInquiry: 160, lastInbound: 200, lastOutbound: 200,
   unitPrice: 70, priceAdjust: 75, flatAdjust: 75, adjustNote: 150, estimate: 100, priceNote: 300,
-  carrier: 100, teamNote: 160, guideDraftAt: 95, requestedAt: 95, lastContact: 95, memo: 160, sourceRow: 70
+  carrier: 100, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
 };
 
 function boardApplyCaseFormatting_(sheet) {
@@ -1954,7 +1953,7 @@ function boardApplyCaseFormatting_(sheet) {
   sheet.setConditionalFormatRules(rules);
 
   [BOARD_COL.dueFrom, BOARD_COL.dueTo, BOARD_COL.shippedAt,
-   BOARD_COL.guideDraftAt, BOARD_COL.requestedAt, BOARD_COL.lastContact].forEach(function (col) {
+   BOARD_COL.guideDraftAt, BOARD_COL.lastContact].forEach(function (col) {
     // 日付列のみ書式を揃える
     sheet.getRange(2, col, maxRows, 1).setNumberFormat('yyyy/mm/dd');
   });
@@ -5708,10 +5707,6 @@ function boardSetTodoFormula_(sheet, row) {
   // 依頼日の列はやめた。ご発送待ちの日数は**案内メールを送った日**から数える
   const guided = cell(BOARD_COL.guideDraftAt);
   const last = cell(BOARD_COL.lastContact);
-  // **ご発送待ちは、依頼フォームで送られた日から数える。**
-  // 案内メールの日だと、2回目以降のご依頼で前回の日付が残ってしまう
-  const asked = 'IF(' + cell(BOARD_COL.requestedAt) + '="",' + guided + ',' +
-    cell(BOARD_COL.requestedAt) + ')';
   const dueEnd = 'IF(' + to + '="",' + from + ',' + to + ')';
   // 放置に気づけるよう、待たせている日数を添える
   const elapsedFrom = function (since) {
@@ -5728,7 +5723,7 @@ function boardSetTodoFormula_(sheet, row) {
     b + '="' + BOARD_STATUS_SIGNING + '",IF(' + sentAt + '="","請求書を送る",' +
       'IF(' + reg + '="' + BOARD_REG_SIGNED + '","お客様のご発送待ち",' +
       '"支払い情報の登録・署名待ち"&' + elapsedFrom(sentAt) + ')),' +
-    b + '="' + BOARD_STATUS_WAITING_SHIP + '","お客様のご発送待ち"&' + elapsedFrom(asked) + ',' +
+    b + '="' + BOARD_STATUS_WAITING_SHIP + '","お客様のご発送待ち"&' + elapsedFrom(guided) + ',' +
     b + '="' + BOARD_STATUS_SHIPPED + '",IF(' + from + '="","受取準備（納期の返信）",' +
       '"作業チームへ共有・荷受待ち"),' +
     b + '="' + BOARD_STATUS_WORKING + '","作業"&IF(' + from + '="","","（納期 "&TEXT(' + dueEnd + ',"m/d")&"）"),' +
