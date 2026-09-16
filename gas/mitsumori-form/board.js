@@ -1514,6 +1514,12 @@ function boardRepairScrambledRows_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   if (!sheet || sheet.getLastRow() < 2) return 0;
 
+  // **先に入力規則を外す。** 列がずれていたときに、ステータスの選択肢が
+  // お客様の列へ付いてしまっている。正しい値を書き戻そうとしても弾かれる。
+  // 書式を整えるところで、正しい列に付け直される
+  sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 1), sheet.getMaxColumns())
+    .setDataValidation(null);
+
   const width = BOARD_CASE_HEADERS.length;
   const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues();
   const fixed = [];
