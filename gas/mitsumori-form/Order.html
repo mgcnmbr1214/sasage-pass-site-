@@ -71,6 +71,33 @@
   .t-more { margin-left: auto; font-size: 12px; color: #B4741B; font-weight: 600; }
   a.track { color: #3B6EF8; }
   #carrierOther { margin: 4px 0 6px; }
+
+  /* 進み方。いまどこまで終わっているかを、開いた瞬間に分かるようにする */
+  .steps { display: flex; gap: 8px; margin-bottom: 16px; }
+  .step {
+    flex: 1 1 0; min-width: 0;
+    background: #fff; border: 1px solid #E4EAF7; border-radius: 10px;
+    padding: 10px 10px 9px; text-align: center;
+    font-size: 12.5px; color: #8B99B6;
+  }
+  .step .n {
+    display: inline-grid; place-items: center;
+    width: 20px; height: 20px; border-radius: 999px; margin-right: 6px;
+    background: #EEF2FF; color: #8B99B6; font-size: 11.5px; font-weight: 700;
+    vertical-align: -3px;
+  }
+  .step .nm { font-weight: 600; }
+  .step em {
+    display: block; margin-top: 3px; font-style: normal;
+    font-size: 11.5px; font-weight: 700; color: #1D6B33;
+  }
+  .step.now { border-color: #3B6EF8; color: #1F2A44; }
+  .step.now .n { background: #3B6EF8; color: #fff; }
+  .step.done { border-color: #BFE3C9; background: #F3FAF5; color: #3D4A66; }
+  .step.done .n { background: #1D6B33; color: #fff; }
+
+  .note-stop { background: #FDECEC; border: 1px solid #F3C4C4; color: #A32D2D;
+    font-weight: 600; }
   .opt-note { font-size: 12px; color: #7A8AA8; margin: 2px 0 10px 24px; }
 </style>
 </head>
@@ -284,6 +311,37 @@
       '</div>';
   }
 
+  /** ご依頼内容を送ったあと、発送情報がまだかどうか。 */
+  function waitingShipInfo() {
+    var p = state.progress;
+    if (!p) return false;
+    return p.status === '支払い・署名待ち' || p.status === '発送待ち';
+  }
+
+  /**
+   * 進み方の帯。**終わった段にだけ「完了」を出す。**
+   * いまどこにいるかは色で示し、文字は増やさない。
+   */
+  function stepsHtml() {
+    var ordered = !!state.progress;
+    var waiting = waitingShipInfo();
+    var done = ordered && !waiting;   // 発送情報まで送り終えている
+
+    var steps = [
+      { n: 1, nm: 'ご依頼内容', done: ordered, now: !ordered },
+      { n: 2, nm: 'ご発送情報', done: done, now: waiting },
+      // 3段目の名前に「完了」を入れると、下の印と二重になる
+      { n: 3, nm: 'ご依頼の受付', done: done, now: false }
+    ];
+
+    return '<div class="steps">' + steps.map(function (s) {
+      var cls = s.done ? 'step done' : (s.now ? 'step now' : 'step');
+      return '<div class="' + cls + '"><span class="n">' + s.n + '</span>' +
+        '<span class="nm">' + esc(s.nm) + '</span>' +
+        (s.done ? '<em>完了</em>' : '') + '</div>';
+    }).join('') + '</div>';
+  }
+
   /** 追跡番号。業者のページが分かるときだけリンクにする。 */
   function trackHtml(number, url, carrier) {
     if (!number) return '';
@@ -349,6 +407,7 @@
     el('who').textContent = (state.customer.company || state.customer.name) + ' 様';
 
     var html =
+      stepsHtml() +
       progressHtml() +
       monthlyHtml() +
       '<div class="card"><h2>1. ご依頼内容</h2>' +
@@ -371,7 +430,11 @@
 
       '<div class="card' + (state.signed ? '' : ' locked') + '"><h2>3. ご発送情報</h2>' +
       (state.signed
-        ? '<p class="lead">ご発送後、追跡番号をお知らせください。ここまでで依頼が完了します。<br>' +
+        ? (waitingShipInfo()
+            ? '<div class="note note-stop">⚠ ここがまだ終わっていません。追跡番号をお送りいただくまで、' +
+              'ご依頼の受付は完了しません。</div>'
+            : '') +
+          '<p class="lead">ご発送後、追跡番号をお知らせください。ここまでで依頼が完了します。<br>' +
           '点数が変わった場合は、先に「1. ご依頼内容」の予定数を直して更新してください。</p>' +
           '<label class="field">運送業者</label>' + carriersHtml() +
           '<div id="shipTo"></div>' +
@@ -379,7 +442,7 @@
           '<input type="text" id="tracking" value="' + esc(cur ? cur.tracking : '') + '">' +
           '<div class="note note-warn">⚠ ' + esc(state.notes.tracking) + '</div>' +
           '<div style="margin-top:14px"><button id="btnShipping"' +
-            (cur ? '' : ' disabled') + '>発送情報を送信する</button></div>'
+            (cur ? '' : ' disabled') + '>発送情報を送信して完了する</button></div>'
         : '<p class="lead">カードのご登録と契約書へのご署名が完了しますと、' +
           'こちらからご発送情報をお送りいただけるようになります。</p>' +
           '<div class="note note-plain">お客様情報のご送信後、2〜3日以内にSquareより' +
@@ -437,7 +500,9 @@
               '\n2〜3日以内にSquareよりお手続きのご案内をお送りいたします。' +
               '\nお手続きの完了後、ご発送情報をご入力いただけるようになります。'
             : 'ご依頼を承りました（' + r.caseId + '）。' +
-              '\n続けて、ご発送後に追跡番号をお知らせください。');
+              '\n\nただし、ご依頼はまだ完了していません。' +
+              '\n商品のご発送後、下の「3. ご発送情報」から追跡番号をお送りください。' +
+              '\nお送りいただいた時点で受付が完了いたします。');
           load();
         })
         .withFailureHandler(function (e) { show('msgRequest', 'err', e.message); btn.disabled = false; })

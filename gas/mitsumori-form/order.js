@@ -216,6 +216,15 @@ function orderSubmitRequest(payload) {
 
   // 初回は契約書と登録手数料の請求書を用意する。**送るのは人が確かめてから**
   if (firstTime) orderPrepareContract_(ss, caseRow, caseId);
+
+  const settings = boardGetSettings_(ss);
+  // **お客様への自動返信が先。** こちらへの通知は、送れたかどうかも一緒に知らせる
+  const replied = firstTime ? false : orderSendThanks_(ss, settings, caseRow, customer);
+  orderNotifyRequest_(ss, settings, customer, {
+    caseId: caseId, qty: qty, detail: detail, note: note,
+    firstTime: firstTime, replied: replied
+  });
+
   return { ok: true, caseId: caseId, firstTime: firstTime };
 }
 
@@ -701,6 +710,115 @@ function orderFindCarrier_(value) {
  * 追跡番号の桁数を確かめる。合わなければ送信させない。
  * **番号違いは、荷物とご依頼を結び付けられなくなる。**
  */
+/**
+ * ご依頼を受け付けたことを、お客様へ自動で返す（T10）。
+ *
+ * **依頼内容を送っただけでは終わらない**ことを、その場でお伝えする。
+ * 済んだと思われると、荷物が届かないまま日が過ぎる。
+ * T4と同じく、AIは通さず定型文をそのまま送る。設定で止められる。
+ *
+ * **初回のお客様には送らない。** 契約がまだで発送に進めないため、
+ * 先に届くのはSquareのお手続きのご案内になる。
+ */
+function orderSendThanks_(ss, settings, caseRow, customer) {
+  if (String(settings['依頼受付の自動返信'] || 'オン').trim() === 'オフ') return false;
+  if (!boardIsEmail_(customer.values[BOARD_CUSTOMER_COL.email - 1])) return false;
+
+  const email = String(customer.values[BOARD_CUSTOMER_COL.email - 1] || '').trim();
+  let built;
+  try {
+    built = boardBuildTemplateText_(ss, caseRow, 'T10');
+  } catch (err) {
+    boardLog_('依頼フォーム', 'ご依頼の自動返信を作れませんでした: ' + err.message);
+    return false;
+  }
+
+  const options = { name: 'ササゲパス' };
+  const alias = settings['送信元エイリアス'];
+  if (alias && GmailApp.getAliases().indexOf(alias) >= 0) options.from = alias;
+
+  try {
+    GmailApp.sendEmail(email, built.subject, built.body, options);
+  } catch (err) {
+    boardLog_('依頼フォーム', 'ご依頼の自動返信の送信に失敗: ' + err.message);
+    return false;
+  }
+
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  sheet.getRange(caseRow, BOARD_COL.lastContact).setValue(new Date());
+  mailAppendHistory_(ss, {
+    customerId: customer.id,
+    from: email,
+    subject: built.subject,
+    summary: '依頼フォームでご依頼を受け付けたため、自動で送信しました。',
+    aiFirst: built.body,
+    finalText: built.body,
+    status: MAIL_STATUS_SENT,
+    threadId: ''
+  });
+  boardLog_('依頼フォーム', email + ' へご依頼受付のご連絡を自動送信しました');
+  return true;
+}
+
+/**
+ * ご依頼が届いたことを、こちらへ知らせる。
+ *
+ * 依頼フォームからのご依頼は、メールでも「対応を選ぶ」でも気づけない。
+ * 案件ボードを見に行かないと分からないので、ここで一報を入れる。
+ * **初回のお客様だけは、こちらに送る手続きがある**ので件名を変える。
+ */
+function orderNotifyRequest_(ss, settings, customer, info) {
+  if (String(settings['依頼フォームの通知'] || 'オン').trim() === 'オフ') return false;
+  const to = String(settings['通知先メールアドレス'] || '').trim();
+  if (!to) return false;
+
+  const who = String(customer.values[BOARD_CUSTOMER_COL.company - 1] ||
+    customer.values[BOARD_CUSTOMER_COL.name - 1] ||
+    customer.values[BOARD_CUSTOMER_COL.email - 1] || '').trim();
+  const NL2 = String.fromCharCode(10);
+
+  const lines = [
+    who + ' 様から、依頼フォームでご依頼がありました。',
+    '',
+    '　案件ID　　：' + info.caseId,
+    '　ご依頼点数：' + info.qty + '点',
+    '　ご依頼内容：' + String(info.detail || '').split(NL2).join(NL2 + '　　　　　　　'),
+  ];
+  if (info.note) lines.push('　備考　　　：' + String(info.note).split(NL2).join(NL2 + '　　　　　　　'));
+
+  lines.push('');
+  if (info.firstTime) {
+    lines.push('■ 初回のお客様です。こちらの対応があります。');
+    lines.push('　契約書と登録手数料の請求書を下書きで用意しました。');
+    lines.push('　内容を確かめて送信してください。');
+    lines.push('　　→ メニュー「ササゲパス」→「別途対応メニュー」→「初回登録の請求書だけを作成・送信する」');
+  } else {
+    lines.push('■ この時点でこちらの対応はありません。');
+    lines.push('　お客様のご発送と追跡番号のご連絡をお待ちください。');
+    lines.push(info.replied
+      ? '　ご発送のお願いは、お客様へ自動でお送りしました。'
+      : '　※ ご発送のお願いの自動返信は送られていません（設定がオフか、送信に失敗しました）。');
+  }
+
+  lines.push('');
+  lines.push('案件ボード：');
+  lines.push(ss.getUrl());
+
+  try {
+    MailApp.sendEmail({
+      to: to,
+      subject: (info.firstTime ? '【要対応】' : '【ご依頼】') + who +
+        ' ─ ' + info.caseId + '（' + info.qty + '点）',
+      body: lines.join(NL2),
+      name: 'ササゲパス業務ボード'
+    });
+  } catch (err) {
+    boardLog_('依頼フォーム', 'ご依頼の通知を送れませんでした: ' + err.message);
+    return false;
+  }
+  return true;
+}
+
 function orderCheckTracking_(carrier, tracking) {
   if (!tracking) return '追跡番号をご入力ください。';
   if (carrier.digits.length === 0) return '';
