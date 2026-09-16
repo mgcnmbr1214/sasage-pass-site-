@@ -72,6 +72,27 @@
   a.track { color: #3B6EF8; }
   #carrierOther { margin: 4px 0 6px; }
 
+  /* 送信できたことを、画面の真ん中でお伝えする */
+  .modal-back {
+    position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 50;
+    background: rgba(20, 30, 50, .45);
+    display: grid; place-items: center; padding: 20px;
+  }
+  .modal {
+    background: #fff; border-radius: 12px; padding: 22px 22px 18px;
+    width: 100%; max-width: 420px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .22);
+  }
+  .modal h2 { font-size: 16px; margin: 0 0 10px; }
+  .modal p { font-size: 13.5px; line-height: 1.85; margin: 0 0 18px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .modal { animation: modal-in .16s ease-out; }
+    @keyframes modal-in {
+      from { transform: scale(.96); opacity: 0; }
+      to { transform: none; opacity: 1; }
+    }
+  }
+
   /* 「発送してください」の合図。状況の一覧の中で、そこだけ目に入るように */
   .need {
     display: inline-block; margin-left: 8px; padding: 1px 9px;
@@ -301,6 +322,39 @@
     return p.status === '支払い・署名待ち' || p.status === '発送待ち';
   }
 
+  /**
+   * 送信できたことを、画面の真ん中でお伝えする。
+   *
+   * **下に小さく出すだけでは伝わらない。** そのうえ読み込み直しで消えるので、
+   * 送れたのかどうか分からなかった。画面の外側に出して、閉じるまで残す。
+   */
+  function showDialog(title, lines) {
+    closeDialog();
+    var back = document.createElement('div');
+    back.className = 'modal-back';
+    back.id = 'modalBack';
+    back.innerHTML =
+      '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">' +
+        '<h2 id="modalTitle">' + esc(title) + '</h2>' +
+        '<p>' + lines.map(esc).join('<br>') + '</p>' +
+        '<button type="button" id="modalOk">閉じる</button>' +
+      '</div>';
+    document.body.appendChild(back);
+
+    el('modalOk').addEventListener('click', closeDialog);
+    back.addEventListener('click', function (e) { if (e.target === back) closeDialog(); });
+    document.addEventListener('keydown', onDialogKey);
+    el('modalOk').focus();
+  }
+
+  function onDialogKey(e) { if (e.key === 'Escape') closeDialog(); }
+
+  function closeDialog() {
+    var back = el('modalBack');
+    if (back && back.parentNode) back.parentNode.removeChild(back);
+    document.removeEventListener('keydown', onDialogKey);
+  }
+
   /** 追跡番号。業者のページが分かるときだけリンクにする。 */
   function trackHtml(number, url, carrier) {
     if (!number) return '';
@@ -454,14 +508,18 @@
       show('msgRequest', 'ok', '送信しています...');
       google.script.run
         .withSuccessHandler(function (r) {
-          show('msgRequest', 'ok', r.firstTime
-            ? 'ご依頼とご登録を承りました（' + r.caseId + '）。' +
-              '\n2〜3日以内にSquareよりお手続きのご案内をお送りいたします。' +
-              '\nお手続きの完了後、ご発送情報をご入力いただけるようになります。'
-            : 'ご依頼を承りました（' + r.caseId + '）。' +
-              '\n\nただし、ご依頼はまだ完了していません。' +
-              '\n商品のご発送後、下の「3. ご発送情報」から追跡番号をお送りください。' +
-              '\nお送りいただいた時点で受付が完了いたします。');
+          if (r.firstTime) {
+            showDialog('ご依頼とご登録を承りました（' + r.caseId + '）', [
+              '2〜3日以内にSquareよりお手続きのご案内をお送りいたします。',
+              'お手続きの完了後、ご発送情報をご入力いただけるようになります。'
+            ]);
+          } else {
+            showDialog('ご依頼を承りました（' + r.caseId + '）', [
+              '依頼内容はこのページにも保存されておりますので、',
+              '商品のご発送後、下の「3. ご発送情報」から追跡番号をお送りください。',
+              'お送りいただいた時点で受付が完了いたします。'
+            ]);
+          }
           load();
         })
         .withFailureHandler(function (e) { show('msgRequest', 'err', e.message); btn.disabled = false; })
@@ -476,8 +534,10 @@
       show('msgShipping', 'ok', '送信しています...');
       google.script.run
         .withSuccessHandler(function () {
-          show('msgShipping', 'ok', 'ありがとうございます。ご依頼が完了いたしました。' +
-            '\nお荷物の到着後、あらためて納期をご連絡いたします。');
+          showDialog('ご依頼の受付が完了いたしました', [
+            'ありがとうございます。',
+            'お荷物の到着後、あらためて納期をご連絡いたします。'
+          ]);
           load();
         })
         .withFailureHandler(function (e) { show('msgShipping', 'err', e.message); ship.disabled = false; })
