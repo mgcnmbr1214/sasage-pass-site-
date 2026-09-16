@@ -544,8 +544,23 @@ function boardSetup() {
     boardMigrateShipments_(ss);
     boardNormalizeBillingMonth_(ss);
   });
-  // 移行で列が動いている可能性があるため、必ず読み直してから先へ進む
-  boardSyncColumns_(ss.getSheetByName(BOARD_SHEET_CASES));
+  // 移行で列が動いている可能性があるため、必ず読み直してから先へ進む。
+  // **そろわなければ、ここで止める。** 別の列を読み書きしたまま進むと、
+  // 中身がまるごと入れ替わる。実際にそれで案件ボードが壊れた
+  if (!boardSyncColumns_(ss.getSheetByName(BOARD_SHEET_CASES))) {
+    const missing = boardMissingCaseHeaders_(ss.getSheetByName(BOARD_SHEET_CASES));
+    boardLog_('②エラー', '案件ボードの見出しがそろわないため、初期セットアップを中止しました。' +
+      '不足している見出し: ' + missing.join('、'));
+    SpreadsheetApp.getUi().alert('初期セットアップを中止しました',
+      '案件ボードの見出しがそろっていません。' + String.fromCharCode(10) +
+      '不足: ' + missing.join('、') + String.fromCharCode(10) + String.fromCharCode(10) +
+      'このまま進めると別の列に書き込んでしまうため、何もせずに止めました。',
+      SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  // 列がずれたまま書き込まれた行があれば、ここで並べ直す
+  boardRepairScrambledRows_(ss);
 
   boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS);
   boardSetupSheet_(ss, BOARD_SHEET_CUSTOMERS, BOARD_CUSTOMER_HEADERS, [80, 170, 120, 220, 130]);
@@ -808,6 +823,15 @@ function boardMigrateCases_(ss) {
     sheet.deleteColumn(contract + 1);
     boardLog_('移行', '契約書作成日 列を削除しました');
   }
+
+  // **並びの表に足した列は、ここで必ず補う。**
+  // 上の一本ずつの挿し込みを書き忘れると、見出しがそろわないまま
+  // 以降の処理が別の列を読み書きする。実際にそれで案件ボードが壊れた
+  BOARD_CASE_HEADERS.forEach(function (name, i) {
+    if (i === 0 || headers.indexOf(name) >= 0) return;
+    if (headers.indexOf(BOARD_CASE_HEADERS[i - 1]) < 0) return;
+    headers = boardInsertColumnAfter_(sheet, headers, BOARD_CASE_HEADERS[i - 1], name);
+  });
 
   // 一覧の手前に置くのは、お客様がいつ送ったかと、荷物がいまどこか
   headers = boardMoveShippingColumnsFront_(sheet, headers);
@@ -1476,6 +1500,61 @@ function boardArchivedCaseRows_(ss) {
   const sheet = ss.getSheetByName(BOARD_SHEET_ARCHIVE_CASES);
   if (!sheet || sheet.getLastRow() < 2) return [];
   return sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+}
+
+/**
+ * 列がずれたまま書き込まれた行を、並べ直す。
+ *
+ * 見出しがそろわないまま処理が進むと、**並びの表のとおりの順番**で
+ * 値が書かれてしまう。シートの実際の並びと違うので、中身が総取り替えになる。
+ * 見分け方は「お客様の欄にステータスの値が入っている」こと。
+ * お客様のお名前がステータスと一致することはないので、これで確かめられる。
+ */
+function boardRepairScrambledRows_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const width = BOARD_CASE_HEADERS.length;
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues();
+  const fixed = [];
+
+  values.forEach(function (row, i) {
+    const caseId = String(row[BOARD_COL.caseId - 1] || '').trim();
+    if (!caseId) return;
+    // お客様の欄にステータスの値が入っている行だけが対象
+    if (BOARD_STATUSES.indexOf(String(row[BOARD_COL.customer - 1] || '').trim()) < 0) return;
+
+    // いまの値は「並びの表の順番」で入っている。実際の列へ入れ直す
+    const next = new Array(width).fill('');
+    BOARD_CASE_HEADERS.forEach(function (name, n) {
+      const to = BOARD_COL[BOARD_COL_KEY_BY_HEADER[name]];
+      if (to) next[to - 1] = row[n];
+    });
+
+    sheet.getRange(i + 2, 1, 1, width).setValues([next]);
+    boardSetTodoFormula_(sheet, i + 2);
+    boardSetOwnerFormula_(sheet, i + 2);
+    boardSetEstimateFormula_(sheet, i + 2);
+    fixed.push(caseId);
+  });
+
+  // お客様の登録状況が発送完了日の欄に紛れ込んでいたら取り除く
+  const stray = [BOARD_REG_UNKNOWN, BOARD_REG_SHORT, BOARD_REG_OK, BOARD_REG_SIGNED];
+  let cleared = 0;
+  sheet.getRange(2, BOARD_COL.shippedAt, sheet.getLastRow() - 1, 1).getValues()
+    .forEach(function (row, i) {
+      if (stray.indexOf(String(row[0] || '').trim()) < 0) return;
+      sheet.getRange(i + 2, BOARD_COL.shippedAt).clearContent();
+      cleared++;
+    });
+
+  if (fixed.length > 0) {
+    boardLog_('修復', '列がずれていた案件を並べ直しました: ' + fixed.join('、'));
+  }
+  if (cleared > 0) {
+    boardLog_('修復', '発送完了日に紛れ込んでいたお客様の登録状況を ' + cleared + ' 件消しました');
+  }
+  return fixed.length;
 }
 
 /** 案件ボードにある案件の数。黙って減っていないかを見張るために使う。 */
