@@ -28,6 +28,9 @@ const BOARD_STATUS_SIGNING = '支払い・署名待ち';
 const BOARD_STATUS_WAITING_SHIP = '発送待ち';
 const BOARD_STATUS_SHIPPED = '荷受待ち';
 const BOARD_STATUS_WORKING = '作業中';
+// 作業も納品も終えて、お客様の承認を待っている段階。
+// **ここが無いと、まだ作業している案件と見分けられなかった。**
+const BOARD_STATUS_REVIEW = '納品データ承認待ち';
 const BOARD_STATUS_DONE = '返送済';
 const BOARD_STATUS_CLOSED = '見送り';
 
@@ -38,7 +41,8 @@ const BOARD_ARCHIVE_STAMP = '片づけた日';
 
 const BOARD_STATUSES = [
   BOARD_STATUS_NEW, BOARD_STATUS_SIGNING, BOARD_STATUS_WAITING_SHIP,
-  BOARD_STATUS_SHIPPED, BOARD_STATUS_WORKING, BOARD_STATUS_DONE, BOARD_STATUS_CLOSED
+  BOARD_STATUS_SHIPPED, BOARD_STATUS_WORKING, BOARD_STATUS_REVIEW,
+  BOARD_STATUS_DONE, BOARD_STATUS_CLOSED
 ];
 
 /**
@@ -59,6 +63,8 @@ const BOARD_STATUS_OWNER = {
   '発送待ち': 'お客様',
   '荷受待ち': '自分',
   '作業中': '自分',
+  // 承認を待っている側はお客様
+  '納品データ承認待ち': 'お客様',
   '返送済': '完了',
   '見送り': '完了'
 };
@@ -277,7 +283,7 @@ const BOARD_RESPONSE_TYPES = [
   },
   {
     id: 'T8', name: '作業完了・データ納品（納品リンクを共有し、返送とデータ保管についてお伝えします）',
-    template: 'T8', status: '', fields: [], invoice: false, requires: []
+    template: 'T8', status: BOARD_STATUS_REVIEW, fields: [], invoice: false, requires: []
   },
   {
     id: 'T9', name: '返送開始のお知らせ（返送の連絡。この送信が月々のご請求の対象になります）',
@@ -5527,6 +5533,7 @@ function boardSetTodoFormula_(sheet, row) {
   const to = cell(BOARD_COL.dueTo);
   // 依頼日の列はやめた。ご発送待ちの日数は**案内メールを送った日**から数える
   const guided = cell(BOARD_COL.guideDraftAt);
+  const last = cell(BOARD_COL.lastContact);
   const dueEnd = 'IF(' + to + '="",' + from + ',' + to + ')';
   // 放置に気づけるよう、待たせている日数を添える
   const elapsedFrom = function (since) {
@@ -5547,6 +5554,7 @@ function boardSetTodoFormula_(sheet, row) {
     b + '="' + BOARD_STATUS_SHIPPED + '",IF(' + from + '="","受取準備（納期の返信）",' +
       '"作業チームへ共有・荷受待ち"),' +
     b + '="' + BOARD_STATUS_WORKING + '","作業"&IF(' + from + '="","","（納期 "&TEXT(' + dueEnd + ',"m/d")&"）"),' +
+    b + '="' + BOARD_STATUS_REVIEW + '","納品データのご確認待ち"&' + elapsedFrom(last) + ',' +
     'TRUE,""))';
   sheet.getRange(row, BOARD_COL.todo).setFormula(formula);
 }
