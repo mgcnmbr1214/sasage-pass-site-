@@ -72,29 +72,12 @@
   a.track { color: #3B6EF8; }
   #carrierOther { margin: 4px 0 6px; }
 
-  /* 進み方。いまどこまで終わっているかを、開いた瞬間に分かるようにする */
-  .steps { display: flex; gap: 8px; margin-bottom: 16px; }
-  .step {
-    flex: 1 1 0; min-width: 0;
-    background: #fff; border: 1px solid #E4EAF7; border-radius: 10px;
-    padding: 10px 10px 9px; text-align: center;
-    font-size: 12.5px; color: #8B99B6;
+  /* 「発送してください」の合図。状況の一覧の中で、そこだけ目に入るように */
+  .need {
+    display: inline-block; margin-left: 8px; padding: 1px 9px;
+    border-radius: 999px; background: #FDECEC; color: #A32D2D;
+    font-size: 11.5px; font-weight: 700; white-space: nowrap;
   }
-  .step .n {
-    display: inline-grid; place-items: center;
-    width: 20px; height: 20px; border-radius: 999px; margin-right: 6px;
-    background: #EEF2FF; color: #8B99B6; font-size: 11.5px; font-weight: 700;
-    vertical-align: -3px;
-  }
-  .step .nm { font-weight: 600; }
-  .step em {
-    display: block; margin-top: 3px; font-style: normal;
-    font-size: 11.5px; font-weight: 700; color: #1D6B33;
-  }
-  .step.now { border-color: #3B6EF8; color: #1F2A44; }
-  .step.now .n { background: #3B6EF8; color: #fff; }
-  .step.done { border-color: #BFE3C9; background: #F3FAF5; color: #3D4A66; }
-  .step.done .n { background: #1D6B33; color: #fff; }
 
   .note-stop { background: #FDECEC; border: 1px solid #F3C4C4; color: #A32D2D;
     font-weight: 600; }
@@ -318,30 +301,6 @@
     return p.status === '支払い・署名待ち' || p.status === '発送待ち';
   }
 
-  /**
-   * 進み方の帯。**終わった段にだけ「完了」を出す。**
-   * いまどこにいるかは色で示し、文字は増やさない。
-   */
-  function stepsHtml() {
-    var ordered = !!state.progress;
-    var waiting = waitingShipInfo();
-    var done = ordered && !waiting;   // 発送情報まで送り終えている
-
-    var steps = [
-      { n: 1, nm: 'ご依頼内容', done: ordered, now: !ordered },
-      { n: 2, nm: 'ご発送情報', done: done, now: waiting },
-      // 3段目の名前に「完了」を入れると、下の印と二重になる
-      { n: 3, nm: 'ご依頼の受付', done: done, now: false }
-    ];
-
-    return '<div class="steps">' + steps.map(function (s) {
-      var cls = s.done ? 'step done' : (s.now ? 'step now' : 'step');
-      return '<div class="' + cls + '"><span class="n">' + s.n + '</span>' +
-        '<span class="nm">' + esc(s.nm) + '</span>' +
-        (s.done ? '<em>完了</em>' : '') + '</div>';
-    }).join('') + '</div>';
-  }
-
   /** 追跡番号。業者のページが分かるときだけリンクにする。 */
   function trackHtml(number, url, carrier) {
     if (!number) return '';
@@ -359,7 +318,8 @@
     var c = state.progress;
     if (!c) return '';
     var rows = [
-      ['ご依頼', c.caseId + '（' + c.status + '）'],
+      ['ご依頼', c.caseId + '（' + c.status + '）' +
+        (waitingShipInfo() ? '<span class="need">ご発送をお願いします</span>' : '')],
       ['ご発送', [c.shippedAt, trackHtml(c.tracking, c.trackingUrl, c.carrier)]
         .filter(function (v) { return v; }).join('　')],
       ['お預かり点数', c.receivedQty ? c.receivedQty + ' 点' : ''],
@@ -407,7 +367,6 @@
     el('who').textContent = (state.customer.company || state.customer.name) + ' 様';
 
     var html =
-      stepsHtml() +
       progressHtml() +
       monthlyHtml() +
       '<div class="card"><h2>1. ご依頼内容</h2>' +

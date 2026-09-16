@@ -5273,12 +5273,22 @@ function boardSetEstimateFormula_(sheet, row) {
 function boardSetOwnerFormula_(sheet, row) {
   const status = '$' + boardColLetter_(BOARD_COL.status) + row;
   const unreplied = '$' + boardColLetter_(BOARD_COL.unreplied) + row;
+
+  // **登録請求書を送るまでは、動くのはこちら。**
+  // ステータスは「支払い・署名待ち」でも、まだお客様は待たされている側。
+  // 対応者が「お客様」のままだと、初回のお客様に請求書を送り忘れる
+  const sentAt = 'IFERROR(VLOOKUP($' + boardColLetter_(BOARD_COL.customerId) + row +
+    ",'" + BOARD_SHEET_CUSTOMERS + "'!$A:$" + boardColLetter_(BOARD_CUSTOMER_HEADERS.length) +
+    ',' + BOARD_CUSTOMER_COL.regInvoiceSent + ',FALSE),"")';
+
   const cases = Object.keys(BOARD_STATUS_OWNER).map(function (name) {
     return status + '="' + name + '","' + BOARD_STATUS_OWNER[name] + '"';
   }).join(',');
   sheet.getRange(row, BOARD_COL.owner).setFormula(
     '=IF($' + boardColLetter_(BOARD_COL.caseId) + row + '="","",IFS(' +
-    unreplied + '<>"","自分",' + cases + ',TRUE,""))'
+    unreplied + '<>"","自分",' +
+    'AND(' + status + '="' + BOARD_STATUS_SIGNING + '",' + sentAt + '=""),"自分",' +
+    cases + ',TRUE,""))'
   );
 }
 
