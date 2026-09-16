@@ -81,6 +81,31 @@ function mailUnstamp_(text) {
   return String(text || '').replace(MAIL_STAMP_PATTERN, '');
 }
 
+/** 先頭に付けた日時を読み取る。無ければ 0。 */
+function mailStampTime_(text) {
+  const hit = String(text || '').match(MAIL_STAMP_PATTERN);
+  if (!hit) return 0;
+  const at = new Date(String(hit[0]).trim().replace(/-/g, '/'));
+  const time = at.getTime();
+  return isNaN(time) ? 0 : time;
+}
+
+/**
+ * その行が、**まだ送っていない下書き**を抱えているか。
+ *
+ * 文面の先頭には書いた日時が付く。それが最後に送ったメールより新しければ、
+ * これから送るために用意した文面ということ。**そこを上書きしてはいけない。**
+ * 実際、作った下書きが10分後の自動確認で古い返信に置き換わって消えた。
+ */
+function mailHoldsFreshDraft_(text, sentAt) {
+  const draft = mailStampTime_(text);
+  if (!draft) return false;
+  // **instanceof には頼らない。** 別のところから来た日付は別物として扱われる
+  const sent = new Date(sentAt).getTime();
+  if (isNaN(sent)) return false;
+  return draft > sent;
+}
+
 /** 確認画面に出し続ける状態。実際に送信するまでは一覧から消さない。 */
 const MAIL_OPEN_STATUSES = [MAIL_STATUS_PENDING];
 
@@ -578,6 +603,8 @@ function mailRefreshSentStatus_(ss) {
       if (last.isDraft()) return;
       const from = String(last.getFrom() || '').toLowerCase();
       const sentByUs = ours.some(function (address) { return address && from.indexOf(address) >= 0; });
+      // 送るために用意した文面を抱えている行は、まだ返信済みではない
+      if (mailHoldsFreshDraft_(row[BOARD_MAIL_COL.finalText - 1], last.getDate())) return;
       if (sentByUs) {
         sheet.getRange(i + 2, BOARD_MAIL_COL.status).setValue(MAIL_STATUS_SENT);
         advanced.push(String(row[BOARD_MAIL_COL.from - 1] || ''));
@@ -664,11 +691,16 @@ function mailSyncSentReplies_(ss) {
     }
     if (at < 0) return;
 
+    // **いちばん新しい返信を見る。** 最初の1通で止めると、同じ相手に何度か
+    // 返したとき、いつまでも古い文面が記録に残る
     let reply = null;
-    for (let m = at + 1; m < messages.length; m++) {
+    for (let m = messages.length - 1; m > at; m--) {
       if (sentByUs(messages[m])) { reply = messages[m]; break; }
     }
     if (!reply) return;
+
+    // これから送る文面を抱えている行は触らない
+    if (mailHoldsFreshDraft_(row[BOARD_MAIL_COL.finalText - 1], reply.getDate())) return;
 
     const text = mailStamp_(reply.getDate(), mailPlainBody_(reply).slice(0, MAIL_MAX_BODY_CHARS));
     if (text === String(row[BOARD_MAIL_COL.finalText - 1] || '')) return;
