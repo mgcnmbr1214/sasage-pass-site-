@@ -619,6 +619,13 @@ function mailSyncSentReplies_(ss) {
 
   rows.forEach(function (row, i) {
     const status = String(row[BOARD_MAIL_COL.status - 1] || '').trim();
+
+    // **送信予約の行には、何があっても触らない。**
+    // 時刻を待っているだけの行を過去の返信で上書きすると、送るはずだった
+    // 文面が消え、状態も「返信済み」に変わって予約そのものが流れる。
+    // 実際に、予約した直後の自動確認でこれが起き、1件送られなかった
+    if (status === MAIL_STATUS_SCHEDULED) return;
+
     // 対応不要の行も、実際に返していれば文面は記録する。
     // 記録しないと「返信したのに空欄」になる。ただし状態は動かさない
     const keepStatus = status === MAIL_STATUS_SKIP;
