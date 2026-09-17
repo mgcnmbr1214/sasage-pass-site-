@@ -51,7 +51,8 @@
       justify-content: space-between;
       gap: 16px;
     }
-    .mt-logo img { height: 30px; width: auto; display: block; }
+    .mt-logo { display: flex; align-items: center; overflow: hidden; height: 40px; }
+    .mt-logo img { height: 75px; width: auto; object-fit: contain; display: block; }
     .mt-back {
       font-size: 14px;
       font-weight: 500;
@@ -69,7 +70,8 @@
     @media (max-width: 767px) {
       :root { --header-h: 48px; }
       .mt-header-inner { padding: 0 14px; }
-      .mt-logo img { height: 24px; }
+      .mt-logo { height: 34px; }
+      .mt-logo img { height: 64px; }
       .mt-back { font-size: 13px; }
     }
   </style>

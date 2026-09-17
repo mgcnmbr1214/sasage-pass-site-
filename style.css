@@ -1507,9 +1507,11 @@ a { text-decoration: none; color: inherit; }
 }
 .footer-inner { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .footer-logo-img {
-  height: 36px;
-  width: auto;
-  object-fit: contain;
+  /* 正方形のロゴ画像から、ロゴタイプの帯だけを切り出して見せる */
+  width: 150px;
+  height: 34px;
+  object-fit: cover;
+  object-position: center 32%;
   filter: brightness(0) invert(1);
   opacity: 0.7;
 }
