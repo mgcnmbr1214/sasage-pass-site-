@@ -1592,3 +1592,100 @@ a { text-decoration: none; color: inherit; }
   .svc-ec-body { padding: 16px; gap: 16px; }
   .svc-ec-grid { grid-template-columns: 1fr; }
 }
+
+/* =============================================
+   日本語の折り返し
+   行末に1〜2文字だけ取り残されるのを防ぎ、
+   「ー」や句読点が行頭に来ないようにする
+   ============================================= */
+body { line-break: strict; }
+
+/* 見出しと短い説明文。上下の行が同じくらいの長さになるように割る */
+.hero-title,
+.hero-sub,
+.section-title,
+.section-desc,
+.svc-detail-catch,
+.svc-substep-title,
+.svc-option-title,
+.flow-h-step h3,
+.flow-select-note,
+.faq-q span,
+.company-info-note,
+.price-table th,
+.price-table .plan-cell small {
+  text-wrap: balance;
+}
+
+/* 長めの本文と注記。最終行が極端に短くならないようにする */
+.svc-detail-desc,
+.svc-substep-desc,
+.svc-note,
+.svc-option-desc,
+.svc-option-note,
+.flow-h-step p,
+.svc-detail-points li,
+.svc-option-points li,
+.faq-a,
+.price-note,
+.gallery-note {
+  text-wrap: pretty;
+}
+
+/* 文節の区切りで折り返す（対応ブラウザのみ。非対応では無視される） */
+.hero-sub,
+.section-desc,
+.svc-detail-catch,
+.svc-detail-desc,
+.svc-substep-desc,
+.svc-note,
+.svc-option-desc,
+.svc-option-note,
+.flow-h-step p,
+.svc-detail-points li,
+.svc-option-points li,
+.faq-q span,
+.faq-a,
+.price-note,
+.gallery-note,
+.company-info-list p,
+.company-info-note {
+  word-break: auto-phrase;
+}
+
+@media (max-width: 480px) {
+  /* 16pxのままだと「一括代行。」の「行。」だけが次の行に落ちる */
+  .hero-sub { font-size: 14px; }
+}
+
+/* 割引の注記は「1点あたり」「¥50 引き」の単位で折り返す */
+.th-sub { word-break: keep-all; }
+
+/* 料金表：モバイルでも横スクロールせずに収める */
+@media (max-width: 767px) {
+  /* 560pxの下限をやめ、プラン名を折り返して画面幅に合わせる */
+  .price-table { min-width: 0; }
+  .price-table .plan-cell { white-space: normal; }
+}
+@media (max-width: 520px) {
+  .price-table th { padding: 9px 4px; font-size: 11.5px; }
+  .th-sub { font-size: 9.5px; }
+  .price-table td { padding: 11px 4px; }
+  .price-table .plan-cell { padding-left: 10px; }
+  .price-table .plan-cell b { font-size: 12.5px; }
+  .price-table .plan-cell small { font-size: 10px; line-height: 1.35; }
+  .price-table tbody td { font-size: 15px; letter-spacing: 0; }
+  .price-table tbody td.plan-cell { font-size: 12.5px; }
+}
+
+/* プラン名（プランA など）は途中で折り返さない */
+.price-table .plan-cell b { white-space: nowrap; }
+
+/* 320px 級の狭い端末。金額を少し詰めてプラン名の欄を確保する */
+@media (max-width: 360px) {
+  .price-table th { font-size: 10.5px; padding: 8px 3px; }
+  .th-sub { font-size: 9px; }
+  .price-table td { padding: 10px 3px; }
+  .price-table tbody td { font-size: 13.5px; }
+  .price-table tbody td.plan-cell { font-size: 12px; }
+}
