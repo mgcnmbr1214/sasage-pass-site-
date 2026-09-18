@@ -595,11 +595,11 @@ function boardSetup() {
   const repaired = boardMigrateMails_(ss);
   const mailDeduped = boardDedupeMails_(ss);
   const imported = boardImportResponses_(ss);
-  let backfilled = 0;
+  let stripped = 0;
   try {
-    backfilled = boardBackfillMonthlyToDetail_(ss);
+    stripped = boardStripMonthlyFromDetail_(ss);
   } catch (err) {
-    boardLog_('②エラー', '月間予定数の追記に失敗: ' + err.message);
+    boardLog_('②エラー', '月間予定数の削除に失敗: ' + err.message);
   }
   try {
     boardRefreshCustomerNotes_(ss);
@@ -694,7 +694,7 @@ function boardSetup() {
     (deduped > 0 ? '\n重複した案件を削除：' + deduped + ' 件' : '') +
     (repaired > 0 ? '\nメール履歴の列ずれを修復：' + repaired + ' 件' : '') +
     (mailDeduped > 0 ? '\n重複したメール履歴を削除：' + mailDeduped + ' 件' : '') +
-    (backfilled > 0 ? '\n依頼内容へ月間予定数を追記：' + backfilled + ' 件' : '') +
+    (stripped > 0 ? '\n依頼内容から月間予定数を削除：' + stripped + ' 件' : '') +
     (restated > 0 ? '\nお客様の登録状況の更新：' + restated + ' 件' : '') +
     (deferred.length > 0
       ? '\n\n時間の都合で、次の処理は10分以内の自動チェックに回しました。' +
@@ -1921,7 +1921,9 @@ function boardSetupSheet_(ss, name, headers, widths) {
 }
 
 /** 長文が入る列。折り返さず1行に収めて、一覧を見やすく保つ。 */
-const BOARD_CLIPPED_COLS = ['detail', 'selection', 'formInquiry', 'lastInbound', 'lastOutbound',
+// **依頼内容だけは折り返す。** 一覧で真っ先に読みたいのがここで、
+// 隠れていると案件ボードを開いても何のご依頼か分からない
+const BOARD_CLIPPED_COLS = ['selection', 'formInquiry', 'lastInbound', 'lastOutbound',
   'priceNote', 'teamNote', 'memo'];
 const BOARD_ROW_HEIGHT = 50;
 
@@ -1937,7 +1939,7 @@ const BOARD_CASE_WIDTHS = {
   shippedAt: 95, tracking: 130,
   qty: 70, receivedQty: 85, shippedQty: 70, returnTracking: 130,
   dueFrom: 95, dueTo: 95, todo: 230, unreplied: 130, unbilled: 160,
-  customerId: 70, detail: 160, selection: 90, formInquiry: 160, lastInbound: 200, lastOutbound: 200,
+  customerId: 70, detail: 300, selection: 90, formInquiry: 160, lastInbound: 200, lastOutbound: 200,
   unitPrice: 70, priceAdjust: 75, flatAdjust: 75, adjustNote: 150, estimate: 100, priceNote: 300,
   carrier: 100, teamNote: 160, guideDraftAt: 95, lastContact: 95, memo: 160, sourceRow: 70
 };
@@ -1991,6 +1993,15 @@ function boardApplyCaseFormatting_(sheet) {
   sheet.getRange(2, BOARD_COL.unbilled, maxRows, 1)
     .setHorizontalAlignment('center').setFontColor('#2C7A46');
 
+  // 自分が動かす番の案件は、ひと目で拾えるように色を付ける。
+  // **上の2つより後ろに置く。** 未返信・未請求の色を上書きしないため
+  rules.push(SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied('=AND($' + boardColLetter_(BOARD_COL.caseId) + '2<>"",$' +
+      boardColLetter_(BOARD_COL.owner) + '2="自分")')
+    .setBackground('#E8F0FE')
+    .setRanges([sheet.getRange(2, 1, maxRows, width)])
+    .build());
+
   sheet.setConditionalFormatRules(rules);
 
   [BOARD_COL.dueFrom, BOARD_COL.dueTo, BOARD_COL.shippedAt,
@@ -2015,10 +2026,15 @@ function boardApplyCaseFormatting_(sheet) {
       .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP)
       .setVerticalAlignment('middle');
   });
+  sheet.getRange(2, BOARD_COL.detail, maxRows, 1)
+    .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+    .setVerticalAlignment('middle');
 
   // setRowHeights は「データに合わせる」の指定を解除しない。
   // Forced のほうを使わないと、自動調整の行だけ中身に合わせて伸びたままになる
   boardForceRowHeight_(sheet, 2, Math.max(sheet.getMaxRows() - 1, 1));
+  // 折り返した依頼内容が全部見えるように、中身のある行だけ高さを合わせる
+  boardFitDetailRows_(sheet);
 
   boardRefreshUnreplied_(sheet.getParent());
   boardRefreshUnbilled_(sheet.getParent());
@@ -2323,6 +2339,29 @@ function boardForceRowHeight_(sheet, startRow, numRows) {
   }
 }
 
+/**
+ * 依頼内容が全部見えるよう、行の高さを中身に合わせる。
+ *
+ * **折り返すのは依頼内容だけ**なので、高さはこの列で決まる。
+ * 空の行まで伸ばさないよう、中身のある行だけを対象にする。
+ * 短い行が詰まって読みにくくならないよう、最低の高さは保つ。
+ */
+function boardFitDetailRows_(sheet) {
+  const rows = sheet.getLastRow() - 1;
+  if (rows < 1) return;
+  try {
+    sheet.autoResizeRows(2, rows);
+  } catch (err) {
+    boardLog_('表示', '行の高さを合わせられませんでした: ' + err.message);
+    return;
+  }
+  for (let row = 2; row <= sheet.getLastRow(); row++) {
+    if (sheet.getRowHeight(row) < BOARD_ROW_HEIGHT) {
+      sheet.setRowHeight(row, BOARD_ROW_HEIGHT);
+    }
+  }
+}
+
 /** 見出し行に絞り込みを付ける。ステータス順や担当順に並べ替えて見られるようにする。 */
 function boardApplyCaseFilter_(sheet) {
   if (sheet.getLastRow() < 2) return;
@@ -2402,11 +2441,15 @@ const BOARD_DEFAULT_SETTINGS = [
    'ご依頼受付から何日で、お客様へ発送の催促（T6）を自動送信するか。カンマ区切り。空にすると送らない'],
   ['新着メールの読み取り', 'オン', 'オフにすると定期チェックで新着メールを読み取らない'],
   ['手続き完了の自動送信', 'オン', '支払いと署名の確認後、テンプレT4をお客様へ自動送信する。オフで停止'],
-  ['依頼フォームの通知', 'オン', '依頼フォームでご依頼が届いたとき、通知先メールアドレスへ知らせる。オフで停止'],
+  ['依頼フォームの通知', 'オン',
+   '依頼フォームでご依頼・追跡番号が届いたとき、通知先メールアドレスへ知らせる。オフで停止'],
+  ['朝のまとめメールの時刻', '8',
+   '毎朝この時刻以降に、対応者が「自分」の案件を1通にまとめて通知先へ送る。空にすると送らない'],
   ['発送の催促の自動送信', 'オン',
    'ご発送待ちのまま日が過ぎたお客様へ、テンプレT6を自動送信する。オフで停止'],
   ['依頼受付の自動返信', 'オン',
-   '依頼フォームでご依頼が届いたとき、テンプレT10（ご発送のお願い）をお客様へ自動送信する。オフで停止'],
+   '依頼フォームでご依頼が届いたときT10（ご発送のお願い）、追跡番号が届いたときT11（受付完了）を、' +
+   'お客様へ自動送信する。オフで両方とも停止'],
   ['請求書送信の手順', boardDefaultInvoiceSteps_(), 'Square手続き画面に表示される手順。実際の操作に合わせて自由に書き換えてください']
 ].concat(BOARD_SETTING_NOTES);
 
@@ -2468,8 +2511,13 @@ function boardSeedSettings_(sheet) {
     } else if (note) {
       // 記録は切り替えるための値ではないので、常に最新の内容にしておく
       sheet.getRange(hit.row, 2, 1, 2).setValues([[item[1], item[2]]]);
-    } else if (hit.value === '' || hit.value === null) {
-      sheet.getRange(hit.row, 2).setValue(item[1]);
+    } else {
+      if (hit.value === '' || hit.value === null) {
+        sheet.getRange(hit.row, 2).setValue(item[1]);
+      }
+      // **説明書きは、選んだ値ではなく取扱説明。** 中身が変わったのに
+      // 古い説明が残ると、どちらが本当か分からなくなる
+      sheet.getRange(hit.row, 3).setValue(item[2]);
     }
   });
   boardStyleSettingNotes_(sheet);
@@ -2923,6 +2971,8 @@ function boardSeedTemplates_(sheet) {
     ['T9', '返送開始のお知らせ', '【ササゲパス】商品の返送を開始いたしました', boardDefaultShipBackBody_(), '**この送信が月々のご請求の対象になる**。点数と追跡番号は画面で入力し、返送履歴にも残る'],
     ['T10', 'ご依頼を受け付けました（ご発送のお願い）', '【ササゲパス】ご依頼を受け付けました（ご発送のお願い）',
      boardDefaultOrderThanksBody_(), '依頼フォームでご依頼が届いたとき、**自動で送る**。設定「依頼受付の自動返信」で止められる'],
+    ['T11', 'ご依頼の受付が完了しました', '【ササゲパス】ご依頼の受付が完了いたしました',
+     boardDefaultOrderDoneBody_(), '依頼フォームで追跡番号が届いたとき、**自動で送る**。設定「依頼受付の自動返信」で止められる'],
     ['S1', 'Square請求書（登録手数料220円）', SQUARE_INVOICE_TITLE, squareInvoiceDescription_(), '過去の請求書と同一の文面。Squareの請求書メッセージ欄に入る'],
     ['S2', 'Square請求書（月々のご利用料金）', 'ササゲパス利用料金', boardDefaultUsageInvoiceBody_(), '「今月の請求書を作成」で作る請求書のメッセージ欄に入る。件名は月ごとに自動で付く']
   ];
@@ -2994,6 +3044,40 @@ function boardDefaultOrderThanksBody_() {
     '　品　　　名　：{{品名}}',
     '',
     '※ ヤマト運輸のほうが受け取り・検品が早く進むため、先に受付をさせていただくことがございます。',
+    '',
+    '引き続きどうぞよろしくお願い申し上げます。'
+  ].join(String.fromCharCode(10));
+}
+
+/**
+ * 追跡番号をいただいたときの自動返信（T11）。
+ *
+ * **ここでご依頼が完了したことを、はっきりお伝えする。** T10で「まだ完了
+ * していません」とお願いした分、完了もこちらから伝えないと収まりが悪い。
+ * 納期は荷物を開けて数えるまで決められないので、**受付・検品後**とお伝えする。
+ * 「到着後」と書くと、届いた当日に返信が来ると思われてしまう。
+ */
+function boardDefaultOrderDoneBody_() {
+  return [
+    '{{会社名}}',
+    '{{担当者名}} 様',
+    '',
+    'お世話になっております。ササゲパス運営事務局です。',
+    '追跡番号のご連絡をいただき、誠にありがとうございます。',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '■ ご依頼の受付が完了いたしました',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '　運送業者　：{{運送業者}}',
+    '　追跡番号　：{{追跡番号}}',
+    '　ご依頼内容：{{依頼内容（料金なし）}}',
+    '　ご依頼点数：{{予定点数}}点',
+    '',
+    'お荷物の受付・検品が済みましたら、点数の確認結果と',
+    '納期の目安を、改めてメールにてご連絡いたします。',
+    'それまで今しばらくお待ちくださいませ。',
+    '',
+    'ご不明な点がございましたら、このメールへご返信ください。',
     '',
     '引き続きどうぞよろしくお願い申し上げます。'
   ].join(String.fromCharCode(10));
@@ -4489,15 +4573,14 @@ function boardImportResponses_(ss) {
       date: pick('date')
     });
 
-    const monthly = boardMonthlyLabel_(pick('monthly'));
+    // **月間予定数は依頼内容に混ぜない。** ご依頼ごとの中身ではなく、
+    // お客様の予定。顧客タブで持っていれば足りる
     const created = boardAppendCase_(ss, {
       customerId: customerId,
       status: '問合せ',
       values: {
         customer: company || name,
-        detail: monthly
-          ? (detail ? detail + String.fromCharCode(10) + '月間予定数：' + monthly : '月間予定数：' + monthly)
-          : detail,
+        detail: detail,
         formInquiry: boardTrimInquiry_(pick('inquiry')),
         unitPrice: pick('unitPrice'),
         lastContact: pick('date'),
@@ -4981,54 +5064,45 @@ function boardBuildCustomerNote_(custRow) {
   return lines.join('\n');
 }
 
-/** 月間予定数の表示を「○点」の形に揃える。既に「点」を含む場合はそのまま。空欄は空文字を返す。 */
-function boardMonthlyLabel_(raw) {
-  const value = String(raw || '').trim();
-  if (!value) return '';
-  return /点/.test(value) ? value : value + '点';
-}
-
 /**
- * 既存の案件ボードの行のうち、依頼内容（J列）に月間予定数が未反映のものへ、
- * 顧客タブに保存済みの月間予定数を追記する。ui.alert等のUI呼び出しは行わない
- * （boardSetup から自動実行できるようにするため）。
+ * 依頼内容に混ざっている「月間予定数：○点」を取り除く。
+ *
+ * **依頼内容は、そのご依頼で何をするかだけにする。** 月間予定数は
+ * お客様の予定であってご依頼の中身ではない。案件ごとに書いてあると、
+ * 同じお客様の別のご依頼と見分けがつかず、行も1行分ふくらむ。
+ * 顧客タブに残るので、必要ならそちらを見る。
  */
-function boardBackfillMonthlyToDetail_(ss) {
+function boardStripMonthlyFromDetail_(ss) {
   const cases = ss.getSheetByName(BOARD_SHEET_CASES);
-  const customers = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
-  if (!cases || !customers || cases.getLastRow() < 2) return 0;
+  if (!cases || cases.getLastRow() < 2) return 0;
 
-  const byId = {};
-  if (customers.getLastRow() > 1) {
-    customers.getRange(2, 1, customers.getLastRow() - 1, BOARD_CUSTOMER_HEADERS.length).getValues()
-      .forEach(function (row) { byId[String(row[BOARD_CUSTOMER_COL.id - 1] || '').trim()] = row; });
-  }
-
-  const last = cases.getLastRow();
-  const rows = cases.getRange(2, 1, last - 1, BOARD_CASE_HEADERS.length).getValues();
+  const range = cases.getRange(2, BOARD_COL.detail, cases.getLastRow() - 1, 1);
+  const values = range.getValues();
   let updated = 0;
 
-  rows.forEach(function (row, i) {
-    const customerId = String(row[BOARD_COL.customerId - 1] || '').trim();
-    const cust = customerId ? byId[customerId] : null;
-    if (!cust) return;
-
-    const monthly = boardMonthlyLabel_(cust[BOARD_CUSTOMER_COL.monthly - 1]);
-    if (!monthly) return;
-
-    const current = String(row[BOARD_COL.detail - 1] || '');
-    // 既存の「月間予定数：…」部分（区切りが／・改行・区切りなし、いずれでも）を取り除いてから付け直す
-    const idx = current.indexOf('月間予定数：');
-    let base = idx >= 0 ? current.slice(0, idx) : current;
-    base = base.replace(/[　\s]*／[　\s]*$/, '').replace(/\n$/, '').trim();
-    const rebuilt = base ? base + '\n月間予定数：' + monthly : '月間予定数：' + monthly;
-    if (rebuilt === current) return; // 既に最新の形式
-
-    cases.getRange(i + 2, BOARD_COL.detail).setValue(rebuilt);
+  values.forEach(function (row) {
+    const current = String(row[0] || '');
+    if (current.indexOf('月間予定数') < 0) return;
+    // **行ごと捨てない。** 古い書き方では「〇〇／月間予定数：50点」と
+    // 1行に詰め込んでいた。行を落とすと依頼内容ごと消える
+    const next = current.split(String.fromCharCode(10))
+      .map(function (line) {
+        const at = line.indexOf('月間予定数');
+        if (at < 0) return line;
+        return line.slice(0, at).replace(/[　\s]*／[　\s]*$/, '').trim();
+      })
+      .filter(function (line) { return line !== ''; })
+      .join(String.fromCharCode(10))
+      .trim();
+    if (next === current) return;
+    row[0] = next;
     updated++;
   });
 
-  if (updated > 0) boardLog_('修正', '既存の依頼内容へ月間予定数を追記しました（' + updated + '件）');
+  if (updated > 0) {
+    range.setValues(values);
+    boardLog_('修正', '依頼内容から月間予定数を外しました（' + updated + '件）');
+  }
   return updated;
 }
 
@@ -5748,6 +5822,8 @@ function boardSetTodoFormula_(sheet, row) {
   // 依頼日の列はやめた。ご発送待ちの日数は**案内メールを送った日**から数える
   const guided = cell(BOARD_COL.guideDraftAt);
   const last = cell(BOARD_COL.lastContact);
+  // 荷受待ちは、お客様が発送された日から数える
+  const shipped = cell(BOARD_COL.shippedAt);
   const dueEnd = 'IF(' + to + '="",' + from + ',' + to + ')';
   // 放置に気づけるよう、待たせている日数を添える
   const elapsedFrom = function (since) {
@@ -5766,7 +5842,7 @@ function boardSetTodoFormula_(sheet, row) {
       '"支払い情報の登録・署名待ち"&' + elapsedFrom(sentAt) + ')),' +
     b + '="' + BOARD_STATUS_WAITING_SHIP + '","お客様のご発送待ち"&' + elapsedFrom(guided) + ',' +
     b + '="' + BOARD_STATUS_SHIPPED + '",IF(' + from + '="","受取準備（納期の返信）",' +
-      '"作業チームへ共有・荷受待ち"),' +
+      '"作業チームへ共有・荷受待ち")&' + elapsedFrom(shipped) + ',' +
     b + '="' + BOARD_STATUS_WORKING + '","作業"&IF(' + from + '="","","（納期 "&TEXT(' + dueEnd + ',"m/d")&"）"),' +
     b + '="' + BOARD_STATUS_REVIEW + '","納品データのご確認待ち"&' + elapsedFrom(last) + ',' +
     'TRUE,""))';
@@ -6010,6 +6086,9 @@ function boardBuildTemplateText_(ss, caseRow, templateId, extra) {
     '単価': v[BOARD_COL.unitPrice - 1],
 
     '納期予定': boardFormatDateRange_(v[BOARD_COL.dueFrom - 1], v[BOARD_COL.dueTo - 1]),
+    '案件ID': v[BOARD_COL.caseId - 1],
+    '運送業者': v[BOARD_COL.carrier - 1],
+    '追跡番号': v[BOARD_COL.tracking - 1],
     '営業所コード': settings['営業所コード'],
     '営業所名': settings['営業所名'],
     '発送先郵便番号': settings['発送先郵便番号'],

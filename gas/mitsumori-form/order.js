@@ -277,6 +277,35 @@ function orderSubmitShipping(payload) {
   priceRefreshUnitPrices_(ss);
   boardLog_('依頼フォーム', open.caseId + ' の発送情報を受け付けました（' +
     carrierName + ' ' + tracking + '）');
+
+  // 書き込んだあとの姿を読む。共有も通知も、いまの値で作る
+  const row = sheet.getRange(open.caseRow, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
+  const who = {
+    company: customer.values[BOARD_CUSTOMER_COL.company - 1],
+    name: customer.values[BOARD_CUSTOMER_COL.name - 1]
+  };
+
+  // **作業チーム共有をここでも作る。** これまではお客様のメールをAIが
+  // 読み取ったときだけ作っていたので、フォームから追跡番号をいただいた
+  // 案件はずっと空のままだった
+  try {
+    sheet.getRange(open.caseRow, BOARD_COL.teamNote)
+      .setValue(shipBuildTeamNote_(row, who, tracking, {}));
+  } catch (err) {
+    boardLog_('依頼フォーム', '作業チーム共有を作れませんでした: ' + err.message);
+  }
+
+  const settings = boardGetSettings_(ss);
+  const replied = orderSendShippedThanks_(ss, settings, open.caseRow, customer);
+  orderNotifyShipping_(ss, settings, who, {
+    caseId: open.caseId,
+    carrier: carrierName,
+    tracking: tracking,
+    qty: row[BOARD_COL.qty - 1],
+    detail: boardDetailWithoutPrice_(row[BOARD_COL.detail - 1]),
+    replied: replied
+  });
+
   return { ok: true, caseId: open.caseId };
 }
 
@@ -697,6 +726,108 @@ function orderDetailText_(data) {
   });
 
   return lines.join(String.fromCharCode(10));
+}
+
+/**
+ * 追跡番号をいただいたことを、お客様へ自動で返す（T11）。
+ *
+ * **ここでご依頼が完了する。** 追跡番号を送ったあと何も返らないと、
+ * 届いたのかどうかがお客様側から見えない。T4・T10と同じく、
+ * AIは通さず定型文をそのまま送る。
+ */
+function orderSendShippedThanks_(ss, settings, caseRow, customer) {
+  if (String(settings['依頼受付の自動返信'] || 'オン').trim() === 'オフ') return false;
+  const email = String(customer.values[BOARD_CUSTOMER_COL.email - 1] || '').trim();
+  if (!boardIsEmail_(email)) return false;
+
+  let built;
+  try {
+    built = boardBuildTemplateText_(ss, caseRow, 'T11');
+  } catch (err) {
+    boardLog_('依頼フォーム', 'ご依頼完了の自動返信を作れませんでした: ' + err.message);
+    return false;
+  }
+
+  const options = { name: 'ササゲパス' };
+  const alias = settings['送信元エイリアス'];
+  if (alias && GmailApp.getAliases().indexOf(alias) >= 0) options.from = alias;
+
+  try {
+    GmailApp.sendEmail(email, built.subject, built.body, options);
+  } catch (err) {
+    boardLog_('依頼フォーム', 'ご依頼完了の自動返信の送信に失敗: ' + err.message);
+    return false;
+  }
+
+  ss.getSheetByName(BOARD_SHEET_CASES)
+    .getRange(caseRow, BOARD_COL.lastContact).setValue(new Date());
+  mailAppendHistory_(ss, {
+    customerId: customer.id,
+    from: email,
+    subject: built.subject,
+    summary: '依頼フォームで追跡番号を受け付けたため、自動で送信しました。',
+    aiFirst: built.body,
+    finalText: built.body,
+    status: MAIL_STATUS_SENT,
+    threadId: ''
+  });
+  boardLog_('依頼フォーム', email + ' へご依頼完了のご連絡を自動送信しました');
+  return true;
+}
+
+/**
+ * 追跡番号が届いたことを、こちらへ知らせる。
+ *
+ * **ここが今までいちばんの穴だった。** 追跡番号がフォームから届いても
+ * メールは一通も出ず、案件ボードに番号が増えるだけだった。
+ * 荷受の準備と納期のご返信は、こちらの手で動かす必要がある。
+ */
+function orderNotifyShipping_(ss, settings, who, info) {
+  if (String(settings['依頼フォームの通知'] || 'オン').trim() === 'オフ') return false;
+  const to = String(settings['通知先メールアドレス'] || '').trim();
+  if (!to) return false;
+
+  const NL2 = String.fromCharCode(10);
+  const name = String(who.company || who.name || '').trim();
+  const url = orderTrackingUrl_(info.carrier, info.tracking);
+
+  const lines = [
+    name + ' 様より、ご発送の追跡番号が届きました。これでご依頼は完了です。',
+    '',
+    '　案件ID　　：' + info.caseId,
+    '　運送業者　：' + info.carrier,
+    '　追跡番号　：' + info.tracking
+  ];
+  if (url) lines.push('　追跡情報　：' + url);
+  lines.push('　ご依頼点数：' + info.qty + '点（お客様のご申告）');
+  lines.push('　ご依頼内容：' + String(info.detail || '').split(NL2).join(NL2 + '　　　　　　　'));
+
+  lines.push('');
+  lines.push('■ こちらの対応');
+  lines.push('　荷受の準備をし、納期の目安をお客様へご返信してください。');
+  lines.push('　　→ 案件ボードの「対応を選ぶ」→「ご依頼を承りました（納期のご案内）」');
+  lines.push('　作業チームへの共有文は、案件ボードの「作業チーム共有」に作ってあります。');
+  lines.push(info.replied
+    ? '　ご依頼完了のご連絡は、お客様へ自動でお送りしました。'
+    : '　※ ご依頼完了の自動返信は送られていません（設定がオフか、送信に失敗しました）。');
+
+  lines.push('');
+  lines.push('案件ボード：');
+  lines.push(ss.getUrl());
+
+  try {
+    MailApp.sendEmail({
+      to: to,
+      subject: '【荷受】' + name + ' ─ ' + info.caseId +
+        '（' + info.qty + '点／' + info.carrier + '）',
+      body: lines.join(NL2),
+      name: 'ササゲパス業務ボード'
+    });
+  } catch (err) {
+    boardLog_('依頼フォーム', '発送情報の通知を送れませんでした: ' + err.message);
+    return false;
+  }
+  return true;
 }
 
 /** 運送業者を名前かIDで引く。 */

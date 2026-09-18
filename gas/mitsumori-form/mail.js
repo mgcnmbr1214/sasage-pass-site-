@@ -400,6 +400,11 @@ function mailScan_(options) {
   } catch (err) {
     boardLog_('②エラー', '発送の催促に失敗: ' + err.message);
   }
+  try {
+    mailMorningDigest_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '今日やることのまとめに失敗: ' + err.message);
+  }
 
   // 画面から送った分はその場で「返信済み」になる。
   // ここで拾うのは、**Gmailから直接返信した**分だけ
@@ -1470,6 +1475,98 @@ function mailSendScheduled_(ss) {
 
   if (sent > 0) boardLog_('②送信', '予約していたメール ' + sent + ' 件を送信しました');
   return sent;
+}
+
+/** 今日のまとめを送った日。1日1通に保つための目印。 */
+const MAIL_DIGEST_PROP = 'DIGEST_SENT_ON';
+
+/**
+ * その日こちらが動かす案件を、朝に1通だけまとめて送る。
+ *
+ * **1件ごとの通知は、見落とすときはまとめて見落とす。** 実際、依頼
+ * フォームから追跡番号が届いても気づけなかった。案件ボードを開かなくても
+ * 「今日やること」が手元に届くようにして、取りこぼしの受け皿にする。
+ *
+ * 中身は案件ボードの「次にやること」そのまま。別の判断を足すと、
+ * ボードとまとめで食い違って、どちらを信じるか分からなくなる。
+ */
+function mailMorningDigest_(ss) {
+  const settings = boardGetSettings_(ss);
+  const raw = String(settings['朝のまとめメールの時刻'] || '').trim();
+  if (!raw) return false;                       // 空にしてあれば送らない
+  const hour = Number(raw);
+  if (!(hour >= 0 && hour <= 23)) return false;
+
+  const to = String(settings['通知先メールアドレス'] || '').trim();
+  if (!to) return false;
+
+  const now = new Date();
+  const tz = Session.getScriptTimeZone();
+  const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty(MAIL_DIGEST_PROP) === today) return false;
+  if (Number(Utilities.formatDate(now, tz, 'H')) < hour) return false;
+
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!cases || cases.getLastRow() < 2) return false;
+  const rows = cases.getRange(2, 1, cases.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+
+  // 同じ作業は続けて片づけられるよう、「次にやること」ごとにまとめる
+  const groups = [];
+  const index = {};
+  let total = 0;
+  rows.forEach(function (row) {
+    const caseId = String(row[BOARD_COL.caseId - 1] || '').trim();
+    if (!caseId) return;
+    if (String(row[BOARD_COL.owner - 1] || '').trim() !== '自分') return;
+    const todo = String(row[BOARD_COL.todo - 1] || '').trim();
+    if (!todo) return;
+
+    // 「受取準備（納期の返信） (3日経過)」→ 見出しと添え書きに分ける
+    const at = todo.indexOf(' (');
+    const title = at >= 0 ? todo.slice(0, at) : todo;
+    const tail = at >= 0 ? todo.slice(at).trim() : '';
+    if (index[title] === undefined) {
+      index[title] = groups.length;
+      groups.push({ title: title, lines: [] });
+    }
+    const count = boardBestCount_(row);
+    groups[index[title]].lines.push('　' + caseId + '　' +
+      String(row[BOARD_COL.customer - 1] || '') +
+      (count !== '' ? '　' + count + '点' : '') +
+      (tail ? '　' + tail : ''));
+    total++;
+  });
+
+  // **送れても送れなくても、今日はここまで。** 失敗のたびに10分おきに
+  // 送り直すと、うまくいったときだけ大量に届くことになる
+  props.setProperty(MAIL_DIGEST_PROP, today);
+  if (total === 0) return false;   // やることが無い日は送らない
+
+  const NL2 = String.fromCharCode(10);
+  const lines = ['おはようございます。今日ご自身で動かす案件です。', ''];
+  groups.forEach(function (g) {
+    lines.push('■ ' + g.title + '　' + g.lines.length + '件');
+    g.lines.forEach(function (line) { lines.push(line); });
+    lines.push('');
+  });
+  lines.push('案件ボード：');
+  lines.push(ss.getUrl());
+
+  try {
+    MailApp.sendEmail({
+      to: to,
+      subject: '【今日やること】' + Utilities.formatDate(now, tz, 'M月d日') +
+        '　' + total + '件',
+      body: lines.join(NL2),
+      name: 'ササゲパス業務ボード'
+    });
+  } catch (err) {
+    boardLog_('②まとめ', '今日やることを送れませんでした: ' + err.message);
+    return false;
+  }
+  boardLog_('②まとめ', '今日やること ' + total + ' 件を送りました');
+  return true;
 }
 
 /** 発送の催促を送る日数。「5, 10」のように設定から読む。 */
