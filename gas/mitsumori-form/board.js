@@ -1704,6 +1704,10 @@ function boardArrangeCases_(ss, force) {
       boardSetEstimateFormula_(sheet, r);
     }
     boardLog_('表示', '案件をお客様ごとに並べ直しました');
+
+    // **高さは行についてこない。** 値を並べ替えると、上の行の高さのまま
+    // 別の案件が入る。並べ直したら必ず合わせ直す
+    boardFitDetailRows_(sheet);
   }
 
   // グループの作り直しは重い。並びが変わったときと、セットアップのときだけ
@@ -1926,6 +1930,10 @@ function boardSetupSheet_(ss, name, headers, widths) {
 const BOARD_CLIPPED_COLS = ['selection', 'formInquiry', 'lastInbound', 'lastOutbound',
   'priceNote', 'teamNote', 'memo'];
 const BOARD_ROW_HEIGHT = 50;
+/** 依頼内容の高さを見積もるための目安。文字の大きさを変えたらここも変える。 */
+const BOARD_DETAIL_CHAR_WIDTH = 14;
+const BOARD_DETAIL_LINE_HEIGHT = 18;
+const BOARD_DETAIL_PADDING = 10;
 
 /** 「未返信」列に並べるリンクの数。これを超えた分は「+3」のようにまとめる。 */
 const BOARD_UNREPLIED_MAX_LINKS = 4;
@@ -1960,27 +1968,44 @@ function boardApplyCaseFormatting_(sheet) {
     .setAllowInvalid(false)
     .build());
 
-  // 未返信のある案件は行ごと薄く色を付ける。ステータスと対応者には色を付けない
-  const rules = [];
   const width = Math.max(sheet.getLastColumn(), BOARD_CASE_HEADERS.length);
-  rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied('=$' + boardColLetter_(BOARD_COL.unreplied) + '2<>""')
-    .setBackground('#FDF3E3')
-    .setRanges([sheet.getRange(2, 1, maxRows, width)])
-    .build());
-  // 未請求の返送は別の色にする。返信待ちと請求待ちは急ぎ方が違う
-  rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied('=$' + boardColLetter_(BOARD_COL.unbilled) + '2<>""')
-    .setBackground('#E7F1E9')
-    .setRanges([sheet.getRange(2, 1, maxRows, width)])
-    .build());
-
+  const rowRange = sheet.getRange(2, 1, maxRows, width);
   const todoRange = sheet.getRange(2, BOARD_COL.todo, maxRows, 1);
-  ['メールに返信する', '経過', '受取準備', '作業チームへ共有', '請求書を送る', '依頼確定メール'].forEach(function (word) {
+  const cell = function (col) { return '$' + boardColLetter_(col) + '2'; };
+
+  // 行の色は3種類。急ぎ方の順に、未返信・未請求・自分の番
+  const tints = [
+    [cell(BOARD_COL.unreplied) + '<>""', '#FDF3E3'],
+    [cell(BOARD_COL.unbilled) + '<>""', '#E7F1E9'],
+    ['AND(' + cell(BOARD_COL.caseId) + '<>"",' + cell(BOARD_COL.owner) + '="自分")', '#E8F0FE']
+  ];
+  // 「次にやること」を赤くする言葉
+  const urgent = 'REGEXMATCH(' + cell(BOARD_COL.todo) + ',"' +
+    ['メールに返信する', '経過', '受取準備', '作業チームへ共有', '請求書を送る', '依頼確定メール'].join('|') +
+    '")';
+
+  const rules = [];
+  // **色と文字色を1つの条件にまとめる。** シートは当てはまった最初の条件しか
+  // 使わない。行の色と赤文字を別々に書くと、赤くなった列だけ色が抜ける。
+  // 実際、「次にやること」の列だけ白いままになった
+  tints.forEach(function (tint) {
     rules.push(SpreadsheetApp.newConditionalFormatRule()
-      .whenTextContains(word)
+      .whenFormulaSatisfied('=AND(' + tint[0] + ',' + urgent + ')')
+      .setBackground(tint[1])
       .setFontColor('#A32D2D')
       .setRanges([todoRange])
+      .build());
+  });
+  rules.push(SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied('=' + urgent)
+    .setFontColor('#A32D2D')
+    .setRanges([todoRange])
+    .build());
+  tints.forEach(function (tint) {
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=' + tint[0])
+      .setBackground(tint[1])
+      .setRanges([rowRange])
       .build());
   });
   sheet.getRange(2, BOARD_COL.owner, maxRows, 1)
@@ -1992,15 +2017,6 @@ function boardApplyCaseFormatting_(sheet) {
   sheet.getRange(2, BOARD_COL.unreplied, maxRows, 1).setHorizontalAlignment('center');
   sheet.getRange(2, BOARD_COL.unbilled, maxRows, 1)
     .setHorizontalAlignment('center').setFontColor('#2C7A46');
-
-  // 自分が動かす番の案件は、ひと目で拾えるように色を付ける。
-  // **上の2つより後ろに置く。** 未返信・未請求の色を上書きしないため
-  rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied('=AND($' + boardColLetter_(BOARD_COL.caseId) + '2<>"",$' +
-      boardColLetter_(BOARD_COL.owner) + '2="自分")')
-    .setBackground('#E8F0FE')
-    .setRanges([sheet.getRange(2, 1, maxRows, width)])
-    .build());
 
   sheet.setConditionalFormatRules(rules);
 
@@ -2340,26 +2356,64 @@ function boardForceRowHeight_(sheet, startRow, numRows) {
 }
 
 /**
- * 依頼内容が全部見えるよう、行の高さを中身に合わせる。
+ * 依頼内容が全部見えるよう、行の高さを合わせる。
  *
- * **折り返すのは依頼内容だけ**なので、高さはこの列で決まる。
- * 空の行まで伸ばさないよう、中身のある行だけを対象にする。
- * 短い行が詰まって読みにくくならないよう、最低の高さは保つ。
+ * **シートの自動調整（autoResizeRows）は使えない。** 折り返しを切っていても、
+ * 最新の受信メールのように中身に改行が入っている列があると、その行数まで
+ * 高さを取ってしまう。実際に1行が画面いっぱいになった。
+ * 見たいのは依頼内容だけなので、その列の行数から自分で高さを出す。
  */
 function boardFitDetailRows_(sheet) {
   const rows = sheet.getLastRow() - 1;
   if (rows < 1) return;
+  const width = sheet.getColumnWidth(BOARD_COL.detail);
+  sheet.getRange(2, BOARD_COL.detail, rows, 1).getValues()
+    .forEach(function (row, i) {
+      boardSetDetailHeight_(sheet, i + 2, row[0], width);
+    });
+}
+
+/** 1行だけ高さを合わせる。案件が増えたときに、その場で整える。 */
+function boardFitDetailRow_(sheet, row) {
+  if (!sheet || row < 2) return;
+  boardSetDetailHeight_(sheet, row,
+    sheet.getRange(row, BOARD_COL.detail).getValue(),
+    sheet.getColumnWidth(BOARD_COL.detail));
+}
+
+function boardSetDetailHeight_(sheet, row, text, width) {
+  const height = boardDetailHeight_(text, width);
+  if (sheet.getRowHeight(row) === height) return;
   try {
-    sheet.autoResizeRows(2, rows);
+    sheet.setRowHeightsForced(row, 1, height);
   } catch (err) {
-    boardLog_('表示', '行の高さを合わせられませんでした: ' + err.message);
-    return;
+    sheet.setRowHeight(row, height);
   }
-  for (let row = 2; row <= sheet.getLastRow(); row++) {
-    if (sheet.getRowHeight(row) < BOARD_ROW_HEIGHT) {
-      sheet.setRowHeight(row, BOARD_ROW_HEIGHT);
-    }
+}
+
+/**
+ * 依頼内容が何行になるかから、行の高さを出す。
+ *
+ * 折り返しの位置はシートしか知らないので、**全角1文字ぶんの幅から見積もる**。
+ * 足りないより少し余るほうがよいので、切り上げる。
+ */
+function boardDetailHeight_(text, width) {
+  const perLine = Math.max(1, Math.floor((width - BOARD_DETAIL_PADDING) / BOARD_DETAIL_CHAR_WIDTH));
+  let lines = 0;
+  String(text == null ? '' : text).split(String.fromCharCode(10)).forEach(function (line) {
+    lines += Math.max(1, Math.ceil(boardWideLength_(line) / perLine));
+  });
+  return Math.max(BOARD_ROW_HEIGHT, lines * BOARD_DETAIL_LINE_HEIGHT + BOARD_DETAIL_PADDING);
+}
+
+/** 全角を1、半角を0.5として数えた長さ。 */
+function boardWideLength_(line) {
+  let n = 0;
+  const text = String(line || '');
+  for (let i = 0; i < text.length; i++) {
+    n += /[\u0020-\u007E\uFF61-\uFF9F]/.test(text.charAt(i)) ? 0.5 : 1;
   }
+  return n;
 }
 
 /** 見出し行に絞り込みを付ける。ステータス順や担当順に並べ替えて見られるようにする。 */
@@ -5101,6 +5155,7 @@ function boardStripMonthlyFromDetail_(ss) {
 
   if (updated > 0) {
     range.setValues(values);
+    boardFitDetailRows_(cases);
     boardLog_('修正', '依頼内容から月間予定数を外しました（' + updated + '件）');
   }
   return updated;
@@ -5286,6 +5341,7 @@ function boardAppendCase_(ss, options) {
     boardSetOwnerFormula_(sheet, row);
     boardSetEstimateFormula_(sheet, row);
     boardForceRowHeight_(sheet, row, 1);
+    boardFitDetailRow_(sheet, row);
     return { row: row, caseId: values[BOARD_COL.caseId - 1] };
   } finally {
     lock.releaseLock();

@@ -208,6 +208,8 @@ function orderSubmitRequest(payload) {
     customer.values[BOARD_CUSTOMER_COL.signedAt - 1] ? BOARD_STATUS_WAITING_SHIP : BOARD_STATUS_SIGNING);
   boardSetTodoFormula_(sheet, caseRow);
   boardSetOwnerFormula_(sheet, caseRow);
+  // 依頼内容が全部見えるよう、この行だけ高さを合わせ直す
+  boardFitDetailRow_(sheet, caseRow);
 
   boardLog_('依頼フォーム', caseId + ' のご依頼を受け付けました（' + qty + '点／' +
     customer.values[BOARD_CUSTOMER_COL.name - 1] + '）');
