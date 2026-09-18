@@ -264,12 +264,19 @@ function orderSubmitShipping(payload) {
   if (!open) throw new Error('ご発送前のご依頼が見つかりません。先にご依頼内容をお送りください。');
 
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  // 書き換える前の姿。すでに入っている発送完了日を見るのに使う
+  const before = sheet.getRange(open.caseRow, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
   sheet.getRange(open.caseRow, BOARD_COL.carrier).setValue(carrierName);
   // 12桁の数字をそのまま入れると 1.23E+11 になる。文字として入れる
   sheet.getRange(open.caseRow, BOARD_COL.tracking).setNumberFormat('@').setValue(tracking);
   boardRefreshTrackingLinks_(sheet.getParent());
-  // **数量割引の段は、この日付の月で決まる。** お客様が決める日なので動かせない
-  if (!sheet.getRange(open.caseRow, BOARD_COL.shippedAt).getValue()) {
+  // **数量割引の段は、この日付の月で決まる。** お客様が決める日なので、
+  // すでに入っている日付は動かさない。
+  // ただし**ご依頼より前の日付は、前のご依頼の名残**。荷物がご依頼より前に
+  // 発送されることはない。実際 A011-2 に6日前の日付が残り、荷受待ちの
+  // 経過日数が8日と出ていた
+  const kept = before[BOARD_COL.shippedAt - 1];
+  if (!kept || boardDayNumber_(kept) < boardDayNumber_(orderRequestedTime_(before))) {
     sheet.getRange(open.caseRow, BOARD_COL.shippedAt).setValue(new Date());
   }
   sheet.getRange(open.caseRow, BOARD_COL.status).setValue(BOARD_STATUS_SHIPPED);
@@ -830,6 +837,20 @@ function orderNotifyShipping_(ss, settings, who, info) {
     return false;
   }
   return true;
+}
+
+/**
+ * そのご依頼が依頼フォームから送られた時刻。分からなければ 0。
+ *
+ * 選択の控えに残している送信時刻を使う。ご依頼受付日の列は
+ * 一度足して案件ボードを壊したので、列は増やさずここから読む。
+ */
+function orderRequestedTime_(values) {
+  const raw = String((values || [])[BOARD_COL.selection - 1] || '').trim();
+  if (!raw) return 0;
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch (err) { return 0; }
+  return parsed && parsed.at ? boardTimeOf_(parsed.at) : 0;
 }
 
 /** 運送業者を名前かIDで引く。 */

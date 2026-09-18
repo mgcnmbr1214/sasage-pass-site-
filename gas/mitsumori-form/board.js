@@ -607,6 +607,12 @@ function boardSetup() {
   } catch (err) {
     boardLog_('②エラー', '作業チーム共有の作成に失敗: ' + err.message);
   }
+  let redated = 0;
+  try {
+    redated = boardRepairShippedDates_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '発送完了日の見直しに失敗: ' + err.message);
+  }
   try {
     boardRefreshCustomerNotes_(ss);
   } catch (err) {
@@ -702,6 +708,7 @@ function boardSetup() {
     (mailDeduped > 0 ? '\n重複したメール履歴を削除：' + mailDeduped + ' 件' : '') +
     (stripped > 0 ? '\n依頼内容から月間予定数を削除：' + stripped + ' 件' : '') +
     (shared > 0 ? '\n作業チーム共有を作成：' + shared + ' 件' : '') +
+    (redated > 0 ? '\n発送完了日の修正：' + redated + ' 件' : '') +
     (restated > 0 ? '\nお客様の登録状況の更新：' + restated + ' 件' : '') +
     (deferred.length > 0
       ? '\n\n時間の都合で、次の処理は10分以内の自動チェックに回しました。' +
@@ -1608,6 +1615,79 @@ function boardRepairScrambledRows_(ss) {
     boardLog_('修復', '発送完了日に紛れ込んでいたお客様の登録状況を ' + cleared + ' 件消しました');
   }
   return fixed.length;
+}
+
+/**
+ * ご依頼より前の日付になっている発送完了日を、実際の日に直す。
+ *
+ * **荷物がご依頼より前に発送されることはない。** 過去メールからの読み取りで
+ * 前のご依頼の日付が入ってしまうと、そのまま残る。依頼フォームから追跡番号を
+ * いただいても、すでに値があるので上書きされない。
+ * 実際 A011-2 は、9/16のご依頼に対して 9/10 が入ったままだった。
+ *
+ * 正しい日はログに残っている。**推測せず、記録のある日だけ入れ直す。**
+ */
+function boardRepairShippedDates_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  const received = boardShipInfoLogTimes_(ss);
+  const fixed = [];
+  const unknown = [];
+
+  rows.forEach(function (row, i) {
+    const caseId = String(row[BOARD_COL.caseId - 1] || '').trim();
+    if (!caseId) return;
+
+    // **日で比べる。** 発送完了日には時刻が入っていないので、同じ日に
+    // いただいたご依頼でも、時刻で比べると必ず「前」になってしまう
+    const asked = boardDayNumber_(orderRequestedTime_(row));
+    if (!asked) return;                      // 送信の日が分からないものは触らない
+    const shipped = boardDayNumber_(row[BOARD_COL.shippedAt - 1]);
+    if (!shipped || shipped >= asked) return;   // 順番として正しい
+
+    const at = received[caseId];
+    if (!at) { unknown.push(caseId); return; }
+
+    sheet.getRange(i + 2, BOARD_COL.shippedAt).setValue(new Date(at));
+    fixed.push(caseId + '　' + boardFormatDate_(row[BOARD_COL.shippedAt - 1]) +
+      ' → ' + boardFormatDate_(new Date(at)));
+  });
+
+  if (fixed.length > 0) {
+    boardLog_('修正', 'ご依頼より前になっていた発送完了日を直しました: ' + fixed.join('／'));
+  }
+  if (unknown.length > 0) {
+    boardLog_('修正', '発送完了日がご依頼より前ですが、正しい日の記録が無いためそのままにしました: ' +
+      unknown.join('、'));
+  }
+  return fixed.length;
+}
+
+/** 前後を比べるための、年月日だけの数（20260918）。 */
+function boardDayNumber_(value) {
+  const time = boardTimeOf_(value);
+  if (!time) return 0;
+  return Number(Utilities.formatDate(new Date(time),
+    SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(), "yyyyMMdd"));
+}
+
+/** 依頼フォームで発送情報を受け付けた時刻を、案件IDごとにログから拾う。 */
+function boardShipInfoLogTimes_(ss) {
+  const out = {};
+  const sheet = ss.getSheetByName(BOARD_SHEET_LOGS);
+  if (!sheet || sheet.getLastRow() < 2) return out;
+
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues().forEach(function (row) {
+    const match = String(row[2] || '').match(/^(\S+) の発送情報を受け付けました/);
+    if (!match) return;
+    const at = boardTimeOf_(row[0]);
+    if (!at) return;
+    // 同じ案件で何度か送り直されていたら、いちばん新しい記録を使う
+    if (!out[match[1]] || out[match[1]] < at) out[match[1]] = at;
+  });
+  return out;
 }
 
 /**
