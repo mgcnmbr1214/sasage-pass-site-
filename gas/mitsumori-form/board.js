@@ -561,6 +561,9 @@ function boardSetup() {
   // 列がずれたまま書き込まれた行があれば、ここで並べ直す
   boardRepairScrambledRows_(ss);
 
+  // 片づけ先の見出しが、シートの実際の並びと食い違っていたら直す
+  boardRepairArchiveHeaders_(ss);
+
   boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS);
   boardSetupSheet_(ss, BOARD_SHEET_CUSTOMERS, BOARD_CUSTOMER_HEADERS, [80, 170, 120, 220, 130]);
   boardSetupSheet_(ss, BOARD_SHEET_MAILS, BOARD_MAIL_HEADERS);
@@ -1357,7 +1360,10 @@ function boardArchiveClosedCases() {
     ui.ButtonSet.YES_NO);
   if (answer !== ui.Button.YES) return;
 
-  const archive = boardEnsureArchiveSheet_(ss, BOARD_SHEET_ARCHIVE_CASES, BOARD_CASE_HEADERS);
+  // **見出しは、シートの実際の並びから取る。** 行はこのあと案件ボードの
+  // 並びのまま写す。並びの表（BOARD_CASE_HEADERS）を見出しにすると、
+  // 名前と中身が食い違う。実際、ステータスの欄にお客様名が並んでいた
+  const archive = boardEnsureArchiveSheet_(ss, BOARD_SHEET_ARCHIVE_CASES, boardHeadersOf_(cases));
   const stamp = new Date();
   targets.forEach(function (t) {
     // 数式のままでは移した先で壊れる。見えている値をそのまま写す
@@ -1420,7 +1426,9 @@ function boardArchiveIdleCustomers_(ss, ui) {
     ui.ButtonSet.YES_NO);
   if (answer !== ui.Button.YES) return 0;
 
-  const archive = boardEnsureArchiveSheet_(ss, BOARD_SHEET_ARCHIVE_CUSTOMERS, BOARD_CUSTOMER_HEADERS);
+  // 案件と同じ理由で、見出しは顧客タブの実際の並びから取る
+  const archive = boardEnsureArchiveSheet_(ss, BOARD_SHEET_ARCHIVE_CUSTOMERS,
+    boardHeadersOf_(customers));
   const stamp = new Date();
   targets.forEach(function (t) { archive.appendRow(t.values.concat([stamp])); });
   targets.slice().sort(function (a, b) { return b.row - a.row; })
@@ -1481,17 +1489,50 @@ function boardEnsureArchiveSheet_(ss, name, headers) {
     ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
       .map(function (h) { return String(h || '').trim(); })
     : [];
-  // **中身があるのに並びが違うときは、見出しを書き換えない。**
-  // 書き換えると、名前と中身が総取り替えになる
   if (now.join('\t') !== want.join('\t')) {
-    if (sheet.getLastRow() > 1) {
-      boardLog_('片づけ', name + ' の見出しが想定と違うため、そのままにしました');
-    } else {
+    if (sheet.getLastRow() <= 1) {
       sheet.getRange(1, 1, 1, want.length).setValues([want]);
       sheet.setFrozenRows(1);
+    } else if (boardSameNames_(now, want)) {
+      // **名前は同じで順番だけ違う。** 中身は移してきた並びのままなので、
+      // 見出しだけを付け替えれば名前と中身が合う。行には触らない
+      sheet.getRange(1, 1, 1, want.length).setValues([want]);
+      sheet.setFrozenRows(1);
+      boardLog_('片づけ', name + ' の見出しを、シートの実際の並びに直しました');
+    } else {
+      // **中身があって名前も違うときは、書き換えない。**
+      // 書き換えると、名前と中身が総取り替えになる
+      boardLog_('片づけ', name + ' の見出しが想定と違うため、そのままにしました');
     }
   }
   return sheet;
+}
+
+/**
+ * 片づけ先タブの見出しを、いまのシートの並びに合わせ直す。
+ *
+ * 片づけた行は案件ボード（顧客タブ）の並びのまま写しているのに、
+ * 見出しだけは並びの表から書いていた。名前と中身が1列ずつずれて見え、
+ * 「ステータス」の下にお客様名が並んでいた。中身は触らず、名前だけ直す。
+ */
+function boardRepairArchiveHeaders_(ss) {
+  [
+    [BOARD_SHEET_ARCHIVE_CASES, BOARD_SHEET_CASES],
+    [BOARD_SHEET_ARCHIVE_CUSTOMERS, BOARD_SHEET_CUSTOMERS]
+  ].forEach(function (pair) {
+    if (!ss.getSheetByName(pair[0])) return;   // まだ片づけていなければ何もしない
+    const from = ss.getSheetByName(pair[1]);
+    if (!from || from.getLastColumn() < 1) return;
+    boardEnsureArchiveSheet_(ss, pair[0], boardHeadersOf_(from));
+  });
+}
+
+/** 中身は同じ見出しの集まりで、順番だけが違うか。 */
+function boardSameNames_(a, b) {
+  if (a.length !== b.length) return false;
+  const sortedA = a.slice().sort();
+  const sortedB = b.slice().sort();
+  return sortedA.join('\t') === sortedB.join('\t');
 }
 
 /** 片づけた案件の行。取り込み済みの判断と、案件IDの採番に使う。 */
