@@ -601,6 +601,12 @@ function boardSetup() {
   } catch (err) {
     boardLog_('②エラー', '月間予定数の削除に失敗: ' + err.message);
   }
+  let shared = 0;
+  try {
+    shared = boardBackfillTeamNotes_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '作業チーム共有の作成に失敗: ' + err.message);
+  }
   try {
     boardRefreshCustomerNotes_(ss);
   } catch (err) {
@@ -695,6 +701,7 @@ function boardSetup() {
     (repaired > 0 ? '\nメール履歴の列ずれを修復：' + repaired + ' 件' : '') +
     (mailDeduped > 0 ? '\n重複したメール履歴を削除：' + mailDeduped + ' 件' : '') +
     (stripped > 0 ? '\n依頼内容から月間予定数を削除：' + stripped + ' 件' : '') +
+    (shared > 0 ? '\n作業チーム共有を作成：' + shared + ' 件' : '') +
     (restated > 0 ? '\nお客様の登録状況の更新：' + restated + ' 件' : '') +
     (deferred.length > 0
       ? '\n\n時間の都合で、次の処理は10分以内の自動チェックに回しました。' +
@@ -1601,6 +1608,53 @@ function boardRepairScrambledRows_(ss) {
     boardLog_('修復', '発送完了日に紛れ込んでいたお客様の登録状況を ' + cleared + ' 件消しました');
   }
   return fixed.length;
+}
+
+/**
+ * 追跡番号はあるのに作業チーム共有が空の案件へ、共有文を作る。
+ *
+ * 共有文は、これまで**お客様のメールをAIが読み取ったときだけ**作っていた。
+ * 依頼フォームから追跡番号をいただいた案件はずっと空のままで、
+ * 実際に A005-3 と A011-2 が空で残っていた。
+ *
+ * **空のときしか書かない。** 手で直した共有文を消さないため。
+ */
+function boardBackfillTeamNotes_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  const filled = [];
+
+  rows.forEach(function (row, i) {
+    const caseId = String(row[BOARD_COL.caseId - 1] || '').trim();
+    if (!caseId) return;
+    if (String(row[BOARD_COL.teamNote - 1] || '').trim()) return;   // 既にあるものは触らない
+
+    const tracking = String(row[BOARD_COL.tracking - 1] || '').trim();
+    if (!tracking) return;   // 荷物を追えないものは共有しても始まらない
+
+    // 返送まで終わった案件をいまさら共有しても、作業チームが混乱する
+    const status = String(row[BOARD_COL.status - 1] || '').trim();
+    if ([BOARD_STATUS_SHIPPED, BOARD_STATUS_WORKING, BOARD_STATUS_REVIEW].indexOf(status) < 0) return;
+
+    const customer = boardFindCustomer_(ss, row[BOARD_COL.customerId - 1]);
+    if (!customer) return;
+
+    try {
+      sheet.getRange(i + 2, BOARD_COL.teamNote)
+        .setValue(shipBuildTeamNote_(row, customer, tracking, {}));
+    } catch (err) {
+      boardLog_('共有', caseId + ' の作業チーム共有を作れませんでした: ' + err.message);
+      return;
+    }
+    filled.push(caseId);
+  });
+
+  if (filled.length > 0) {
+    boardLog_('共有', '作業チーム共有を作りました: ' + filled.join('、'));
+  }
+  return filled.length;
 }
 
 /** 案件ボードにある案件の数。黙って減っていないかを見張るために使う。 */
