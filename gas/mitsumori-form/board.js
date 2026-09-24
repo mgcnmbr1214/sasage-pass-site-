@@ -283,7 +283,10 @@ const BOARD_RESPONSE_TYPES = [
   },
   {
     id: 'T8', name: '作業完了・データ納品（納品リンクを共有し、返送とデータ保管についてお伝えします）',
-    template: 'T8', status: BOARD_STATUS_REVIEW, fields: [], invoice: false, requires: []
+    // **どちらか片方だけのこともある。** 採寸をご依頼でなければ商品画像だけ。
+    // そのため requires には入れない。両方空なら文面に目印が残り、送信で止まる
+    template: 'T8', status: BOARD_STATUS_REVIEW,
+    fields: ['deliveryPhotoUrl', 'deliveryMeasureUrl'], invoice: false, requires: []
   },
   {
     id: 'T9', name: '返送開始のお知らせ（返送の連絡。この送信が月々のご請求の対象になります）',
@@ -293,6 +296,36 @@ const BOARD_RESPONSE_TYPES = [
     shipment: true
   }
 ];
+
+/**
+ * 納品リンクの段落を組み立てる。
+ *
+ * **商品画像だけのことも、採寸データも一緒のこともある。** 片方が空のときに
+ * 見出しだけ残ると不自然なので、入っているものだけで文章ごと作り分ける。
+ * どちらも空のときは目印を返す。**そのまま送ろうとすると送信で止まる。**
+ */
+function boardDeliveryBlock_(photoUrl, measureUrl) {
+  const photo = String(photoUrl || '').trim();
+  const measure = String(measureUrl || '').trim();
+  if (!photo && !measure) return '　【ここに納品データのURLを貼ってください】';
+
+  const lines = [];
+  if (photo && measure) {
+    lines.push('商品画像と採寸データを、下記のリンクよりご確認ください。');
+    lines.push('');
+    lines.push('　商品画像　：' + photo);
+    lines.push('　採寸データ：' + measure);
+  } else if (photo) {
+    lines.push('商品画像を、下記のリンクよりご確認ください。');
+    lines.push('');
+    lines.push('　商品画像：' + photo);
+  } else {
+    lines.push('採寸データを、下記のリンクよりご確認ください。');
+    lines.push('');
+    lines.push('　採寸データ：' + measure);
+  }
+  return lines.join(String.fromCharCode(10));
+}
 
 /**
  * 差し込みでは埋められず、人が書くしかない箇所の目印。
@@ -315,7 +348,10 @@ const BOARD_CASE_FIELDS = {
   shipQty: { label: '返送した点数', type: 'number', col: 'shippedQty' },
   // 追跡のURLは業者ごとに違う。**番号だけでは確認先を出せない**
   shipCarrier: { label: '返送の運送業者', type: 'select', optionsFrom: 'carriers', col: '' },
-  shipTracking: { label: '返送の追跡番号', type: 'text', col: '' }
+  shipTracking: { label: '返送の追跡番号', type: 'text', col: '' },
+  // 納品リンク。入れたぶんだけ文面に並ぶ。案件ボードには列を作らない
+  deliveryPhotoUrl: { label: '商品画像のURL', type: 'url', col: '' },
+  deliveryMeasureUrl: { label: '採寸データのURL（採寸のご依頼がなければ空のまま）', type: 'url', col: '' }
 };
 
 /**
@@ -2769,6 +2805,7 @@ function boardSetupTemplates_(ss) {
   boardMigrateStartDateLines_(sheet);
   boardMigrateShipPrompt_(sheet);
   boardMigrateTrackingUrl_(sheet);
+  boardMigrateDeliveryLinks_(sheet);
 
   const last = sheet.getLastColumn();
   if (last > 1) {
@@ -2946,6 +2983,44 @@ function boardMigrateDoneFormLink_(sheet) {
     boardLog_('移行', 'テンプレ T4 に依頼フォームのご案内を追加しました');
     return;
   }
+}
+
+/**
+ * T8の納品データの段落を、差し込み（{{納品データ}}）に置き換える。
+ *
+ * これまでは「【ここに納品データのURLを貼ってください】」を手で書き換えていた。
+ * 商品画像だけのときも採寸データの行が残り、不自然になっていた。
+ */
+function boardMigrateDeliveryLinks_(sheet) {
+  const last = sheet.getLastColumn();
+  if (last < 2) return;
+
+  const ids = sheet.getRange(BOARD_TEMPLATE_ROW.id, 1, 1, last).getValues()[0];
+  for (let c = 1; c < ids.length; c++) {
+    if (String(ids[c] || '').trim() !== 'T8') continue;
+
+    const cell = sheet.getRange(BOARD_TEMPLATE_ROW.body, c + 1);
+    const body = String(cell.getValue() || '');
+    if (!body || body.indexOf('{{納品データ}}') >= 0) return;   // 済んでいる
+
+    const next = boardReplaceBlock_(body, '■ 納品データ', J8_([
+      '━━━━━━━━━━━━━━━━━━━━',
+      '■ 納品データ',
+      '━━━━━━━━━━━━━━━━━━━━',
+      '{{納品データ}}',
+      ''
+    ]));
+    if (next === body) return;   // 見出しが見つからなければ、手を入れない
+
+    cell.setValue(next);
+    boardLog_('移行', 'テンプレ T8 の納品データを、URL欄から差し込む形にしました');
+    return;
+  }
+}
+
+/** 改行でつなぐだけ。上の置き換えを読みやすくするための小道具。 */
+function J8_(lines) {
+  return lines.join(String.fromCharCode(10));
 }
 
 /**
@@ -3740,9 +3815,7 @@ function boardDefaultDeliveryBody_() {
     '━━━━━━━━━━━━━━━━━━━━',
     '■ 納品データ',
     '━━━━━━━━━━━━━━━━━━━━',
-    '下記のリンクよりご確認ください。',
-    '',
-    '　【ここに納品データのURLを貼ってください】',
+    '{{納品データ}}',
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     '■ 商品の返送について',

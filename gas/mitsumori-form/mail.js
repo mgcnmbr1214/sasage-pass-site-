@@ -1139,12 +1139,14 @@ function mailSaveCustomerField_(ss, customerId, field, value) {
     .setValue(field.type === 'date' ? boardFromInputDate_(value) : value);
 }
 
-/** 返送の入力欄を、テンプレートの差し込み名に置き換える。 */
-function mailShipmentVars_(fields) {
+/** 画面で入力した欄を、テンプレートの差し込み名に置き換える。 */
+function mailFieldVars_(fields) {
   const data = fields || {};
   const carrier = String(data.shipCarrier || '').trim();
   const tracking = String(data.shipTracking == null ? '' : data.shipTracking).trim();
   return {
+    // 納品リンクは、入れたぶんだけで文章ごと組み立てる
+    '納品データ': boardDeliveryBlock_(data.deliveryPhotoUrl, data.deliveryMeasureUrl),
     '返送点数': data.shipQty == null ? '' : data.shipQty,
     '返送追跡番号': tracking,
     '返送運送業者': carrier,
@@ -1188,7 +1190,7 @@ function mailComposeWithType(row, typeId, fields, wantedCaseRow) {
     if (!caseRow) throw new Error('このお客様の案件が案件ボードに見つかりません。');
     // 画面で入力した内容を先に保存し、そのうえで文面へ差し込む
     if (fields && Object.keys(fields).length > 0) mailSaveCaseFields(caseRow, fields);
-    template = boardBuildTemplateText_(ss, caseRow, type.template, mailShipmentVars_(fields)).body;
+    template = boardBuildTemplateText_(ss, caseRow, type.template, mailFieldVars_(fields)).body;
   }
 
   const found = boardFindCustomer_(ss, customerId);
@@ -2035,7 +2037,8 @@ function mailGenerateReply_(apiKey, ctx) {
       'この定型文を、そのまま返信本文の土台として出力してください。',
       '守ること:',
       '- 見出し・箇条書き・並び順を変えないこと。',
-      '- 日付・金額・点数・住所・電話番号・手続きの説明は一字一句そのまま残すこと。',
+      '- 日付・金額・点数・住所・電話番号・URL・追跡番号・手続きの説明は一字一句そのまま残すこと。',
+      '　とくにURLは1文字でも違うと開けません。書き換えないこと。',
       '- お客様が触れていない項目でも、案内を削らないこと。',
       '- お客様に質問や要望があるときだけ、定型文の前か後ろに短い段落を足して答えること。',
       '- 定型文に書かれていない事実は足さないこと。',
