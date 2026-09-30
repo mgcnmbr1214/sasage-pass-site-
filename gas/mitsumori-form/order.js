@@ -137,7 +137,7 @@ function orderGetState(customerId, formKey) {
       // いちばん知りたいのは「いま自分の荷物がどうなっているか」で、
       // それは発送を終えたあとのほうがむしろ知りたい
       progress: (open || latest) ? orderCaseView_(ss, open || latest) : null,
-      monthly: orderMonthly_(ss, customer.id, (open || latest) ? (open || latest).caseRow : 0),
+      monthly: orderMonthly_(ss, customer.id),
       shipTo: orderShipTo_(settings, signed)
     };
   } catch (err) {
@@ -514,7 +514,7 @@ function orderCaseView_(ss, hit) {
  * 決められる日で区切るという取り決めなので、ここでも同じ数え方をする。
  * 次の段まであと何点かも一緒に返す。知らないうちに損をしていた、をなくすため。
  */
-function orderMonthly_(ss, customerId, caseRow) {
+function orderMonthly_(ss, customerId) {
   const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
   if (!sheet || sheet.getLastRow() < 2) return null;
 
@@ -531,12 +531,7 @@ function orderMonthly_(ss, customerId, caseRow) {
     count += priceCountOf_(row);
   });
 
-  const values = caseRow
-    ? sheet.getRange(caseRow, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0]
-    : null;
-  const selection = values ? priceSelectionOf_(config, values) : null;
-  const price = selection && selection.options ? priceUnitPrice_(config, selection, count) : null;
-
+  // 単価は画面に出さない。段の一覧だけで足りる
   const here = priceTierFor_(config, count);
   const tiers = ((config.quantityOptions && config.quantityOptions.monthly) || [])
     .filter(function (t) { return t.enabled !== false; })
@@ -556,8 +551,6 @@ function orderMonthly_(ss, customerId, caseRow) {
   return {
     monthLabel: Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy年M月'),
     count: count,
-    unitPrice: price ? price.unitPrice : 0,
-    tierLabel: price ? price.tierLabel : '',
     tiers: tiers,
     next: next ? { label: next.label, more: next.from - count, discount: next.discount } : null
   };
