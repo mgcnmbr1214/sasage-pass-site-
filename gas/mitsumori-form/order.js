@@ -389,6 +389,9 @@ function orderSaveProfile_(ss, customer, profile) {
   const data = profile || {};
   const missing = [];
   ORDER_PROFILE_FIELDS.forEach(function (f) {
+    // **任意の欄で止めない。** 会社名は「個人事業主の方は不要です」と
+    // 書いてあるのに、空だと同じ文言でエラーになり、直しようがなかった
+    if (f.optional) return;
     if (!String(data[f.key] || '').trim()) missing.push(f.label);
   });
   if (missing.length > 0) {

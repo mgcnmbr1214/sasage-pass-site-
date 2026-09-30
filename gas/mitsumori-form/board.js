@@ -600,6 +600,25 @@ function boardSetup() {
   // 片づけ先の見出しが、シートの実際の並びと食い違っていたら直す
   boardRepairArchiveHeaders_(ss);
 
+  // **お客様の付け替えは、書式や数式を入れ直す前に済ませる。**
+  // あとに回すと、未返信や対応者を古い顧客IDのまま計算してしまう
+  let renumbered = 0;
+  try {
+    renumbered = boardRepairDuplicateCustomers_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '重なった顧客IDの見直しに失敗: ' + err.message);
+  }
+  try {
+    boardFillMissingCompanyOnce_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '屋号の補いに失敗: ' + err.message);
+  }
+  try {
+    boardClearForeignMailCells_(ss);
+  } catch (err) {
+    boardLog_('②エラー', 'よそのお客様のメール本文の掃除に失敗: ' + err.message);
+  }
+
   boardSetupSheet_(ss, BOARD_SHEET_CASES, BOARD_CASE_HEADERS);
   boardSetupSheet_(ss, BOARD_SHEET_CUSTOMERS, BOARD_CUSTOMER_HEADERS, [80, 170, 120, 220, 130]);
   boardSetupSheet_(ss, BOARD_SHEET_MAILS, BOARD_MAIL_HEADERS);
@@ -649,17 +668,7 @@ function boardSetup() {
   } catch (err) {
     boardLog_('②エラー', '発送完了日の見直しに失敗: ' + err.message);
   }
-  let renumbered = 0;
-  try {
-    renumbered = boardRepairDuplicateCustomers_(ss);
-  } catch (err) {
-    boardLog_('②エラー', '重なった顧客IDの見直しに失敗: ' + err.message);
-  }
-  try {
-    boardFillMissingCompanyOnce_(ss);
-  } catch (err) {
-    boardLog_('②エラー', '屋号の補いに失敗: ' + err.message);
-  }
+
   try {
     boardRefreshCustomerNotes_(ss);
   } catch (err) {
@@ -1665,6 +1674,68 @@ function boardRepairScrambledRows_(ss) {
   return fixed.length;
 }
 
+/** 本文の何分のものかを見分けるときの、許す幅（分）。 */
+const BOARD_MAIL_STAMP_SLACK = 3;
+
+/**
+ * よそのお客様のメール本文が残っている案件から、その本文を消す。
+ *
+ * 最新の受信・送信メールは顧客IDで引いて書き込むが、**見つからないときは
+ * 前の値をそのまま残す**作りだった。お客様を付け替えた案件に、前のお客様の
+ * やりとりと依頼フォームのURLが残ってしまう。実際 A013（松下様）に、
+ * 別のお客様の本文とURLが載っていた。
+ *
+ * 本文の1行目の日時が、そのお客様のメール履歴のどれとも合わなければ消す。
+ * **消しても失われない。** 本当にやりとりがあれば、次の自動確認で
+ * Gmailから同じ本文が書き戻される。
+ */
+function boardClearForeignMailCells_(ss) {
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  if (!cases || cases.getLastRow() < 2) return 0;
+
+  const known = {};
+  const mails = ss.getSheetByName(BOARD_SHEET_MAILS);
+  if (mails && mails.getLastRow() > 1) {
+    mails.getRange(2, 1, mails.getLastRow() - 1, BOARD_MAIL_HEADERS.length).getValues()
+      .forEach(function (row) {
+        const id = String(row[BOARD_MAIL_COL.customerId - 1] || '').trim();
+        const at = boardTimeOf_(row[BOARD_MAIL_COL.date - 1]);
+        if (!id || !at) return;
+        if (!known[id]) known[id] = [];
+        known[id].push(Math.round(at / 60000));
+      });
+  }
+
+  const rows = cases.getRange(2, 1, cases.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues();
+  const cleared = [];
+
+  rows.forEach(function (row, i) {
+    const caseId = String(row[BOARD_COL.caseId - 1] || '').trim();
+    if (!caseId) return;
+    const id = String(row[BOARD_COL.customerId - 1] || '').trim();
+
+    [['最新の受信メール', BOARD_COL.lastInbound], ['最新の送信メール', BOARD_COL.lastOutbound]]
+      .forEach(function (pair) {
+        const text = String(row[pair[1] - 1] || '').trim();
+        if (!text) return;
+        const at = mailStampTime_(text);
+        if (!at) return;   // 日時が読めない書き方には触らない
+        const minute = Math.round(at / 60000);
+        const mine = (known[id] || []).some(function (m) {
+          return Math.abs(m - minute) <= BOARD_MAIL_STAMP_SLACK;
+        });
+        if (mine) return;
+        cases.getRange(i + 2, pair[1]).clearContent();
+        cleared.push(caseId + '（' + pair[0] + '）');
+      });
+  });
+
+  if (cleared.length > 0) {
+    boardLog_('修正', 'よそのお客様のメール本文を消しました: ' + cleared.join('、'));
+  }
+  return cleared.length;
+}
+
 /**
  * 問い合わせ窓口から届いた方の屋号を、一度だけ補う。
  *
@@ -1762,6 +1833,10 @@ function boardRepairDuplicateCustomers_(ss) {
       const nextCase = boardNextCaseId_(cases, nextId);
       cases.getRange(c.row, BOARD_COL.caseId).setValue(nextCase);
       cases.getRange(c.row, BOARD_COL.customerId).setValue(nextId);
+      // **お客様が変われば、お客様から来た本文も別人のもの。**
+      // 消さないと、よそのお客様のやりとりと依頼フォームのURLが残る
+      [BOARD_COL.lastInbound, BOARD_COL.lastOutbound, BOARD_COL.unreplied]
+        .forEach(function (col) { cases.getRange(c.row, col).clearContent(); });
       boardSetTodoFormula_(cases, c.row);
       boardSetOwnerFormula_(cases, c.row);
       fixed.push('案件 ' + c.caseId + ' → ' + nextCase);
