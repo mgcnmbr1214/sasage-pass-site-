@@ -649,6 +649,17 @@ function boardSetup() {
   } catch (err) {
     boardLog_('②エラー', '発送完了日の見直しに失敗: ' + err.message);
   }
+  let renumbered = 0;
+  try {
+    renumbered = boardRepairDuplicateCustomers_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '重なった顧客IDの見直しに失敗: ' + err.message);
+  }
+  try {
+    boardFillMissingCompanyOnce_(ss);
+  } catch (err) {
+    boardLog_('②エラー', '屋号の補いに失敗: ' + err.message);
+  }
   try {
     boardRefreshCustomerNotes_(ss);
   } catch (err) {
@@ -745,6 +756,7 @@ function boardSetup() {
     (stripped > 0 ? '\n依頼内容から月間予定数を削除：' + stripped + ' 件' : '') +
     (shared > 0 ? '\n作業チーム共有を作成：' + shared + ' 件' : '') +
     (redated > 0 ? '\n発送完了日の修正：' + redated + ' 件' : '') +
+    (renumbered > 0 ? '\n重なった顧客IDの振り直し：' + renumbered + ' 件' : '') +
     (restated > 0 ? '\nお客様の登録状況の更新：' + restated + ' 件' : '') +
     (deferred.length > 0
       ? '\n\n時間の都合で、次の処理は10分以内の自動チェックに回しました。' +
@@ -1649,6 +1661,121 @@ function boardRepairScrambledRows_(ss) {
   }
   if (cleared > 0) {
     boardLog_('修復', '発送完了日に紛れ込んでいたお客様の登録状況を ' + cleared + ' 件消しました');
+  }
+  return fixed.length;
+}
+
+/**
+ * 問い合わせ窓口から届いた方の屋号を、一度だけ補う。
+ *
+ * **問い合わせ窓口には会社名の入力欄が無い。** お名前と本文しか届かないので、
+ * 顧客タブの会社名・屋号が空のまま残る。本文に書かれていた屋号を読み取って
+ * 入れておく。空のときだけ書き、手で直した名前は上書きしない。
+ */
+const BOARD_COMPANY_BACKFILL = [
+  ['tm19740103@gmail.com', '古着専門店アグリ']
+];
+
+function boardFillMissingCompanyOnce_(ss) {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('CUSTOMER_COMPANY_BACKFILL')) return 0;
+
+  const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const filled = [];
+  BOARD_COMPANY_BACKFILL.forEach(function (pair) {
+    const row = boardFindCustomerRowByEmail_(sheet, pair[0]);
+    if (!row) return;
+    const cell = sheet.getRange(row, BOARD_CUSTOMER_COL.company);
+    if (String(cell.getValue() || '').trim()) return;   // 手で入っていれば触らない
+    cell.setValue(pair[1]);
+    filled.push(pair[1]);
+  });
+
+  props.setProperty('CUSTOMER_COMPANY_BACKFILL', '1');
+  if (filled.length > 0) {
+    boardLog_('修正', 'お問い合わせ本文にあった屋号を顧客タブへ入れました: ' + filled.join('、'));
+  }
+  return filled.length;
+}
+
+/**
+ * 同じ顧客IDを名乗っている行を見つけ、あとから来たお客様に新しい番号を振る。
+ *
+ * **同じ番号は、別のお客様を一人に見せてしまう。** 顧客の検索は上の行から
+ * 一致を探すので、返信の宛先も依頼フォームのURLも先にいた方のものになる。
+ * 月の点数も合算され、数量割引と請求まで狂う。
+ * 実際、松下様が既にあるC004を名乗り、別のお客様の下に並んでいた。
+ *
+ * **先にいた行は動かさない。** そちらには返送や請求の記録がぶら下がっている。
+ * **見分けがつかないときは何もしない。** 取り違えるくらいなら残して知らせる。
+ */
+function boardRepairDuplicateCustomers_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_CUSTOMERS);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOARD_CUSTOMER_HEADERS.length).getValues();
+  const seen = {};
+  const dups = [];
+  rows.forEach(function (row, i) {
+    const id = String(row[BOARD_CUSTOMER_COL.id - 1] || '').trim();
+    if (!id) return;
+    if (seen[id]) { dups.push({ row: i + 2, id: id, values: row }); return; }
+    seen[id] = i + 2;
+  });
+  if (dups.length === 0) return 0;
+
+  const cases = ss.getSheetByName(BOARD_SHEET_CASES);
+  const busy = boardCaseIdsInRecords_(ss);
+  const fixed = [];
+  const left = [];
+
+  dups.forEach(function (dup) {
+    // 案件ボードのお客様欄は、案件を作ったときに会社名か担当者名から入れている。
+    // これが、どの案件があとから来たお客様のものかを見分ける唯一の手がかり
+    const label = String(dup.values[BOARD_CUSTOMER_COL.company - 1] ||
+      dup.values[BOARD_CUSTOMER_COL.name - 1] || '').trim();
+
+    const mine = [];
+    let unsure = !label;
+    if (!unsure && cases && cases.getLastRow() > 1) {
+      cases.getRange(2, 1, cases.getLastRow() - 1, BOARD_CASE_HEADERS.length).getValues()
+        .forEach(function (row, i) {
+          if (String(row[BOARD_COL.customerId - 1] || '').trim() !== dup.id) return;
+          if (String(row[BOARD_COL.customer - 1] || '').trim() !== label) return;
+          mine.push({ row: i + 2, caseId: String(row[BOARD_COL.caseId - 1] || '').trim() });
+        });
+    }
+    // 返送や請求の記録がある案件は動かさない。請求の根拠が追えなくなる
+    if (mine.some(function (c) { return busy[c.caseId]; })) unsure = true;
+
+    if (unsure) {
+      left.push(dup.id + '（' + (label || '名前なし') + '・' + dup.row + '行目）');
+      return;
+    }
+
+    const nextId = boardNextCustomerId_(sheet);
+    mine.forEach(function (c) {
+      // **案件IDを先に決める。** 顧客IDを書き換えたあとだと、自分自身を
+      // 数えてしまい「その番号の枝番」になる
+      const nextCase = boardNextCaseId_(cases, nextId);
+      cases.getRange(c.row, BOARD_COL.caseId).setValue(nextCase);
+      cases.getRange(c.row, BOARD_COL.customerId).setValue(nextId);
+      boardSetTodoFormula_(cases, c.row);
+      boardSetOwnerFormula_(cases, c.row);
+      fixed.push('案件 ' + c.caseId + ' → ' + nextCase);
+    });
+    sheet.getRange(dup.row, BOARD_CUSTOMER_COL.id).setValue(nextId);
+    fixed.push('お客様 ' + label + '　' + dup.id + ' → ' + nextId);
+  });
+
+  if (fixed.length > 0) {
+    boardLog_('修正', '重なっていた顧客IDを振り直しました: ' + fixed.join('／'));
+  }
+  if (left.length > 0) {
+    boardLog_('②エラー', '顧客IDが重なっていますが、どの案件のものか決められないため' +
+      'そのままにしました: ' + left.join('、') + '　顧客タブで手当てをお願いします。');
   }
   return fixed.length;
 }
@@ -4836,6 +4963,10 @@ function boardImportResponses_(ss) {
       date: pick('date')
     });
 
+    // 顧客IDが決まらなかったときは、案件も作らない。
+    // 空の顧客IDで案件を作ると、どのお客様のものか分からなくなる
+    if (!customerId) continue;
+
     // **月間予定数は依頼内容に混ぜない。** ご依頼ごとの中身ではなく、
     // お客様の予定。顧客タブで持っていれば足りる
     const created = boardAppendCase_(ss, {
@@ -5130,7 +5261,16 @@ function boardUpsertCustomer_(sheet, data) {
   }
 
   const row = sheet.getLastRow() + 1;
-  const customerId = 'C' + boardPad_(row - 1, 3);
+  const customerId = boardNextCustomerId_(sheet);
+
+  // **ぶつかったら、何もせずに止める。** 同じ番号を名乗ると、別のお客様と
+  // 一つに見えてしまう。返信の宛先も依頼フォームのURLも入れ替わる。
+  // 実際、松下様が既存のC004を名乗り、案件ボードで別のお客様と並んだ
+  if (!customerId || boardFindCustomerRowById_(sheet, customerId)) {
+    boardLog_('②エラー', '顧客IDを決められないため、' + data.email +
+      ' の取り込みを見送りました。顧客タブの顧客IDをご確認ください。');
+    return '';
+  }
   const values = new Array(BOARD_CUSTOMER_HEADERS.length).fill('');
   values[BOARD_CUSTOMER_COL.id - 1] = customerId;
   values[BOARD_CUSTOMER_COL.company - 1] = data.company;
@@ -5276,6 +5416,49 @@ function boardBackfillIntake_(ss) {
 
   if (filled > 0) boardLog_('顧客情報', '空欄だった ' + filled + ' 項目を過去のメールから補いました');
   return filled;
+}
+
+/**
+ * 次の顧客ID。**いちばん大きい番号の次**を返す。
+ *
+ * 以前は行番号から作っていた。片づけたお客様をタブから移したぶん行が減り、
+ * 使用中の番号を作り直してしまった。案件IDと同じ数え方にそろえる。
+ * **片づけたお客様の番号も使い切ったものとして数える。**
+ */
+function boardNextCustomerId_(sheet) {
+  const ids = [];
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, BOARD_CUSTOMER_COL.id, sheet.getLastRow() - 1, 1).getValues()
+      .forEach(function (row) { ids.push(row[0]); });
+  }
+  boardArchivedCustomerIds_(sheet.getParent()).forEach(function (id) { ids.push(id); });
+
+  let max = 0;
+  ids.forEach(function (value) {
+    const m = String(value || '').trim().match(/^C(\d+)$/);
+    if (m) max = Math.max(max, Number(m[1]));
+  });
+  return 'C' + boardPad_(max + 1, 3);
+}
+
+/** 片づけたお客様の顧客ID。採番のときに一緒に数える。 */
+function boardArchivedCustomerIds_(ss) {
+  const sheet = ss.getSheetByName(BOARD_SHEET_ARCHIVE_CUSTOMERS);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  // 片づけ先は顧客タブの並びのまま写しているので、同じ列を読めばよい
+  return sheet.getRange(2, BOARD_CUSTOMER_COL.id, sheet.getLastRow() - 1, 1).getValues()
+    .map(function (row) { return String(row[0] || '').trim(); })
+    .filter(function (id) { return id; });
+}
+
+/** 顧客IDで顧客タブの行を探す。見つからなければ 0。 */
+function boardFindCustomerRowById_(sheet, customerId) {
+  if (!sheet || sheet.getLastRow() < 2 || !customerId) return 0;
+  const rows = sheet.getRange(2, BOARD_CUSTOMER_COL.id, sheet.getLastRow() - 1, 1).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim() === String(customerId).trim()) return i + 2;
+  }
+  return 0;
 }
 
 function boardFindCustomerRowByEmail_(sheet, email) {
