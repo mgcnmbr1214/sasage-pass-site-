@@ -3,7 +3,7 @@
  *
  * index.html の .contact-form から fetch(..., {mode:'no-cors'}) で送信された内容を受け取り、
  * ① 業務ボードのスプレッドシートの「Responses」シートに1行追記する（既存の取込み処理に自動で乗る）
- * ② info@sasagepass.com へ即時通知メールを送る
+ * ② info@sasagepass.com と sasagepass@gmail.com へ即時通知メールを送る
  *
  * デプロイ設定（script.google.com の「デプロイ」画面で設定する）:
  *   - 種類: ウェブアプリ / 次のユーザーとして実行: 自分（Me）/ アクセスできるユーザー: 全員（Anyone）
@@ -14,7 +14,8 @@
 
 var SPREADSHEET_ID = '1uEkO75sWb6bYLDI6I_p4pxPOtq-CUqTm0H_E1n8yQtc';
 var RESPONSES_SHEET_NAME = 'Responses';
-var NOTIFY_TO = 'info@sasagepass.com';
+// info@ だけだと、転送で戻ってきた分を Gmail が自分の送信済みと同じとみなし、受信トレイに入らない
+var NOTIFY_TO = 'info@sasagepass.com,sasagepass@gmail.com';
 
 // gas/mitsumori-form/board.js の BOARD_SOURCE_FIELDS と同じ候補見出し
 var SOURCE_FIELD_CANDIDATES = {
@@ -161,3 +162,4 @@ function clean_(v) { return (v || '').toString().trim(); }
 function jsonOutput(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
+
