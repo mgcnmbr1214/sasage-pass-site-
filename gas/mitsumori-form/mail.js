@@ -354,7 +354,10 @@ function mailScan_(options) {
         const raw = message.getPlainBody();
         boardApplyCustomerIntake_(ss, customer.email, boardExtractCustomerIntake_(raw));
         boardApplyCaseIntake_(ss, customer.customerId, boardExtractCaseIntake_(raw));
-        boardStartNextRequest_(ss, customer.customerId);
+        // **メールが届いただけでは案件を作らない。** 中身を読まずに
+        // 「次のご依頼が始まった」と決めていたため、お礼の一言だけの返信で
+        // 空の案件ができていた（実際に A011-3 がそうして生まれた）。
+        // ご依頼は依頼フォームから届く。そちらだけを案件の入口にする
       } catch (err) {
         boardLog_('②エラー', '顧客情報の取込に失敗: ' + err.message);
       }

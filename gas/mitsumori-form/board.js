@@ -2645,7 +2645,9 @@ const BOARD_SETTING_NOTES = [
   [BOARD_SETTING_NOTE_PREFIX + '案件が作られない経路',
    'メール受信・対応を選ぶ・Squareの操作・顧客タブへの手入力',
    'いずれも案件は増えない。新着メールの読み取りは顧客タブに登録済みのアドレスしか見ないため、'
-   + '未登録の相手から届いたメールは検知もしない。']
+   + '未登録の相手から届いたメールは検知もしない。'
+   + '（2026年9月まで、返送済のお客様からメールが届くと案件を1行作っていた。'
+   + 'お礼の一言でも作られてしまうため取りやめた。）']
 ];
 
 const BOARD_DEFAULT_SETTINGS = [
@@ -5476,33 +5478,6 @@ function boardFindCustomerRow_(ss, customerId) {
     }
   }
   return null;
-}
-
-/**
- * 返送まで終わったお客様から新しいご連絡が届いたら、**次のご依頼の行を作る。**
- *
- * 以前は同じ行を使い回して「問合せ」に戻していた。そのため前回の日付や
- * 追跡番号が次の依頼に紛れ込み、過去の依頼も残らなかった。
- * 依頼ごとに1行にすれば、履歴がそのまま残る。
- */
-function boardStartNextRequest_(ss, customerId) {
-  const row = boardFindLatestCaseRow_(ss, customerId);
-  if (!row) return '';
-
-  const sheet = ss.getSheetByName(BOARD_SHEET_CASES);
-  const values = sheet.getRange(row, 1, 1, BOARD_CASE_HEADERS.length).getValues()[0];
-  if (String(values[BOARD_COL.status - 1] || '').trim() !== BOARD_STATUS_DONE) return '';
-
-  const created = boardAppendCase_(ss, {
-    customerId: customerId,
-    status: BOARD_STATUS_NEW,
-    carryFrom: values
-  });
-  if (!created) return '';
-
-  boardLog_('案件情報', created.caseId + ' として次のご依頼を受け付けました（前回 ' +
-    values[BOARD_COL.caseId - 1] + '）');
-  return BOARD_STATUS_NEW;
 }
 
 /**
