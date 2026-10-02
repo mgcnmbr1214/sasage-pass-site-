@@ -80,6 +80,27 @@ a { text-decoration: none; color: inherit; }
 .nav > a.btn-nav, .nav > a.btn-nav:visited { color: var(--white); }
 .nav > a.btn-nav:hover { color: var(--white); }
 
+/* ヘッダー内CTA。モバイルでは .nav ごとボタンが消えるため、その代わりに常時出す。
+   PCでは .nav の .btn-nav が同じ役目をするので非表示のままにする */
+.btn-hdr-cta {
+  display: none;
+  margin-left: auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.15;
+  white-space: nowrap;
+  text-decoration: none;
+  background: var(--orange);
+  border-radius: 50px;
+  /* 指で押せる高さ（44px）を確保するための上下余白 */
+  padding: 9px 13px;
+}
+.btn-hdr-cta, .btn-hdr-cta:visited, .btn-hdr-cta:hover { color: var(--white); }
+.btn-hdr-cta:hover { background: var(--orange-dark); }
+.btn-hdr-cta-sub { font-size: 9.5px; font-weight: 600; opacity: .93; }
+.btn-hdr-cta-main { font-size: 13px; font-weight: 800; }
+
 .btn-full { width: 100%; justify-content: center; font-size: 16px; padding: 16px; }
 .btn-lg { padding: 18px 38px; font-size: 17px; }
 
@@ -1555,6 +1576,17 @@ a { text-decoration: none; color: inherit; }
   .nav { display: none; }
   .hamburger { display: flex; }
 
+  /* ロゴを 96px → 72px に詰めて、空いた幅にCTAを入れる */
+  .header { height: 72px; }
+  .header-inner { gap: 6px; }
+  .logo { height: 72px; }
+  .logo-img { height: 135px; }
+  .btn-hdr-cta { display: inline-flex; }
+  .mobile-menu { top: 72px; }
+  /* ヘッダーが24px縮んだぶん、下の余白も同じだけ詰める */
+  .hero { padding: 124px 0 64px; }
+  .svc-bg-wrap { scroll-margin-top: 72px; }
+
   .section { padding: 56px 0; }
 
   .platform-grid { grid-template-columns: repeat(4, 1fr); gap: 10px; }
@@ -1575,7 +1607,8 @@ a { text-decoration: none; color: inherit; }
 }
 
 @media (max-width: 480px) {
-  .hero { padding: 100px 0 56px; }
+  /* ヘッダーが72pxになったぶんの余裕を、見出しの上の空きに回す */
+  .hero { padding: 92px 0 56px; }
   .hero-title { font-size: 26px; }
 
   .platform-grid { grid-template-columns: repeat(2, 1fr); }
