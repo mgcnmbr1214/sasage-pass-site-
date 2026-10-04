@@ -12,8 +12,9 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="preload" as="image" href="images/hero/after.webp">
   <link rel="stylesheet" href="style.css">
 
   <!-- 計測タグ（IDの設定は /tracking.js の CONFIG で行います） -->
@@ -73,602 +74,305 @@
 
   <!-- ヒーロー -->
   <section class="hero">
-    <div class="container hero-inner">
-      <div class="hero-text">
-        <p class="hero-eyebrow" data-edit-id="hero-eyebrow" data-edit-label="ヒーロー：小見出し" data-edit-type="text">古着・アパレルEC向け ささげ代行サービス</p>
-        <h1 class="hero-title" data-edit-id="hero-title" data-edit-label="ヒーロー：メイン見出し" data-edit-type="richtext">商品を送るだけで、<br>あとは全部<span class="highlight">おまかせ</span>。</h1>
-        <p class="hero-sub" data-edit-id="hero-sub" data-edit-label="ヒーロー：サブテキスト" data-edit-type="richtext">撮影・採寸・出品・クリーニングまで一括代行。<br>それぞれの作業のプロがあなたの商品を輝かせます。</p>
-        <div class="hero-badges">
-          <span class="badge"><i class="fa-solid fa-check"></i> 1点300円〜</span>
-          <span class="badge"><i class="fa-solid fa-check"></i> クリーニング無料</span>
-          <span class="badge"><i class="fa-solid fa-check"></i> 複数EC対応</span>
+    <div class="hr-wrap">
+      <p class="hr-eyebrow" data-edit-id="hero-eyebrow" data-edit-label="ヒーロー：小見出し" data-edit-type="text">アパレル・雑貨から古着まで。クリーニング付きのささげ代行</p>
+      <h1 class="hr-title">
+        <span class="hr-strip s1" data-edit-id="hero-title-1" data-edit-label="ヒーロー：見出し1枚目（白い紙）" data-edit-type="text">商品を送るだけで、</span>
+        <span class="hr-strip s2" data-edit-id="hero-title-2" data-edit-label="ヒーロー：見出し2枚目（白い紙）" data-edit-type="text">あとは出品まで全部</span>
+        <span class="hr-strip s3" data-edit-id="hero-title-3" data-edit-label="ヒーロー：見出し3枚目（オレンジの紙）" data-edit-type="text">おまかせ。</span>
+      </h1>
+      <div class="hr-stage">
+        <div class="hr-cut before"><img src="images/hero/before.webp" alt="クリーニング前のシャツ" width="1344" height="1886" draggable="false"></div>
+        <div class="hr-cut after">
+          <img src="images/hero/after.webp" alt="洗濯・アイロン後に採寸したシャツ" width="1440" height="1870" draggable="false">
+          <svg viewBox="0 0 720 935" preserveAspectRatio="none" aria-hidden="true"><g fill="none" stroke-linecap="round"><path class="halo" d="M110 148L598 124M110 132v32M598 108v32M130 366H612M130 350v32M612 350v32M292 28V892M276 28h32M276 892h32M606 138L682 798M590 141l32 -4M666 801l32 -4" stroke="#fff" stroke-width="12"/><path class="ln" d="M110 148L598 124M110 132v32M598 108v32M130 366H612M130 350v32M612 350v32M292 28V892M276 28h32M276 892h32M606 138L682 798M590 141l32 -4M666 801l32 -4" stroke="#1A1714" stroke-width="5"/></g></svg>
+          <span class="hr-lbl" style="left:24%;top:14.9%"><em>肩幅</em><span data-edit-id="hero-measure-shoulder" data-edit-label="ヒーロー：採寸の数値（肩幅）" data-edit-type="text">47.0</span></span>
+          <span class="hr-lbl" style="left:28%;top:39.1%"><em>身幅</em><span data-edit-id="hero-measure-width" data-edit-label="ヒーロー：採寸の数値（身幅）" data-edit-type="text">58.5</span></span>
+          <span class="hr-lbl" style="left:40.6%;top:72.5%"><em>着丈</em><span data-edit-id="hero-measure-length" data-edit-label="ヒーロー：採寸の数値（着丈）" data-edit-type="text">78.0</span></span>
+          <span class="hr-lbl" style="left:86.4%;top:30%"><em>袖丈</em><span data-edit-id="hero-measure-sleeve" data-edit-label="ヒーロー：採寸の数値（袖丈）" data-edit-type="text">64.0</span></span>
         </div>
-        <div class="hero-actions">
-          <a href="#price" class="btn btn-primary btn-lg">料金プランの一例を見る <i class="fa-solid fa-arrow-down"></i></a>
+        <p class="hr-sticker b"><small>BEFORE</small><span data-edit-id="hero-before-label" data-edit-label="ヒーロー：BEFOREの札" data-edit-type="text">商品を送る前</span></p>
+        <p class="hr-sticker a"><small>AFTER</small><span data-edit-id="hero-after-label" data-edit-label="ヒーロー：AFTERの札" data-edit-type="text">洗って、アイロン、採寸</span></p>
+        <svg class="hr-arrow" viewBox="0 0 110 40" aria-hidden="true"><path d="M6 30C30 8 70 4 98 18" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/><path d="M84 7l16 11-18 8" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="kraft-tag hr-tag" aria-label="ご依頼内容の例">
+          <span class="kraft-hole"></span>
+          <p class="kraft-no"><span>SASAGE PASS</span><span>No.0142</span></p>
+          <p class="kraft-ttl">ご依頼内容</p>
+          <ul>
+            <li><span class="cb" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10.5l4.2 4.6L18 2.5" fill="none" stroke="#EE5A24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>クリーニング<small>無料</small></li>
+            <li><span class="cb" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10.5l4.2 4.6L18 2.5" fill="none" stroke="#EE5A24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>撮影<small>平均10枚</small></li>
+            <li><span class="cb" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10.5l4.2 4.6L18 2.5" fill="none" stroke="#EE5A24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>採寸<small>4か所</small></li>
+            <li class="has-sub"><span class="cb" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10.5l4.2 4.6L18 2.5" fill="none" stroke="#EE5A24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>出品</li>
+            <li class="sub"><span class="cb" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10.5l4.2 4.6L18 2.5" fill="none" stroke="#EE5A24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>メルカリShops</li>
+            <li class="sub"><span class="cb" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10.5l4.2 4.6L18 2.5" fill="none" stroke="#EE5A24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>BASE</li>
+            <li class="sub"><span class="cb" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10.5l4.2 4.6L18 2.5" fill="none" stroke="#EE5A24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>その他</li>
+          </ul>
         </div>
       </div>
-      <div class="hero-visual">
-        <div class="hero-svc-grid">
-          <a href="#svc-cleaning" class="hero-svc-card">
-            <img src="images/thumbnails/cleaning.jpg" alt="クリーニング">
-          </a>
-          <a href="#svc-photo" class="hero-svc-card">
-            <img src="images/thumbnails/photo.jpg" alt="撮影">
-          </a>
-          <a href="#svc-measurement" class="hero-svc-card">
-            <img src="images/thumbnails/measurement.jpg" alt="採寸">
-          </a>
-          <a href="#svc-listing" class="hero-svc-card">
-            <img src="images/thumbnails/listing.jpg" alt="出品">
-          </a>
-        </div>
+      <div class="hr-foot">
+        <p class="hr-sub" data-edit-id="hero-sub" data-edit-label="ヒーロー：サブテキスト" data-edit-type="richtext">撮影・採寸・出品・クリーニングまで一括代行。それぞれの作業のプロがあなたの商品を輝かせます。</p>
+        <p class="hr-facts">
+          <span class="hr-price" data-edit-id="hero-price" data-edit-label="ヒーロー：料金の行" data-edit-type="richtext">1点 <b>300円</b>〜<small>（撮影のみの場合）</small></span>
+          <span class="hr-clean" data-edit-id="hero-cleaning" data-edit-label="ヒーロー：クリーニングの行" data-edit-type="richtext">クリーニング <b>無料</b></span>
+          <span class="hr-to" data-edit-id="hero-platforms" data-edit-label="ヒーロー：出品先の行" data-edit-type="text">出品先：メルカリShops・BASE・Shopify ほか</span>
+        </p>
+        <a href="#price" class="hr-btn"><span data-edit-id="hero-cta" data-edit-label="ヒーロー：ボタン" data-edit-type="text">料金プランの一例を見る</span> <i class="fa-solid fa-arrow-down"></i></a>
       </div>
     </div>
   </section>
 
-  <!-- ご利用の流れ（横並び） -->
-  <section class="section section-light" id="about">
-    <div class="container">
-      <div class="section-header">
-        <p class="section-label">HOW IT WORKS</p>
-        <h2 class="section-title">ご利用の流れ</h2>
-        <p class="section-desc">商品を送るだけ。あとは全部おまかせです。</p>
+  <!-- ご利用の流れ -->
+  <section class="lp-sec lp-white" id="about">
+    <div class="lp-in">
+      <div class="lp-head">
+        <p class="lp-no"><b>01</b>HOW IT WORKS</p>
+        <h2 class="lp-strip">ご利用の流れ</h2>
+        <p class="lp-desc">商品を送るだけ。あとは全部おまかせです。</p>
       </div>
-
-      <div class="flow-h">
-
-        <!-- STEP 1 -->
-        <div class="flow-h-step flow-h-step-main" data-step="01">
-          <div class="flow-h-num flow-h-num-orange">STEP <span>01</span></div>
-          <div class="flow-h-icon flow-h-icon-orange"><i class="fa-solid fa-list-check"></i></div>
+      <ol class="lp-flow">
+        <li>
+          <b class="lp-num">01</b>
           <h3 data-edit-id="flow-step1-title" data-edit-label="流れ STEP1：見出し" data-edit-type="text">サービスを選ぶ</h3>
-          <div class="flow-checkboxes">
-            <label class="flow-checkbox checked"><input type="checkbox" checked disabled><i class="fa-solid fa-soap"></i> クリーニング<span class="cb-free">無料</span></label>
-            <label class="flow-checkbox checked"><input type="checkbox" checked disabled><i class="fa-solid fa-camera"></i> 撮影</label>
-            <label class="flow-checkbox checked"><input type="checkbox" checked disabled><i class="fa-solid fa-ruler"></i> 採寸</label>
-            <label class="flow-checkbox checked"><input type="checkbox" checked disabled><i class="fa-solid fa-store"></i> 出品（出品先も選択可能）</label>
-          </div>
-          <p class="flow-select-note"><i class="fa-solid fa-hand-pointer"></i> ご希望の通りにカスタマイズ</p>
+          <p data-edit-id="flow-step1-desc" data-edit-label="流れ STEP1：本文" data-edit-type="richtext">クリーニング・撮影・採寸・出品から、<strong>必要な作業だけを選べます。</strong>出品先も選択可能です。</p>
+          <div class="kraft-tag lp-flow-tag" aria-label="ご依頼内容の例">
+          <span class="kraft-hole"></span>
+          <p class="kraft-no"><span>SASAGE PASS</span><span>No.0142</span></p>
+          <p class="kraft-ttl">ご依頼内容</p>
+          <ul>
+            <li><span class="cb" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10.5l4.2 4.6L18 2.5" fill="none" stroke="#EE5A24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>クリーニング<small>無料</small></li>
+            <li><span class="cb" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10.5l4.2 4.6L18 2.5" fill="none" stroke="#EE5A24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>撮影<small>平均10枚</small></li>
+            <li><span class="cb" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10.5l4.2 4.6L18 2.5" fill="none" stroke="#EE5A24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>採寸<small>4か所</small></li>
+            <li class="has-sub"><span class="cb" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10.5l4.2 4.6L18 2.5" fill="none" stroke="#EE5A24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>出品</li>
+            <li class="sub"><span class="cb" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10.5l4.2 4.6L18 2.5" fill="none" stroke="#EE5A24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>メルカリShops</li>
+            <li class="sub"><span class="cb" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10.5l4.2 4.6L18 2.5" fill="none" stroke="#EE5A24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>BASE</li>
+            <li class="sub"><span class="cb" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10.5l4.2 4.6L18 2.5" fill="none" stroke="#EE5A24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>その他</li>
+          </ul>
         </div>
-
-        <div class="flow-h-arrow"><i class="fa-solid fa-chevron-right"></i></div>
-
-        <!-- STEP 2 -->
-        <div class="flow-h-step" data-step="02">
-          <div class="flow-h-num">STEP <span>02</span></div>
-          <div class="flow-h-icon"><i class="fa-solid fa-box-open"></i></div>
+        </li>
+        <li>
+          <b class="lp-num">02</b>
           <h3 data-edit-id="flow-step2-title" data-edit-label="流れ STEP2：見出し" data-edit-type="text">商品を発送する</h3>
-          <p data-edit-id="flow-step2-desc" data-edit-label="流れ STEP2：本文" data-edit-type="richtext">ご依頼後、商品をササゲパスへ発送し、完了報告をお待ちください<br><br>納期はご依頼内容・数量により変動いたします<br>（例：撮影のみ100点→１週間前後）</p>
-        </div>
-
-        <div class="flow-h-arrow"><i class="fa-solid fa-chevron-right"></i></div>
-
-        <!-- STEP 3 -->
-        <div class="flow-h-step" data-step="03">
-          <div class="flow-h-num">STEP <span>03</span></div>
-          <div class="flow-h-icon"><i class="fa-solid fa-rotate-left"></i></div>
+          <p data-edit-id="flow-step2-desc" data-edit-label="流れ STEP2：本文" data-edit-type="richtext">ご依頼後、商品をササゲパスへ発送し、完了報告をお待ちください<br>納期はご依頼内容・数量により変動いたします<br>（例：撮影のみ100点→１週間前後）</p>
+        </li>
+        <li>
+          <b class="lp-num">03</b>
           <h3 data-edit-id="flow-step3-title" data-edit-label="流れ STEP3：見出し" data-edit-type="text">返却・月次自動支払い</h3>
           <p data-edit-id="flow-step3-desc" data-edit-label="流れ STEP3：本文" data-edit-type="text">作業完了後に商品をお返しします（返送時の配送料は弊社負担）。お支払いは月ごとの点数と依頼内容に応じて自動で行われます。</p>
-        </div>
-
-      </div>
+        </li>
+      </ol>
     </div>
   </section>
 
   <!-- サービス内容 -->
-  <section class="section section-features" id="features">
-    <div class="container">
-      <div class="section-header">
-        <p class="section-label">SERVICES</p>
-        <h2 class="section-title">サービス内容</h2>
-        <p class="section-desc">必要なサービスを組み合わせてご依頼いただけます。</p>
+  <section class="lp-sec lp-paper" id="features">
+    <div class="lp-in">
+      <div class="lp-head">
+        <p class="lp-no"><b>02</b>SERVICES</p>
+        <h2 class="lp-strip">サービス内容</h2>
+        <p class="lp-desc">必要なサービスを組み合わせてご依頼いただけます。</p>
       </div>
-    </div>
 
-    <!-- クリーニング -->
-    <div class="svc-bg-wrap" id="svc-cleaning">
-      <div class="container">
-      <img src="images/headings/cleaning.webp" alt="クリーニング" class="svc-heading-img" loading="lazy" draggable="false">
-      <div class="svc-detail">
-        <div class="svc-detail-body">
-          <div class="svc-detail-header">
-            <div class="svc-detail-icon-wrap"><i class="fa-solid fa-soap"></i></div>
-            <div>
-              <p class="svc-detail-label">SERVICE 01</p>
-              <p class="svc-detail-catch" data-edit-id="svc-cleaning-catch" data-edit-label="クリーニング：キャッチコピー" data-edit-type="richtext">撮影前の商品メンテナンスを<strong>無料</strong>でご提供。</p>
-            </div>
-          </div>
-          <p class="svc-detail-desc" data-edit-id="svc-cleaning-desc" data-edit-label="クリーニング：説明文" data-edit-type="text">撮影前の商品メンテナンス。特に古着などを出品する際には避けては通れない作業です。
+      <article class="lp-svc" id="svc-cleaning">
+        <figure class="lp-svc-media">
+          <div class="lp-frame"><img class="cover" src="images/steps/iron.jpg" alt="アイロン仕上げ Before/After" loading="lazy" draggable="false"></div>
+          <figcaption data-edit-id="svc-cleaning-caption" data-edit-label="サービス01：画像の説明" data-edit-type="text">シャツの洗濯・アイロン仕上げ（左：前／右：後）</figcaption>
+        </figure>
+        <div class="lp-svc-body">
+          <p class="lp-svc-no"><b>01</b>SERVICE</p>
+          <h3 class="lp-svc-name">クリーニング</h3>
+          <p class="lp-svc-catch" data-edit-id="svc-cleaning-catch" data-edit-label="クリーニング：キャッチコピー" data-edit-type="richtext">撮影前の商品メンテナンスを<strong>無料</strong>でご提供。</p>
+          <p class="lp-svc-desc" data-edit-id="svc-cleaning-desc" data-edit-label="クリーニング：説明文" data-edit-type="text">撮影前の商品メンテナンス。特に古着などを出品する際には避けては通れない作業です。
 商品画像をより綺麗に撮影することを目的としたメンテナンス・クリーニングを、全案件に対して完全無料でご提供しています。撮影の前に"見た目"からレベルを上げ、商品を最高の状態に整えます。</p>
-          <div class="svc-substeps">
-            <div class="svc-substep">
-              <div class="svc-substep-img"><img src="images/steps/wash.jpg" alt="洗濯 Before/After" loading="lazy" draggable="false"></div>
-              <div class="svc-substep-body">
-                <p class="svc-substep-num">STEP 1</p>
-                <h4 class="svc-substep-title" data-edit-id="svc-cleaning-sub1-title" data-edit-label="クリーニング STEP1：見出し" data-edit-type="text">洗濯</h4>
-                <p class="svc-substep-desc" data-edit-id="svc-cleaning-sub1-desc" data-edit-label="クリーニング STEP1：説明" data-edit-type="text">数種類の洗剤を使い分け、古着商品のご依頼は必要に応じて洗濯します。</p>
-              </div>
-            </div>
-            <div class="svc-substep">
-              <div class="svc-substep-img"><img src="images/steps/iron.jpg" alt="アイロン仕上げ Before/After" loading="lazy" draggable="false"></div>
-              <div class="svc-substep-body">
-                <p class="svc-substep-num">STEP 2</p>
-                <h4 class="svc-substep-title" data-edit-id="svc-cleaning-sub2-title" data-edit-label="クリーニング STEP2：見出し" data-edit-type="text">アイロン仕上げ</h4>
-                <p class="svc-substep-desc" data-edit-id="svc-cleaning-sub2-desc" data-edit-label="クリーニング STEP2：説明" data-edit-type="text">業務用の高温スチームでシワや臭いも可能な限り除去。コットン・ウール・化繊など幅広い生地に対応します。</p>
-              </div>
-            </div>
-            <div class="svc-substep">
-              <div class="svc-substep-img"><img src="images/steps/maintenance.jpg" alt="アイテム毎のメンテナンス Before/After" loading="lazy" draggable="false"></div>
-              <div class="svc-substep-body">
-                <p class="svc-substep-num">STEP 3</p>
-                <h4 class="svc-substep-title" data-edit-id="svc-cleaning-sub3-title" data-edit-label="クリーニング STEP3：見出し" data-edit-type="text">アイテム毎のメンテナンス</h4>
-                <p class="svc-substep-desc" data-edit-id="svc-cleaning-sub3-desc" data-edit-label="クリーニング STEP3：説明" data-edit-type="text">靴磨き、レザーアイテムの軽い保湿、アクセサリーの洗浄など、アイテムに応じたケアを行います。</p>
-              </div>
-            </div>
-          </div>
-          <p class="svc-note" data-edit-id="svc-cleaning-note" data-edit-label="クリーニング：注記" data-edit-type="text">※ 強いシミ汚れ・色ヤケ・毛玉等への個別対応、補色・補修は行っておりません。ご指定がある場合はご依頼前にお伝えください。</p>
+          <ul class="lp-ruled">
+            <li><b data-edit-id="svc-cleaning-sub1-title" data-edit-label="クリーニング STEP1：見出し" data-edit-type="text">洗濯</b>：<span data-edit-id="svc-cleaning-sub1-desc" data-edit-label="クリーニング STEP1：説明" data-edit-type="text">数種類の洗剤を使い分け、古着商品のご依頼は必要に応じて洗濯します。</span></li>
+            <li><b data-edit-id="svc-cleaning-sub2-title" data-edit-label="クリーニング STEP2：見出し" data-edit-type="text">アイロン仕上げ</b>：<span data-edit-id="svc-cleaning-sub2-desc" data-edit-label="クリーニング STEP2：説明" data-edit-type="text">業務用の高温スチームでシワや臭いも可能な限り除去。コットン・ウール・化繊など幅広い生地に対応します。</span></li>
+            <li><b data-edit-id="svc-cleaning-sub3-title" data-edit-label="クリーニング STEP3：見出し" data-edit-type="text">アイテム毎のメンテナンス</b>：<span data-edit-id="svc-cleaning-sub3-desc" data-edit-label="クリーニング STEP3：説明" data-edit-type="text">靴磨き、レザーアイテムの軽い保湿、アクセサリーの洗浄など、アイテムに応じたケアを行います。</span></li>
+          </ul>
+          <p class="lp-note" data-edit-id="svc-cleaning-note" data-edit-label="クリーニング：注記" data-edit-type="text">※ 強いシミ汚れ・色ヤケ・毛玉等への個別対応、補色・補修は行っておりません。ご指定がある場合はご依頼前にお伝えください。</p>
         </div>
-      </div>
-      </div>
-    </div>
+      </article>
 
-    <!-- 撮影 -->
-    <div class="svc-bg-wrap" id="svc-photo">
-      <div class="container">
-      <img src="images/headings/photo.webp" alt="撮影" class="svc-heading-img" loading="lazy" draggable="false">
-      <div class="svc-detail svc-detail-reverse">
-        <div class="svc-detail-body">
-          <div class="svc-detail-header">
-            <div class="svc-detail-icon-wrap" style="background:var(--navy)"><i class="fa-solid fa-camera"></i></div>
-            <div>
-              <p class="svc-detail-label">SERVICE 02</p>
-              <p class="svc-detail-catch" data-edit-id="svc-photo-catch" data-edit-label="撮影：キャッチコピー" data-edit-type="text">商品撮影に特化したプロのカメラマンが、商品の魅力を最大限に引き出します。</p>
-            </div>
-          </div>
-          <p class="svc-detail-desc" data-edit-id="svc-photo-desc" data-edit-label="撮影：説明文" data-edit-type="text">長年アパレルのオンライン販売をしているメンバーが撮影を担当。マニアとしての知識も合わせながら、アイテムが最も映える撮影ポイントを押さえた構図で、各商品の魅力や特徴を最大限引き出します。高画質・高解像度を維持しながら、カラーバランスの調整まで行い、鮮やかに商品イメージを再現します。</p>
-          <ul class="svc-detail-points" data-edit-id="svc-photo-points" data-edit-label="撮影：ポイント一覧（1行1項目）" data-edit-type="list">
-            <li><i class="fa-solid fa-circle-check"></i> 基本5〜10枚撮影</li>
+      <article class="lp-svc rev" id="svc-photo">
+        <figure class="lp-svc-media">
+          <div class="lp-frame"><img src="images/samples/jacket-1.webp" alt="撮影例：ジャケットのサムネイル" loading="lazy" draggable="false"></div>
+          <figcaption data-edit-id="svc-photo-caption" data-edit-label="サービス02：画像の説明" data-edit-type="text">撮影例：ジャケットのサムネイル</figcaption>
+        </figure>
+        <div class="lp-svc-body">
+          <p class="lp-svc-no"><b>02</b>SERVICE</p>
+          <h3 class="lp-svc-name">撮影</h3>
+          <p class="lp-svc-catch" data-edit-id="svc-photo-catch" data-edit-label="撮影：キャッチコピー" data-edit-type="text">商品撮影に特化したプロのカメラマンが、商品の魅力を最大限に引き出します。</p>
+          <p class="lp-svc-desc" data-edit-id="svc-photo-desc" data-edit-label="撮影：説明文" data-edit-type="text">長年アパレルのオンライン販売をしているメンバーが撮影を担当。マニアとしての知識も合わせながら、アイテムが最も映える撮影ポイントを押さえた構図で、各商品の魅力や特徴を最大限引き出します。高画質・高解像度を維持しながら、カラーバランスの調整まで行い、鮮やかに商品イメージを再現します。</p>
+          <ul class="lp-ruled" data-edit-id="svc-photo-points" data-edit-label="撮影：ポイント一覧（1行1項目）" data-edit-type="list">
+            <li><i class="fa-solid fa-circle-check"></i> 平均10枚撮影</li>
             <li><i class="fa-solid fa-circle-check"></i> プロ目線の売れる構図</li>
             <li><i class="fa-solid fa-circle-check"></i> 商品の特徴・状態を正確に撮影</li>
             <li><i class="fa-solid fa-circle-check"></i> ディテール・タグ・状態確認カット含む</li>
           </ul>
-          <div class="svc-spec-strip">
-            <p class="svc-spec-label"><i class="fa-solid fa-file-image"></i> 基本納品フォーマット（指定なしお任せの場合）</p>
-            <div class="svc-spec-samples">
-              <div class="svc-spec-sample-img"><img src="images/steps/format-shoes.jpg" alt="納品フォーマットサンプル：シューズ" loading="lazy" draggable="false"></div>
-              <div class="svc-spec-sample-img"><img src="images/steps/format-tshirt.jpg" alt="納品フォーマットサンプル：Tシャツ" loading="lazy" draggable="false"></div>
-              <div class="svc-spec-sample-img"><img src="images/steps/format-accessory.jpg" alt="納品フォーマットサンプル：アクセサリー" loading="lazy" draggable="false"></div>
-            </div>
-            <div class="svc-spec-chips">
-              <span class="svc-spec-chip">白背景</span>
-              <span class="svc-spec-chip">アスペクト比 1:1</span>
-              <span class="svc-spec-chip">2MB以内</span>
-              <span class="svc-spec-chip">JPEG</span>
-              <span class="svc-spec-chip">カラーバランス調整済み</span>
+          <p class="lp-note"><span data-edit-id="svc-photo-format" data-edit-label="撮影：納品フォーマット" data-edit-type="text">納品：白背景・1:1・2MB以内・JPEG・カラーバランス調整済み。</span><span data-edit-id="svc-photo-note" data-edit-label="撮影：注記" data-edit-type="text">※ 別途ご指定がある場合には、ご依頼の前にご相談ください。</span></p>
+        </div>
+      </article>
+      <div class="lp-svc-gal">
+        <div class="lp-gal" id="gallery">
+          <div class="lp-gal-top">
+            <p class="lp-gal-lead">1商品 <b>平均10枚</b> の撮影</p>
+            <div class="lp-tabs" role="tablist" aria-label="撮影サンプルのアイテム">
+              <button type="button" role="tab" class="lp-tab" data-category="tops" aria-selected="false">トップス</button>
+              <button type="button" role="tab" class="lp-tab on" data-category="jacket" aria-selected="true">ジャケット</button>
+              <button type="button" role="tab" class="lp-tab" data-category="pants" aria-selected="false">パンツ</button>
+              <button type="button" role="tab" class="lp-tab" data-category="bag" aria-selected="false">バッグ</button>
+              <button type="button" role="tab" class="lp-tab" data-category="shoes" aria-selected="false">シューズ</button>
+              <button type="button" role="tab" class="lp-tab" data-category="accessory" aria-selected="false">アクセサリー</button>
             </div>
           </div>
-          <p class="svc-note" data-edit-id="svc-photo-note" data-edit-label="撮影：注記" data-edit-type="text">※ 別途ご指定がある場合には、ご依頼の前にご相談ください。</p>
+          <div class="lp-gal-row" id="cat-tops" role="tabpanel" hidden>
+            <figure><img src="images/samples/shirt-1.webp" alt="トップス サムネイル" loading="lazy" draggable="false"><figcaption><b>01</b>サムネイル</figcaption></figure>
+            <figure><img src="images/samples/shirt-2.webp" alt="トップス 正面" loading="lazy" draggable="false"><figcaption><b>02</b>正面</figcaption></figure>
+            <figure><img src="images/samples/shirt-3.webp" alt="トップス 背面" loading="lazy" draggable="false"><figcaption><b>03</b>背面</figcaption></figure>
+            <figure><img src="images/samples/shirt-4.webp" alt="トップス ブランドタグ" loading="lazy" draggable="false"><figcaption><b>04</b>ブランドタグ</figcaption></figure>
+            <figure><img src="images/samples/shirt-5.webp" alt="トップス 品質表示タグ" loading="lazy" draggable="false"><figcaption><b>05</b>品質表示タグ</figcaption></figure>
+            <figure><img src="images/samples/shirt-6.webp" alt="トップス サイズ表記" loading="lazy" draggable="false"><figcaption><b>06</b>サイズ表記</figcaption></figure>
+            <figure><img src="images/samples/shirt-7.webp" alt="トップス ポケット・ファスナー" loading="lazy" draggable="false"><figcaption><b>07</b>ポケット・ファスナー</figcaption></figure>
+            <figure><img src="images/samples/shirt-8.webp" alt="トップス 固有の特徴" loading="lazy" draggable="false"><figcaption><b>08</b>固有の特徴</figcaption></figure>
+            <figure><img src="images/samples/shirt-9.webp" alt="トップス 素材感" loading="lazy" draggable="false"><figcaption><b>09</b>素材感</figcaption></figure>
+          </div>
+          <div class="lp-gal-row" id="cat-jacket" role="tabpanel">
+            <figure><img src="images/samples/jacket-1.webp" alt="ジャケット サムネイル" loading="lazy" draggable="false"><figcaption><b>01</b>サムネイル</figcaption></figure>
+            <figure><img src="images/samples/jacket-2.webp" alt="ジャケット 正面" loading="lazy" draggable="false"><figcaption><b>02</b>正面</figcaption></figure>
+            <figure><img src="images/samples/jacket-3.webp" alt="ジャケット 背面" loading="lazy" draggable="false"><figcaption><b>03</b>背面</figcaption></figure>
+            <figure><img src="images/samples/jacket-4.webp" alt="ジャケット ブランドタグ" loading="lazy" draggable="false"><figcaption><b>04</b>ブランドタグ</figcaption></figure>
+            <figure><img src="images/samples/jacket-5.webp" alt="ジャケット 品質表示タグ" loading="lazy" draggable="false"><figcaption><b>05</b>品質表示タグ</figcaption></figure>
+            <figure><img src="images/samples/jacket-6.webp" alt="ジャケット サイズ表記" loading="lazy" draggable="false"><figcaption><b>06</b>サイズ表記</figcaption></figure>
+            <figure><img src="images/samples/jacket-7.webp" alt="ジャケット ポケット・ファスナー" loading="lazy" draggable="false"><figcaption><b>07</b>ポケット・ファスナー</figcaption></figure>
+            <figure><img src="images/samples/jacket-8.webp" alt="ジャケット 固有の特徴" loading="lazy" draggable="false"><figcaption><b>08</b>固有の特徴</figcaption></figure>
+            <figure><img src="images/samples/jacket-9.webp" alt="ジャケット 素材感" loading="lazy" draggable="false"><figcaption><b>09</b>素材感</figcaption></figure>
+          </div>
+          <div class="lp-gal-row" id="cat-pants" role="tabpanel" hidden>
+            <figure><img src="images/samples/pants-1.webp" alt="パンツ サムネイル" loading="lazy" draggable="false"><figcaption><b>01</b>サムネイル</figcaption></figure>
+            <figure><img src="images/samples/pants-2.webp" alt="パンツ 正面" loading="lazy" draggable="false"><figcaption><b>02</b>正面</figcaption></figure>
+            <figure><img src="images/samples/pants-3.webp" alt="パンツ 背面" loading="lazy" draggable="false"><figcaption><b>03</b>背面</figcaption></figure>
+            <figure><img src="images/samples/pants-4.webp" alt="パンツ ブランドタグ" loading="lazy" draggable="false"><figcaption><b>04</b>ブランドタグ</figcaption></figure>
+            <figure><img src="images/samples/pants-5.webp" alt="パンツ 品質表示タグ" loading="lazy" draggable="false"><figcaption><b>05</b>品質表示タグ</figcaption></figure>
+            <figure><img src="images/samples/pants-6.webp" alt="パンツ サイズ表記" loading="lazy" draggable="false"><figcaption><b>06</b>サイズ表記</figcaption></figure>
+            <figure><img src="images/samples/pants-7.webp" alt="パンツ ポケット・ファスナー" loading="lazy" draggable="false"><figcaption><b>07</b>ポケット・ファスナー</figcaption></figure>
+            <figure><img src="images/samples/pants-8.webp" alt="パンツ 固有の特徴" loading="lazy" draggable="false"><figcaption><b>08</b>固有の特徴</figcaption></figure>
+            <figure><img src="images/samples/pants-9.webp" alt="パンツ 素材感" loading="lazy" draggable="false"><figcaption><b>09</b>素材感</figcaption></figure>
+            <figure><img src="images/samples/pants-10.webp" alt="パンツ 汚れ・ダメージ" loading="lazy" draggable="false"><figcaption><b>10</b>汚れ・ダメージ</figcaption></figure>
+          </div>
+          <div class="lp-gal-row" id="cat-bag" role="tabpanel" hidden>
+            <figure><img src="images/samples/bag-1.webp" alt="バッグ サムネイル" loading="lazy" draggable="false"><figcaption><b>01</b>サムネイル</figcaption></figure>
+            <figure><img src="images/samples/bag-2.webp" alt="バッグ 正面" loading="lazy" draggable="false"><figcaption><b>02</b>正面</figcaption></figure>
+            <figure><img src="images/samples/bag-3.webp" alt="バッグ 背面" loading="lazy" draggable="false"><figcaption><b>03</b>背面</figcaption></figure>
+            <figure><img src="images/samples/bag-4.webp" alt="バッグ ブランドタグ" loading="lazy" draggable="false"><figcaption><b>04</b>ブランドタグ</figcaption></figure>
+            <figure><img src="images/samples/bag-5.webp" alt="バッグ 品質表示タグ" loading="lazy" draggable="false"><figcaption><b>05</b>品質表示タグ</figcaption></figure>
+            <figure><img src="images/samples/bag-6.webp" alt="バッグ サイズ表記" loading="lazy" draggable="false"><figcaption><b>06</b>サイズ表記</figcaption></figure>
+            <figure><img src="images/samples/bag-7.webp" alt="バッグ ポケット・ファスナー" loading="lazy" draggable="false"><figcaption><b>07</b>ポケット・ファスナー</figcaption></figure>
+            <figure><img src="images/samples/bag-8.webp" alt="バッグ 固有の特徴" loading="lazy" draggable="false"><figcaption><b>08</b>固有の特徴</figcaption></figure>
+            <figure><img src="images/samples/bag-9.webp" alt="バッグ 素材感" loading="lazy" draggable="false"><figcaption><b>09</b>素材感</figcaption></figure>
+          </div>
+          <div class="lp-gal-row" id="cat-shoes" role="tabpanel" hidden>
+            <figure><img src="images/samples/shoes-1.webp" alt="シューズ サムネイル" loading="lazy" draggable="false"><figcaption><b>01</b>サムネイル</figcaption></figure>
+            <figure><img src="images/samples/shoes-2.webp" alt="シューズ 正面" loading="lazy" draggable="false"><figcaption><b>02</b>正面</figcaption></figure>
+            <figure><img src="images/samples/shoes-3.webp" alt="シューズ 背面" loading="lazy" draggable="false"><figcaption><b>03</b>背面</figcaption></figure>
+            <figure><img src="images/samples/shoes-4.webp" alt="シューズ ブランドタグ" loading="lazy" draggable="false"><figcaption><b>04</b>ブランドタグ</figcaption></figure>
+            <figure><img src="images/samples/shoes-5.webp" alt="シューズ 品質表示タグ" loading="lazy" draggable="false"><figcaption><b>05</b>品質表示タグ</figcaption></figure>
+            <figure><img src="images/samples/shoes-6.webp" alt="シューズ サイズ表記" loading="lazy" draggable="false"><figcaption><b>06</b>サイズ表記</figcaption></figure>
+            <figure><img src="images/samples/shoes-7.webp" alt="シューズ ポケット・ファスナー" loading="lazy" draggable="false"><figcaption><b>07</b>ポケット・ファスナー</figcaption></figure>
+            <figure><img src="images/samples/shoes-8.webp" alt="シューズ 固有の特徴" loading="lazy" draggable="false"><figcaption><b>08</b>固有の特徴</figcaption></figure>
+            <figure><img src="images/samples/shoes-9.webp" alt="シューズ 素材感" loading="lazy" draggable="false"><figcaption><b>09</b>素材感</figcaption></figure>
+          </div>
+          <div class="lp-gal-row" id="cat-accessory" role="tabpanel" hidden>
+            <figure><img src="images/samples/accessory-1.webp" alt="アクセサリー サムネイル" loading="lazy" draggable="false"><figcaption><b>01</b>サムネイル</figcaption></figure>
+            <figure><img src="images/samples/accessory-2.webp" alt="アクセサリー 正面" loading="lazy" draggable="false"><figcaption><b>02</b>正面</figcaption></figure>
+            <figure><img src="images/samples/accessory-3.webp" alt="アクセサリー 背面" loading="lazy" draggable="false"><figcaption><b>03</b>背面</figcaption></figure>
+            <figure><img src="images/samples/accessory-4.webp" alt="アクセサリー ブランドタグ" loading="lazy" draggable="false"><figcaption><b>04</b>ブランドタグ</figcaption></figure>
+            <figure><img src="images/samples/accessory-5.webp" alt="アクセサリー 品質表示タグ" loading="lazy" draggable="false"><figcaption><b>05</b>品質表示タグ</figcaption></figure>
+            <figure><img src="images/samples/accessory-6.webp" alt="アクセサリー サイズ表記" loading="lazy" draggable="false"><figcaption><b>06</b>サイズ表記</figcaption></figure>
+            <figure><img src="images/samples/accessory-7.webp" alt="アクセサリー ポケット・ファスナー" loading="lazy" draggable="false"><figcaption><b>07</b>ポケット・ファスナー</figcaption></figure>
+            <figure><img src="images/samples/accessory-8.webp" alt="アクセサリー 固有の特徴" loading="lazy" draggable="false"><figcaption><b>08</b>固有の特徴</figcaption></figure>
+          </div>
+          <p class="lp-note">※ 撮影枚数・構図はアイテムの特徴・状態に応じて変わります。</p>
         </div>
       </div>
 
-      <!-- ▼ 撮影サンプルギャラリー（撮影直下） -->
-      <div class="gallery-inline" id="gallery">
-        <div class="gallery-info-banner">
-          <div class="gallery-info-main">
-            <i class="fa-solid fa-camera-retro"></i>
-            <span>1商品 <strong>5〜10枚</strong> の撮影</span>
-          </div>
-          <div class="gallery-info-shots">
-            <span>①サムネイル</span>
-            <span>②正面</span>
-            <span>③背面</span>
-            <span>④ブランドタグ</span>
-            <span>⑤品質表示タグ</span>
-            <span>⑥サイズ表記</span>
-            <span class="gallery-shots-break"></span>
-            <span>⑦ポケット・ファスナーなど</span>
-            <span>⑧その他固有の特徴</span>
-            <span>⑨素材感を示すカット</span>
-            <span>⑩汚れやダメージなど</span>
-          </div>
-        </div>
-        <p class="gallery-note"><i class="fa-solid fa-circle-info"></i> ※ ５〜１０枚の中で撮影枚数・構図はアイテムの特徴・状態に応じて変わります。</p>
-
-        <!-- トップス -->
-        <div class="gallery-block">
-          <p class="gallery-block-label">トップス</p>
-          <div class="gallery-shot-row">
-            <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/shirt-1.webp" alt="トップス①" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/shirt-2.webp" alt="トップス②" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/shirt-3.webp" alt="トップス③" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/shirt-4.webp" alt="トップス④" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/shirt-5.webp" alt="トップス⑤" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/shirt-6.webp" alt="トップス⑥" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/shirt-7.webp" alt="トップス⑦" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/shirt-8.webp" alt="トップス⑧" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/shirt-9.webp" alt="トップス⑨" loading="lazy"></div>
-          </div>
-        </div>
-
-        <!-- ジャケット -->
-        <div class="gallery-block">
-          <p class="gallery-block-label">ジャケット</p>
-          <div class="gallery-shot-row">
-            <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/jacket-1.webp" alt="ジャケット①" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/jacket-2.webp" alt="ジャケット②" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/jacket-3.webp" alt="ジャケット③" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/jacket-4.webp" alt="ジャケット④" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/jacket-5.webp" alt="ジャケット⑤" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/jacket-6.webp" alt="ジャケット⑥" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/jacket-7.webp" alt="ジャケット⑦" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/jacket-8.webp" alt="ジャケット⑧" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/jacket-9.webp" alt="ジャケット⑨" loading="lazy"></div>
-          </div>
-        </div>
-
-        <!-- パンツ -->
-        <div class="gallery-block">
-          <p class="gallery-block-label">パンツ</p>
-          <div class="gallery-shot-row">
-            <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/pants-1.webp" alt="パンツ①" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/pants-2.webp" alt="パンツ②" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/pants-3.webp" alt="パンツ③" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/pants-4.webp" alt="パンツ④" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/pants-5.webp" alt="パンツ⑤" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/pants-6.webp" alt="パンツ⑥" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/pants-7.webp" alt="パンツ⑦" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/pants-8.webp" alt="パンツ⑧" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/pants-9.webp" alt="パンツ⑨" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑩</span><img src="images/samples/pants-10.webp" alt="パンツ⑩" loading="lazy"></div>
-          </div>
-        </div>
-
-        <!-- バッグ -->
-        <div class="gallery-block">
-          <p class="gallery-block-label">バッグ</p>
-          <div class="gallery-shot-row">
-            <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/bag-1.webp" alt="バッグ①" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/bag-2.webp" alt="バッグ②" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/bag-3.webp" alt="バッグ③" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/bag-4.webp" alt="バッグ④" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/bag-5.webp" alt="バッグ⑤" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/bag-6.webp" alt="バッグ⑥" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/bag-7.webp" alt="バッグ⑦" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/bag-8.webp" alt="バッグ⑧" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/bag-9.webp" alt="バッグ⑨" loading="lazy"></div>
-          </div>
-        </div>
-
-        <!-- シューズ -->
-        <div class="gallery-block">
-          <p class="gallery-block-label">シューズ</p>
-          <div class="gallery-shot-row">
-            <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/shoes-1.webp" alt="シューズ①" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/shoes-2.webp" alt="シューズ②" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/shoes-3.webp" alt="シューズ③" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/shoes-4.webp" alt="シューズ④" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/shoes-5.webp" alt="シューズ⑤" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/shoes-6.webp" alt="シューズ⑥" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/shoes-7.webp" alt="シューズ⑦" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/shoes-8.webp" alt="シューズ⑧" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/shoes-9.webp" alt="シューズ⑨" loading="lazy"></div>
-          </div>
-        </div>
-
-        <!-- アクセサリー -->
-        <div class="gallery-block">
-          <p class="gallery-block-label">アクセサリー</p>
-          <div class="gallery-shot-row">
-            <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/accessory-1.webp" alt="アクセサリー①" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/accessory-2.webp" alt="アクセサリー②" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/accessory-3.webp" alt="アクセサリー③" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/accessory-4.webp" alt="アクセサリー④" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/accessory-5.webp" alt="アクセサリー⑤" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/accessory-6.webp" alt="アクセサリー⑥" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/accessory-7.webp" alt="アクセサリー⑦" loading="lazy"></div>
-            <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/accessory-8.webp" alt="アクセサリー⑧" loading="lazy"></div>
-          </div>
-        </div>
-
-      </div>
-      </div>
-    </div>
-
-    <!-- 採寸 -->
-    <div class="svc-bg-wrap" id="svc-measurement">
-      <div class="container">
-      <img src="images/headings/measurement.webp" alt="採寸" class="svc-heading-img" loading="lazy" draggable="false">
-      <div class="svc-detail">
-        <div class="svc-detail-body">
-          <div class="svc-detail-header">
-            <div class="svc-detail-icon-wrap" style="background:#2c6e49"><i class="fa-solid fa-ruler"></i></div>
-            <div>
-              <p class="svc-detail-label">SERVICE 03</p>
-              <p class="svc-detail-catch" data-edit-id="svc-measurement-catch" data-edit-label="採寸：キャッチコピー" data-edit-type="text">ファッション好きが本当に求める情報を、SEO対策まで施して登録。</p>
-            </div>
-          </div>
-          <p class="svc-detail-desc" data-edit-id="svc-measurement-desc" data-edit-label="採寸：説明文" data-edit-type="text">アイテム毎にターゲットから需要の高い採寸情報に加え、年代・モデル名・通称／別名など、好きな人が本当に求める商品情報をSEO対策とともに登録します。表記サイズ・実寸・カラー・素材・状態ランクまで、買い手の判断に必要な情報を漏れなく揃えます。</p>
-          <ul class="svc-detail-points" data-edit-id="svc-measurement-points" data-edit-label="採寸：ポイント一覧（1行1項目）" data-edit-type="list">
+      <article class="lp-svc" id="svc-measurement">
+        <figure class="lp-svc-media">
+          <div class="lp-frame"><img class="pad" src="images/steps/measure-points.jpg" alt="採寸箇所：トップス・ボトム・バッグ・アクセサリー" loading="lazy" draggable="false"></div>
+          <figcaption data-edit-id="svc-measurement-caption" data-edit-label="サービス03：画像の説明" data-edit-type="text">採寸箇所の例（トップス・ボトム・バッグ・アクセサリー）</figcaption>
+        </figure>
+        <div class="lp-svc-body">
+          <p class="lp-svc-no"><b>03</b>SERVICE</p>
+          <h3 class="lp-svc-name">採寸</h3>
+          <p class="lp-svc-catch" data-edit-id="svc-measurement-catch" data-edit-label="採寸：キャッチコピー" data-edit-type="text">ファッション好きが本当に求める情報を、SEO対策まで施して登録。</p>
+          <p class="lp-svc-desc" data-edit-id="svc-measurement-desc" data-edit-label="採寸：説明文" data-edit-type="text">アイテム毎にターゲットから需要の高い採寸情報に加え、年代・モデル名・通称／別名など、好きな人が本当に求める商品情報をSEO対策とともに登録します。表記サイズ・実寸・カラー・素材・状態ランクまで、買い手の判断に必要な情報を漏れなく揃えます。</p>
+          <ul class="lp-ruled" data-edit-id="svc-measurement-points" data-edit-label="採寸：ポイント一覧（1行1項目）" data-edit-type="list">
             <li><i class="fa-solid fa-circle-check"></i> 商品に合わせた採寸箇所の設定</li>
             <li><i class="fa-solid fa-circle-check"></i> SEO対策済み説明文の作成</li>
             <li><i class="fa-solid fa-circle-check"></i> カラー・素材・状態ランクまで登録</li>
             <li><i class="fa-solid fa-circle-check"></i> CSV・Excel・紙面でのデータ納品に対応</li>
           </ul>
-          <div class="svc-measure-diagram">
-            <img src="images/steps/measure-points.jpg" alt="採寸箇所：トップス・ボトム・バッグ・アクセサリー" loading="lazy" draggable="false">
-          </div>
-          <p class="svc-note" data-edit-id="svc-measurement-note" data-edit-label="採寸：注記" data-edit-type="text">※ 帽子・財布などその他のアイテムも、需要が高い箇所を計測します。弊社マニュアルのもと正確に計測しますが、計測方法により数mm〜数cmの誤差が発生する場合がございます。</p>
-          <div class="svc-reg-sample">
-            <p class="svc-reg-label"><i class="fa-solid fa-clipboard-list"></i> 登録情報の一例</p>
-            <div class="svc-ec-mock" id="svc-ec-mock">
-              <div class="svc-ec-topbar">
-                <span class="svc-ec-dot svc-ec-dot-red"></span>
-                <span class="svc-ec-dot svc-ec-dot-yellow"></span>
-                <span class="svc-ec-dot svc-ec-dot-green"></span>
-                <span class="svc-ec-status"><span class="svc-ec-status-dot"></span></span>
-              </div>
-              <div class="svc-ec-body">
-                <div class="svc-ec-image">
-                  <img src="images/steps/sample-jacket.jpg" alt="Levi's デニムジャケット" loading="lazy" draggable="false">
-                </div>
-                <div class="svc-ec-form">
-                  <label class="svc-ec-label">商品名</label>
-                  <div class="svc-ec-field svc-ec-field-title">
-                    <span class="svc-ec-typing" data-text="Levi's 70500-0401 ユーロモデル ビンテージ デニム トラッカージャケット Lサイズ 00年代 クロアチア製"></span><span class="svc-ec-cursor"></span>
-                  </div>
-                  <div class="svc-ec-grid">
-                    <div class="svc-ec-item" style="--d:1"><label class="svc-ec-label">表記サイズ</label><div class="svc-ec-field">L<i class="fa-solid fa-check svc-ec-check"></i></div></div>
-                    <div class="svc-ec-item" style="--d:2"><label class="svc-ec-label">カラー</label><div class="svc-ec-field">インディゴ ブルー<i class="fa-solid fa-check svc-ec-check"></i></div></div>
-                    <div class="svc-ec-item svc-ec-item-wide" style="--d:3"><label class="svc-ec-label">実寸</label><div class="svc-ec-field">着丈 61.5cm / 身幅 47cm / 肩幅 43.5cm / 袖丈 63cm<i class="fa-solid fa-check svc-ec-check"></i></div></div>
-                    <div class="svc-ec-item" style="--d:4"><label class="svc-ec-label">コンディション</label><div class="svc-ec-field">やや傷や汚れあり<i class="fa-solid fa-check svc-ec-check"></i></div></div>
-                    <div class="svc-ec-item" style="--d:5"><label class="svc-ec-label">素材</label><div class="svc-ec-field">コットン<i class="fa-solid fa-check svc-ec-check"></i></div></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <p class="svc-note" data-edit-id="svc-measurement-note2" data-edit-label="採寸：登録例の注記" data-edit-type="text">※ 文言・登録項目・納品フォーマットは、店舗様のご要望に応じて調整可能です（自社データに合わせた形式、店舗名・定型文の挿入など）。</p>
-          </div>
+          <p class="lp-note" data-edit-id="svc-measurement-note" data-edit-label="採寸：注記" data-edit-type="text">※ 帽子・財布などその他のアイテムも、需要が高い箇所を計測します。弊社マニュアルのもと正確に計測しますが、計測方法により数mm〜数cmの誤差が発生する場合がございます。</p>
         </div>
-      </div>
-      </div>
-    </div>
+      </article>
 
-    <!-- 出品 -->
-    <div class="svc-bg-wrap" id="svc-listing">
-      <div class="container">
-      <img src="images/headings/listing.webp" alt="出品" class="svc-heading-img" loading="lazy" draggable="false">
-      <div class="svc-detail svc-detail-reverse">
-        <div class="svc-detail-body">
-          <div class="svc-detail-header">
-            <div class="svc-detail-icon-wrap" style="background:#7b2d8b"><i class="fa-solid fa-store"></i></div>
-            <div>
-              <p class="svc-detail-label">SERVICE 04</p>
-              <p class="svc-detail-catch" data-edit-id="svc-listing-catch" data-edit-label="出品：キャッチコピー" data-edit-type="text">複数の主要EC・モールへ同時出品・オフラインとの在庫連携も可能</p>
-            </div>
+      <article class="lp-svc rev" id="svc-listing">
+        <figure class="lp-svc-media">
+          <div class="lp-frame plats">
+            <span><img src="images/platforms/mercari.png" alt="" loading="lazy" draggable="false"><small>メルカリShops</small></span>
+            <span><img src="images/platforms/base.png" alt="" loading="lazy" draggable="false"><small>BASE</small></span>
+            <span><img src="images/platforms/stores.png" alt="" loading="lazy" draggable="false"><small>STORES</small></span>
+            <span><img src="images/platforms/shopify.png" alt="" loading="lazy" draggable="false"><small>Shopify</small></span>
+            <span><img src="images/platforms/yahuoku.png" alt="" loading="lazy" draggable="false"><small>ヤフオク！</small></span>
+            <span><img src="images/platforms/yahoo-shopping.png" alt="" loading="lazy" draggable="false"><small>Yahoo!<wbr>ショッピング</small></span>
+            <span><img src="images/platforms/rakuten.png" alt="" loading="lazy" draggable="false"><small>楽天市場</small></span>
+            <span><img src="images/platforms/sumareji.png" alt="" loading="lazy" draggable="false"><small>スマレジ</small></span>
           </div>
-          <p class="svc-detail-desc" data-edit-id="svc-listing-desc" data-edit-label="出品：説明文" data-edit-type="text">撮影・採寸・説明文が完成したら、ご利用中の大手モールや自社ECサイトなど、ご希望のプラットフォームへ代わりに出品します。メルカリShops・BASE・STORES・PayID・ヤフオク・Yahoo!ショッピング・Shopify・楽天市場に対応。サイトの仕様に応じたカテゴリの最適化・ブランド指定にも対応し、複数サイトへの同時出品もまとめてお任せいただけます。
+          <figcaption data-edit-id="svc-listing-caption" data-edit-label="サービス04：画像の説明" data-edit-type="text">以下の主要ECサイト・モールに対応しています。（スマレジは実店舗との在庫連携）</figcaption>
+        </figure>
+        <div class="lp-svc-body">
+          <p class="lp-svc-no"><b>04</b>SERVICE</p>
+          <h3 class="lp-svc-name">出品</h3>
+          <p class="lp-svc-catch" data-edit-id="svc-listing-catch" data-edit-label="出品：キャッチコピー" data-edit-type="text">複数の主要EC・モールへ同時出品・オフラインとの在庫連携も可能</p>
+          <p class="lp-svc-desc" data-edit-id="svc-listing-desc" data-edit-label="出品：説明文" data-edit-type="text">撮影・採寸・説明文が完成したら、ご利用中の大手モールや自社ECサイトなど、ご希望のプラットフォームへ代わりに出品します。メルカリShops・BASE・STORES・PayID・ヤフオク・Yahoo!ショッピング・Shopify・楽天市場に対応。サイトの仕様に応じたカテゴリの最適化・ブランド指定にも対応し、複数サイトへの同時出品もまとめてお任せいただけます。
 また、スマレジとの連携により実店舗との在庫も同期することも可能です。</p>
-          <ul class="svc-detail-points" data-edit-id="svc-listing-points" data-edit-label="出品：ポイント一覧（1行1項目）" data-edit-type="list">
+          <ul class="lp-ruled" data-edit-id="svc-listing-points" data-edit-label="出品：ポイント一覧（1行1項目）" data-edit-type="list">
             <li><i class="fa-solid fa-circle-check"></i> 複数サイトへの同時出品OK</li>
             <li><i class="fa-solid fa-circle-check"></i> 商品ページ作成〜データ入力まで全て代行</li>
             <li><i class="fa-solid fa-circle-check"></i> カテゴリ最適化・ブランド指定・価格設定も対応</li>
             <li><i class="fa-solid fa-circle-check"></i> 商品編集や価格変更はお客様自身でも自由に調整可能</li>
           </ul>
-          <p class="svc-note" data-edit-id="svc-listing-note" data-edit-label="出品：注記" data-edit-type="text">※ 上記以外のプラットフォームも対応可能な場合がございます。是非ご相談ください。
+          <p class="lp-note" data-edit-id="svc-listing-note" data-edit-label="出品：注記" data-edit-type="text">※ 上記以外のプラットフォームも対応可能な場合がございます。是非ご相談ください。
 ※各プラットフォームの出品にあたっての規約のご確認や開設はお客様自身でお願いいたします。アカウントの管理・運用や規約への適合、またそれらに起因して生じた事象についての責任は負いかねます。あらかじめご了承ください。
 なおYahoo!については、個人向けのヤフオク!ではなくストアアカウント（Yahoo!ショッピング）のご契約が必要です。</p>
-          <div class="svc-option-box" id="svc-website">
-            <div class="svc-option-icon"><i class="fa-solid fa-laptop-code"></i></div>
-            <div>
-              <p class="svc-option-title" data-edit-id="svc-listing-option-title" data-edit-label="出品：オプション見出し" data-edit-type="text">オプション：自社サイト制作も対応可</p>
-              <p class="svc-option-desc" data-edit-id="svc-listing-option-desc" data-edit-label="出品：オプション説明" data-edit-type="text">店舗様の好みに合わせた自社ECサイトを制作します。制作後のデータ管理・デザイン変更もお任せください。ECサイトのほか、LP1ページのみの制作にも対応します。</p>
-              <ul class="svc-option-points" data-edit-id="svc-listing-option-points" data-edit-label="出品：オプション詳細（1行1項目）" data-edit-type="list">
-                <li><i class="fa-solid fa-yen-sign"></i> サイト作成費用 ¥100,000〜 ＋ ご希望サイト規定の手数料等</li>
-                <li><i class="fa-solid fa-tag"></i> 完成後のECサイトへの出品は、通常の「出品」と同料金</li>
-              </ul>
-              <p class="svc-option-note" data-edit-id="svc-listing-option-note" data-edit-label="出品：オプション注記" data-edit-type="text">※ 制作費用や必要機能など、詳しくは別途お問い合わせください。</p>
-            </div>
+          <div class="lp-option" id="svc-website">
+            <p class="lp-option-t" data-edit-id="svc-listing-option-title" data-edit-label="出品：オプション見出し" data-edit-type="text">オプション：自社サイト制作も対応可</p>
+            <p data-edit-id="svc-listing-option-desc" data-edit-label="出品：オプション説明" data-edit-type="text">店舗様の好みに合わせた自社ECサイトを制作します。制作後のデータ管理・デザイン変更もお任せください。ECサイトのほか、LP1ページのみの制作にも対応します。</p>
+            <ul class="lp-ruled" data-edit-id="svc-listing-option-points" data-edit-label="出品：オプション詳細（1行1項目）" data-edit-type="list">
+            <li><i class="fa-solid fa-yen-sign"></i> サイト作成費用 ¥100,000〜 ＋ ご希望サイト規定の手数料等</li>
+            <li><i class="fa-solid fa-tag"></i> 完成後のECサイトへの出品は、通常の「出品」と同料金</li>
+          </ul>
           </div>
         </div>
-      </div>
-      </div>
-    </div>
-
-  </section>
-
-  <!-- 対応プラットフォーム -->
-  <section class="section section-light" id="platforms">
-    <div class="container">
-      <div class="section-header">
-        <p class="section-label">SUPPORTED PLATFORMS</p>
-        <h2 class="section-title">対応プラットフォーム</h2>
-        <p class="section-desc">以下の主要ECサイト・モールに対応しています。（スマレジは実店舗との在庫連携）</p>
-      </div>
-      <div class="platform-grid">
-        <div class="platform-item">
-          <div class="plat-logo"><img src="images/platforms/mercari.png" alt="メルカリShops" loading="lazy" draggable="false"></div>
-          <span>メルカリShops</span>
-        </div>
-        <div class="platform-item">
-          <div class="plat-logo"><img src="images/platforms/base.png" alt="BASE" loading="lazy" draggable="false"></div>
-          <span>BASE</span>
-        </div>
-        <div class="platform-item">
-          <div class="plat-logo"><img src="images/platforms/stores.png" alt="STORES" loading="lazy" draggable="false"></div>
-          <span>STORES</span>
-        </div>
-        <div class="platform-item">
-          <div class="plat-logo"><img src="images/platforms/shopify.png" alt="Shopify" loading="lazy" draggable="false"></div>
-          <span>Shopify</span>
-        </div>
-        <div class="platform-item">
-          <div class="plat-logo"><img src="images/platforms/yahuoku.png" alt="ヤフオク！" loading="lazy" draggable="false"></div>
-          <span>ヤフオク！</span>
-        </div>
-        <div class="platform-item">
-          <div class="plat-logo"><img src="images/platforms/yahoo-shopping.png" alt="Yahoo!ショッピング" loading="lazy" draggable="false"></div>
-          <span>Yahoo!ショッピング</span>
-        </div>
-        <div class="platform-item">
-          <div class="plat-logo"><img src="images/platforms/rakuten.png" alt="楽天市場" loading="lazy" draggable="false"></div>
-          <span>楽天市場</span>
-        </div>
-        <div class="platform-item">
-          <div class="plat-logo"><img src="images/platforms/sumareji.png" alt="スマレジ" loading="lazy" draggable="false"></div>
-          <span>スマレジ</span>
-        </div>
-      </div>
+      </article>
     </div>
   </section>
 
-  <!-- 撮影サンプル（旧・非表示） -->
-  <section style="display:none">
-    <div class="container">
-      <div class="gallery-info-banner-removed">
-        <div class="gallery-info-main">
-          <i class="fa-solid fa-camera-retro"></i>
-          <span>1商品 <strong>5枚以上</strong> 撮影</span>
-        </div>
-        <div class="gallery-info-shots">
-          <span><i class="fa-solid fa-circle-check"></i> ①サムネイル</span>
-          <span><i class="fa-solid fa-circle-check"></i> ②正面</span>
-          <span><i class="fa-solid fa-circle-check"></i> ③背面</span>
-          <span><i class="fa-solid fa-circle-check"></i> ④ブランドタグ</span>
-          <span><i class="fa-solid fa-circle-check"></i> ⑤品質表示タグ</span>
-          <span><i class="fa-solid fa-circle-check"></i> ⑥サイズ表記</span>
-          <span><i class="fa-solid fa-circle-check"></i> ⑦ダメージ箇所</span>
-          <span><i class="fa-solid fa-circle-check"></i> ⑧ポケット・ファスナーなど</span>
-        </div>
+  <!-- 料金 -->
+  <section class="lp-sec lp-blue" id="price">
+    <div class="lp-in">
+      <div class="lp-head on-blue">
+        <p class="lp-no"><b>03</b>PRICING</p>
+        <h2 class="lp-strip">料金プランの一例</h2>
+        <p class="lp-desc">すべて<strong>1商品あたりの単価</strong>です。<br>月にご依頼いただく点数が増えるほど、単価が下がります。</p>
       </div>
-
-      <!-- カテゴリータブ -->
-      <div class="gallery-tabs">
-        <button class="gallery-tab active" data-category="jacket">ジャケット</button>
-        <button class="gallery-tab" data-category="pants">パンツ</button>
-        <button class="gallery-tab" data-category="shirt">シャツ</button>
-        <button class="gallery-tab" data-category="shoes">シューズ</button>
-        <button class="gallery-tab" data-category="bag">バッグ</button>
-        <button class="gallery-tab" data-category="accessory">アクセサリー</button>
-      </div>
-
-      <!-- ジャケット（Carhartt） -->
-      <div class="gallery-category active" id="cat-jacket">
-        <p class="gallery-cat-label">Carhartt デッキジャケット ／ 10カット撮影例</p>
-        <div class="gallery-shot-row">
-          <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/jacket-1.webp" alt="ジャケット-サムネイル" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/jacket-2.webp" alt="ジャケット-正面" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/jacket-3.webp" alt="ジャケット-背面" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/jacket-4.webp" alt="ジャケット-ブランドタグ" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/jacket-5.webp" alt="ジャケット-品質タグ" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/jacket-6.webp" alt="ジャケット-ディテール" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/jacket-7.webp" alt="ジャケット-ポケット" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/jacket-8.webp" alt="ジャケット-状態" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/jacket-9.webp" alt="ジャケット-全体" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑩</span><img src="images/samples/jacket-10.webp" alt="ジャケット-素材感" loading="lazy"></div>
-        </div>
-      </div>
-
-      <!-- パンツ（Levi's） -->
-      <div class="gallery-category" id="cat-pants">
-        <p class="gallery-cat-label">Levi's デニムパンツ ／ 10カット撮影例</p>
-        <div class="gallery-shot-row">
-          <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/pants-1.webp" alt="パンツ-サムネイル" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/pants-2.webp" alt="パンツ-正面" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/pants-3.webp" alt="パンツ-背面" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/pants-4.webp" alt="パンツ-ブランドタグ" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/pants-5.webp" alt="パンツ-品質タグ" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/pants-6.webp" alt="パンツ-ウエスト" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/pants-7.webp" alt="パンツ-ポケット" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/pants-8.webp" alt="パンツ-裾" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/pants-9.webp" alt="パンツ-全体" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑩</span><img src="images/samples/pants-10.webp" alt="パンツ-素材感" loading="lazy"></div>
-        </div>
-      </div>
-
-      <!-- シャツ（Ralph Lauren） -->
-      <div class="gallery-category" id="cat-shirt">
-        <p class="gallery-cat-label">Ralph Lauren シャツ ／ 9カット撮影例</p>
-        <div class="gallery-shot-row">
-          <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/shirt-1.webp" alt="シャツ-サムネイル" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/shirt-2.webp" alt="シャツ-正面" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/shirt-3.webp" alt="シャツ-背面" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/shirt-4.webp" alt="シャツ-ブランドタグ" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/shirt-5.webp" alt="シャツ-品質タグ" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/shirt-6.webp" alt="シャツ-ディテール" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/shirt-7.webp" alt="シャツ-ボタン" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/shirt-8.webp" alt="シャツ-状態" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/shirt-9.webp" alt="シャツ-全体" loading="lazy"></div>
-        </div>
-      </div>
-
-      <!-- シューズ（RED WING） -->
-      <div class="gallery-category" id="cat-shoes">
-        <p class="gallery-cat-label">RED WING シューズ ／ 10カット撮影例</p>
-        <div class="gallery-shot-row">
-          <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/shoes-1.webp" alt="シューズ-サムネイル" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/shoes-2.webp" alt="シューズ-正面" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/shoes-3.webp" alt="シューズ-背面" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/shoes-4.webp" alt="シューズ-ブランドタグ" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/shoes-5.webp" alt="シューズ-品質タグ" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/shoes-6.webp" alt="シューズ-サイズ表記" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/shoes-7.webp" alt="シューズ-ソール" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/shoes-8.webp" alt="シューズ-側面" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/shoes-9.webp" alt="シューズ-全体" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑩</span><img src="images/samples/shoes-10.webp" alt="シューズ-素材感" loading="lazy"></div>
-        </div>
-      </div>
-
-      <!-- バッグ（Coach） -->
-      <div class="gallery-category" id="cat-bag">
-        <p class="gallery-cat-label">Coach バッグ ／ 9カット撮影例</p>
-        <div class="gallery-shot-row">
-          <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/bag-1.webp" alt="バッグ-サムネイル" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/bag-2.webp" alt="バッグ-正面" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/bag-3.webp" alt="バッグ-背面" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/bag-4.webp" alt="バッグ-ブランドタグ" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/bag-5.webp" alt="バッグ-内側" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/bag-6.webp" alt="バッグ-金具" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/bag-7.webp" alt="バッグ-ファスナー" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/bag-8.webp" alt="バッグ-状態" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/bag-9.webp" alt="バッグ-全体" loading="lazy"></div>
-        </div>
-      </div>
-
-      <!-- アクセサリー（CHANEL） -->
-      <div class="gallery-category" id="cat-accessory">
-        <p class="gallery-cat-label">CHANEL ネックレス ／ 9カット撮影例</p>
-        <div class="gallery-shot-row">
-          <div class="gallery-shot-wrap"><span class="shot-num">①</span><img src="images/samples/accessory-1.webp" alt="アクセサリー-サムネイル" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">②</span><img src="images/samples/accessory-2.webp" alt="アクセサリー-正面" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">③</span><img src="images/samples/accessory-3.webp" alt="アクセサリー-背面" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">④</span><img src="images/samples/accessory-4.webp" alt="アクセサリー-ブランドタグ" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑤</span><img src="images/samples/accessory-5.webp" alt="アクセサリー-刻印" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑥</span><img src="images/samples/accessory-6.webp" alt="アクセサリー-留め具" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑦</span><img src="images/samples/accessory-7.webp" alt="アクセサリー-ディテール" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑧</span><img src="images/samples/accessory-8.webp" alt="アクセサリー-状態" loading="lazy"></div>
-          <div class="gallery-shot-wrap"><span class="shot-num">⑨</span><img src="images/samples/accessory-9.webp" alt="アクセサリー-全体" loading="lazy"></div>
-        </div>
-      </div>
-
-    </div>
-  </section>
-
-  <!-- 料金プランの一例 -->
-  <section class="section section-light" id="price">
-    <div class="container">
-      <div class="section-header">
-        <p class="section-label">PRICING</p>
-        <h2 class="section-title">料金プランの一例</h2>
-        <p class="section-desc">すべて<strong>1商品あたりの単価</strong>です。<br>月にご依頼いただく点数が増えるほど、単価が下がります。</p>
-      </div>
-      <div class="price-table-wrap">
-        <table class="price-table" id="price-matrix">
+      <div class="lp-pricecard">
+        <div class="price-table-wrap">
+<table class="price-table" id="price-matrix">
           <thead id="matrix-head">
             <tr>
               <th class="plan-col">プラン</th>
               <th>月1〜49点<span class="th-sub">通常料金</span></th>
-              <th>月50〜100点<span class="th-sub">1点あたり ¥50 引き</span></th>
-              <th>月101点〜<span class="th-sub">1点あたり ¥100 引き</span></th>
+              <th>月50〜100点<span class="th-sub">1点 ¥50 引き</span></th>
+              <th>月101点〜<span class="th-sub">1点 ¥100 引き</span></th>
             </tr>
           </thead>
           <tbody id="matrix-body">
@@ -690,20 +394,21 @@
             </tr>
           </tbody>
         </table>
+        </div>
+        <p class="lp-note" data-edit-id="price-note" data-edit-label="料金表：下部注記" data-edit-type="text">※ クリーニングは全プラン無料。数量割引は、その月にご発送いただいたお荷物の点数の合計で自動的に決まります。オプションの有無により、店舗様ごとに調整させていただきます。</p>
       </div>
-      <p class="price-note"><i class="fa-solid fa-circle-info"></i> <span data-edit-id="price-note" data-edit-label="料金表：下部注記" data-edit-type="text">※ クリーニングは全プラン無料。数量割引は、その月にご発送いただいたお荷物の点数の合計で自動的に決まります。オプションの有無により、店舗様ごとに調整させていただきます。</span></p>
-      <div class="price-cta">
-        <a href="/mitsumori/" class="btn btn-primary" target="_blank" rel="noopener">１分で料金チェック <i class="fa-solid fa-arrow-right"></i></a>
+      <div class="lp-center">
+        <a href="/mitsumori/" class="lp-btn big" target="_blank" rel="noopener">１分で料金チェック <i class="fa-solid fa-arrow-right"></i></a>
       </div>
     </div>
   </section>
 
   <!-- FAQ -->
-  <section class="section" id="faq">
-    <div class="container">
-      <div class="section-header">
-        <p class="section-label">Q&amp;A</p>
-        <h2 class="section-title">よくある質問</h2>
+  <section class="lp-sec lp-white" id="faq">
+    <div class="lp-in">
+      <div class="lp-head">
+        <p class="lp-no"><b>04</b>Q&amp;A</p>
+        <h2 class="lp-strip">よくある質問</h2>
       </div>
       <div class="faq-list" data-edit-id="faq-list" data-edit-label="Q&amp;A 一覧" data-edit-type="qalist">
         <details class="faq-item">
@@ -766,25 +471,13 @@
     </div>
   </section>
 
-  <!-- 会社概要 -->
-  <section class="company-info">
-    <div class="container">
-      <p class="company-info-heading" data-edit-id="company-heading" data-edit-label="会社概要：セクションタイトル" data-edit-type="text">会社概要（商品発送先）</p>
-      <div class="company-info-list">
-        <p><span class="company-info-label">会社名</span><span data-edit-id="company-name" data-edit-label="会社概要：会社名" data-edit-type="text">合同会社ケセラセラ</span></p>
-        <p><span class="company-info-label">所在地</span><span data-edit-id="company-address" data-edit-label="会社概要：所在地" data-edit-type="text">〒580-0017　大阪府松原市柴垣2丁目515番地の7</span></p>
-        <p><span class="company-info-label">連絡先</span>info@sasagepass.com　<span class="company-info-note">（納期・料金・サービスに関するお問い合わせは、必ず<a href="/mitsumori/" target="_blank" rel="noopener">見積もりフォーム</a>からご連絡ください）</span></p>
-      </div>
-    </div>
-  </section>
-
-  <!-- お問い合わせ -->
-  <section class="section section-contact" id="contact">
-    <div class="container">
-      <div class="section-header">
-        <p class="section-label section-label-light">CONTACT</p>
-        <h2 class="section-title section-title-light">お問い合わせ</h2>
-        <p class="section-desc section-desc-light" data-edit-id="contact-desc" data-edit-label="お問い合わせ：案内文" data-edit-type="richtext">まずはお気軽にご相談ください。<br>内容を確認のうえ、担当者よりご連絡いたします。</p>
+  <!-- お問い合わせ・会社概要 -->
+  <section class="lp-sec lp-blue" id="contact">
+    <div class="lp-in">
+      <div class="lp-head on-blue">
+        <p class="lp-no"><b>05</b>CONTACT</p>
+        <h2 class="lp-strip">お問い合わせ</h2>
+        <p class="lp-desc" data-edit-id="contact-desc" data-edit-label="お問い合わせ：案内文" data-edit-type="richtext">まずはお気軽にご相談ください。<br>内容を確認のうえ、担当者よりご連絡いたします。</p>
       </div>
       <div class="contact-wrap">
         <form class="contact-form" action="mailto:info@sasagepass.com?subject=サイトからのお問い合わせ" method="post" enctype="text/plain">
@@ -820,7 +513,7 @@
             <label for="website">Website</label>
             <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
           </div>
-          <button type="submit" class="btn btn-primary btn-full">送信する <i class="fa-solid fa-paper-plane"></i></button>
+          <button type="submit" class="lp-btn wide">送信する <i class="fa-solid fa-paper-plane"></i></button>
           <p class="form-status-msg form-status-error" id="contact-form-error" style="display:none;" data-edit-id="contact-form-error" data-edit-label="お問い合わせ：送信エラーメッセージ" data-edit-type="richtext">送信に失敗しました。お手数をおかけしますが、<a href="mailto:info@sasagepass.com">info@sasagepass.com</a> までメールでご連絡いただくか、<a href="/mitsumori/" target="_blank" rel="noopener">見積もりフォーム</a>からご連絡ください。</p>
           <p class="form-note" data-edit-id="contact-form-note" data-edit-label="お問い合わせ：フォーム下部注記" data-edit-type="text">内容をご確認のうえ「送信する」を押してください（2〜3営業日以内にご返信いたします）。</p>
         </form>
@@ -829,7 +522,13 @@
           <p data-edit-id="contact-form-success" data-edit-label="お問い合わせ：送信完了メッセージ" data-edit-type="text">お問い合わせありがとうございます。内容を確認のうえ、2〜3営業日以内にご担当者よりご連絡いたします。</p>
           <button type="button" class="form-status-reset" id="contact-form-reset">別のお問い合わせを送る</button>
         </div>
+
       </div>
+      <dl class="lp-company" aria-label="会社概要（商品発送先）">
+        <div><dt>会社名</dt><dd data-edit-id="company-name" data-edit-label="会社概要：会社名" data-edit-type="text">合同会社ケセラセラ</dd></div>
+        <div><dt>所在地（商品発送先）</dt><dd data-edit-id="company-address" data-edit-label="会社概要：所在地" data-edit-type="text">〒580-0017　大阪府松原市柴垣2丁目515番地の7</dd></div>
+        <div><dt>連絡先</dt><dd>info@sasagepass.com</dd></div>
+      </dl>
     </div>
   </section>
 
@@ -843,13 +542,15 @@
   </footer>
 
   <script>
-    // ギャラリー タブ切り替え
-    document.querySelectorAll('.gallery-tab').forEach(tab => {
+    // 撮影サンプル：アイテムのタブ切り替え
+    document.querySelectorAll('.lp-tab').forEach(tab => {
       tab.addEventListener('click', () => {
-        document.querySelectorAll('.gallery-tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.gallery-category').forEach(c => c.classList.remove('active'));
-        tab.classList.add('active');
-        document.getElementById('cat-' + tab.dataset.category).classList.add('active');
+        document.querySelectorAll('.lp-tab').forEach(t => {
+          const on = t === tab;
+          t.classList.toggle('on', on);
+          t.setAttribute('aria-selected', on);
+          document.getElementById('cat-' + t.dataset.category).hidden = !on;
+        });
       });
     });
 
@@ -897,91 +598,10 @@
   </script>
 
   <script>
-    document.querySelectorAll('.gallery-shot-wrap img, .svc-substep-img img, .svc-spec-sample-img img, .svc-ec-image img, .svc-measure-diagram img, .svc-heading-img, .plat-logo img').forEach(img => {
+    document.querySelectorAll('.hero img, .lp-frame img, .lp-gal-row img').forEach(img => {
       img.setAttribute('draggable', 'false');
       img.addEventListener('contextmenu', e => e.preventDefault());
     });
-  </script>
-
-  <script>
-    (function () {
-      var mock = document.getElementById('svc-ec-mock');
-      if (!mock) return;
-      var typingEl = mock.querySelector('.svc-ec-typing');
-      var cursorEl = mock.querySelector('.svc-ec-cursor');
-      var fieldEl = mock.querySelector('.svc-ec-field-title');
-      var fullText = typingEl ? (typingEl.getAttribute('data-text') || '') : '';
-      var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      var revealed = false;
-      var BASE_SIZE = 13;
-      var MIN_SIZE = 10;
-
-      function fitFontSize() {
-        if (!fieldEl || !typingEl) return BASE_SIZE;
-        var available = fieldEl.clientWidth - 24;
-        var size = BASE_SIZE;
-        var prevText = typingEl.textContent;
-        typingEl.style.fontSize = size + 'px';
-        typingEl.textContent = fullText;
-        while (typingEl.getBoundingClientRect().width > available && size > MIN_SIZE) {
-          size -= 0.5;
-          typingEl.style.fontSize = size + 'px';
-        }
-        typingEl.textContent = prevText;
-        return size;
-      }
-
-      function reveal() {
-        var size = fitFontSize();
-        if (cursorEl) cursorEl.style.height = (size + 2) + 'px';
-
-        if (reduced || !typingEl) {
-          if (typingEl) typingEl.textContent = fullText;
-          if (cursorEl) cursorEl.classList.add('svc-ec-cursor-hidden');
-          mock.classList.add('svc-ec-revealed');
-          revealed = true;
-          return;
-        }
-        var i = 0;
-        var timer = setInterval(function () {
-          i++;
-          typingEl.textContent = fullText.slice(0, i);
-          if (i >= fullText.length) {
-            clearInterval(timer);
-            setTimeout(function () {
-              if (cursorEl) cursorEl.classList.add('svc-ec-cursor-hidden');
-              mock.classList.add('svc-ec-revealed');
-              revealed = true;
-            }, 450);
-          }
-        }, 32);
-      }
-
-      if ('IntersectionObserver' in window) {
-        var observer = new IntersectionObserver(function (entries) {
-          entries.forEach(function (entry) {
-            if (entry.isIntersecting) {
-              reveal();
-              observer.unobserve(entry.target);
-            }
-          });
-        }, { threshold: 0.35 });
-        observer.observe(mock);
-      } else {
-        reveal();
-      }
-
-      var resizeTimer;
-      window.addEventListener('resize', function () {
-        if (!revealed || !typingEl) return;
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(function () {
-          var size = fitFontSize();
-          typingEl.textContent = fullText;
-          if (cursorEl) cursorEl.style.height = (size + 2) + 'px';
-        }, 150);
-      });
-    })();
   </script>
 
   <script>
