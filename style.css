@@ -632,3 +632,25 @@ body { line-break: strict; }
 .btn-nav, .btn-hdr-cta { border-radius: 4px; }
 .hamburger span { background: var(--ink); }
 .price-table .plan-cell small { word-break: auto-phrase; }
+
+/* タブレット・小さめのPC（769〜1239px）：ヒーローは1240px幅で組んであるので、全体を縮めて収める */
+@media (min-width: 769px) and (max-width: 1239px) {
+  .hero { height: calc(800px * var(--hs, .8)); min-height: 0; }
+  .hr-wrap { width: 1240px; max-width: none; height: 800px; margin: 0; transform: scale(var(--hs, .8)); transform-origin: 0 0; }
+}
+/* ヘッダーのメニューが2行に折れないように */
+.nav > a, .nav-dropdown-trigger { white-space: nowrap; }
+@media (min-width: 769px) and (max-width: 1000px) {
+  .nav { gap: 0; }
+  .nav > a, .nav-dropdown-trigger { font-size: 13px; padding: 8px 7px; }
+  .logo-img { height: 150px; }
+}
+@media (min-width: 769px) and (max-width: 1100px) {
+  .lp-in { padding: 0 32px; }
+  .lp-svc { grid-template-columns: 300px minmax(0, 1fr); gap: 32px; }
+  .lp-svc.rev { grid-template-columns: minmax(0, 1fr) 300px; }
+  .lp-flow > li { padding: 0 20px; }
+  .lp-flow-tag { width: 100%; max-width: 214px; }
+  .lp-flow-tag .kraft-no { gap: 8px; font-size: 8.5px; }
+  .lp-gal-row figure { flex: 0 0 120px; }
+}

@@ -121,6 +121,16 @@
     </div>
   </section>
 
+  <script>
+    // ヒーローを画面の幅に合わせて縮める割合（769〜1239pxで使う）
+    (function () {
+      var hero = document.querySelector('.hero');
+      function fit() { hero.style.setProperty('--hs', Math.min(1, document.documentElement.clientWidth / 1240)); }
+      fit();
+      window.addEventListener('resize', fit);
+    })();
+  </script>
+
   <!-- ご利用の流れ -->
   <section class="lp-sec lp-white" id="about">
     <div class="lp-in">
