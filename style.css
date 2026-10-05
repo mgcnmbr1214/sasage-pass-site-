@@ -442,7 +442,7 @@ html { scroll-padding-top: var(--header-h); }
 .lp-gal-row { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
 .lp-gal-row::-webkit-scrollbar { display: none; }
 .lp-gal-row[hidden] { display: none; }
-.lp-gal-row figure { flex: 0 0 calc((100% - 64px) / 9); margin: 0; }
+.lp-gal-row figure { flex: 0 0 calc((100% - 72px) / 10); margin: 0; }
 .lp-gal-row img { width: 100%; aspect-ratio: 1; object-fit: cover; background: #fff; border: 1px solid #e3ddd2; }
 .lp-gal-row figcaption { font-size: 10.5px; color: var(--mute); margin-top: 5px; line-height: 1.35; }
 .lp-gal-row figcaption b { display: block; font-family: var(--mono); color: var(--ink); font-size: 11px; }
